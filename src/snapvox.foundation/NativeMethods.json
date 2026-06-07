@@ -1,0 +1,18 @@
+{
+  "$schema": "https://aka.ms/CsWin32.schema.json",
+  "emitSingleFile": true,
+  "allowMarshaling": true,
+  "public": true,
+  "apis": [
+    "BitBlt", "CreateCompatibleDC", "CreateDIBSection", "CreateRectRgn", "GetPixel", "GetVersionExW", "GetProductInfo",
+    "RECT", "POINT", "SIZE", "HWND", "HDC", "HINSTANCE", "HICON", "HANDLE", "HRGN", "WPARAM", "LPARAM", "LRESULT",
+    "ROP_CODE", "SHOW_WINDOW_CMD", "WINDOWPLACEMENT", "WINDOWINFO", "GetWindowRect", "GetClientRect", "GetCursorPos",
+    "ClientToScreen", "ScreenToClient", "WindowFromPoint", "GetParent", "IsWindowVisible", "GetDesktopWindow",
+    "SetForegroundWindow", "GetForegroundWindow", "BringWindowToTop", "ShowWindowAsync", "PrintWindow",
+    "GetClassName", "GetWindowText", "GetWindowTextLength", "IsIconic", "IsZoomed", "GetWindowPlacement",
+    "SetWindowPlacement", "GetWindowInfo", "GetGuiResources", "EnumChildWindows", "AttachThreadInput",
+    "GetWindowThreadProcessId", "SendMessage", "PostMessage", "SetWindowLongPtr", "GetWindowLongPtr",
+    "SetClassLongPtr", "GetClassLongPtr", "GetCurrentProcess", "OpenThread", "SuspendThread", "ResumeThread",
+    "CloseHandle", "SetLastError", "AttachConsole", "AllocConsole", "PRINT_WINDOW_FLAGS", "WINDOW_LONG_PTR_INDEX", "WIN32_ERROR"
+  ]
+}

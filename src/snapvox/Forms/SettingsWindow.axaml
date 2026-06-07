@@ -1,0 +1,186 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="snapvox.Forms.SettingsWindow"
+        Title="SnapVox Settings"
+        Width="850" Height="650"
+        Background="#1E1E1E"
+        RequestedThemeVariant="Dark"
+        WindowStartupLocation="CenterScreen">
+    <Window.Styles>
+        <Style Selector="TextBlock.header">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,10,0,5"/>
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Margin" Value="0,5"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Margin" Value="0,5"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+    </Window.Styles>
+    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+        <TextBlock Text="SnapVox Configuration" FontSize="18" FontWeight="Bold" Margin="0,0,0,10" Grid.Row="0"/>
+        
+        <TabControl Grid.Row="1">
+            <TabItem Header="General Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <TextBlock Text="Application Behavior" Classes="header"/>
+                        <CheckBox Name="ChkKeepBackup" Content="Keep 24 Hours Backup of Snips/Text" />
+                        <CheckBox Name="ChkCloseEditor" Content="Close Image Editor on Copy/Download" />
+                        <CheckBox Name="ChkWarnClose" Content="Warn before closing the image editor" />
+                        <CheckBox Name="ChkAddBorder" Content="Add Frame Borders to Snips" />
+                        
+                        <StackPanel Name="OcrEnginePanel">
+                            <TextBlock Text="OCR Engine Selection" Classes="header"/>
+                            <ComboBox Name="CboOcrEngine"/>
+                        </StackPanel>
+                        
+                        <TextBlock Text="System Integration" Classes="header"/>
+                        <Button Name="BtnToggleAdmin" 
+                                Content="Run This App As an Administrator (Highest Privileges)" 
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" 
+                                Click="OnToggleAdminClick" Margin="0,10,0,0" Padding="10"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            
+            <TabItem Header="HotKeys">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="15" Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                            <TextBlock Text="Click a text box and press a key combination to rebind." Foreground="#AAAAAA" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="Reset Hotkeys" Click="OnResetHotkeysClick" Padding="12,6" HorizontalContentAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Name="TxtHotkeyWarning" Foreground="#FF5555" FontWeight="Bold" IsVisible="False" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        
+                        <Grid ColumnDefinitions="300,*" RowDefinitions="Auto">
+                            <!-- Left Column: Capture Hotkeys -->
+                            <StackPanel Grid.Column="0" Spacing="15">
+                                <TextBlock Text="Capture Hotkeys" Classes="header" Margin="0,0,0,5"/>
+                                
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Region:" VerticalAlignment="Center" Width="80"/>
+                                    <TextBox Name="TxtRegionKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                </StackPanel>
+                                
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Window:" VerticalAlignment="Center" Width="80"/>
+                                    <TextBox Name="TxtWindowKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Fullscreen:" VerticalAlignment="Center" Width="80"/>
+                                    <TextBox Name="TxtFullscreenKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Last Region:" VerticalAlignment="Center" Width="80"/>
+                                    <TextBox Name="TxtLastRegionKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Clipboard:" VerticalAlignment="Center" Width="80"/>
+                                    <TextBox Name="TxtClipboardKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Right Column: Other Tools -->
+                            <StackPanel Grid.Column="1" Spacing="20" Margin="20,0,0,0">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Drawing Tools" Classes="header" Margin="0,0,0,5"/>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Arrow:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtArrowKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Line:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtLineKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Freehand:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtFreehandKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Highlight:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtHighlightKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Pixelate 1:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtPixelate1Key" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Pixelate 2:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtPixelate2Key" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Insert Tools" Classes="header" Margin="0,0,0,5"/>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Text Box:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtTextKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Emoji:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtEmojiKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Counter:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtCounterKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Image Actions" Classes="header" Margin="0,0,0,5"/>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Resize:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtResizeKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Crop:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtCropKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Rotate CW:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtRotateCwKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Rotate CCW:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtRotateCcwKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Object Actions" Classes="header" Margin="0,0,0,5"/>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Duplicate:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtDuplicateObjectKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
+                                            <TextBlock Text="Delete:" VerticalAlignment="Center" Width="85"/>
+                                            <TextBox Name="TxtDeleteObjectKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+        
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="Save and Close" Click="OnSaveClick" Background="#007ACC" Foreground="White" Padding="15,7" Cursor="Hand" />
+        </StackPanel>
+    </Grid>
+</Window>

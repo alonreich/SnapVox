@@ -1,0 +1,30 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="snapvox.App"
+             RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
+    </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="avares://SnapVox/SnapVox.ico" ToolTipText="SnapVox v3.0" Clicked="OnTrayIconClicked">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Capture Region" Click="OnCaptureRegionClick" Icon="avares://SnapVox/icons/ruler-crop.png" />
+                        <NativeMenuItem Header="Capture Window" Click="OnCaptureWindowClick" Icon="avares://SnapVox/icons/shape_square_add.png" />
+                        <NativeMenuItem Header="Capture Fullscreen" Click="OnCaptureFullscreenClick" Icon="avares://SnapVox/icons/zoom.png" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Open From Clipboard" Click="OnOpenFromClipboardClick" />
+                        <NativeMenuItem Header="Show Capture History" Click="OnShowHistoryClick" Icon="avares://SnapVox/icons/folder-open-image.png" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Settings" Click="OnSettingsClick" Icon="avares://SnapVox/icons/wrench.png" />
+                        <NativeMenuItem Header="View Logs" Click="OnViewLogsClick" Icon="avares://SnapVox/icons/folder_explore.png" />
+                        <NativeMenuItem Header="Exit" Click="OnExitClick" Icon="avares://SnapVox/icons/cross.png" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+</Application>

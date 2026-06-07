@@ -1,0 +1,85 @@
+<Project>
+  <PropertyGroup>
+    <Copyright>Copyright © SnapVox 2004-2026</Copyright>
+    <Authors>SnapVox</Authors>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>false</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+    <Deterministic>true</Deterministic>
+    <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>
+    <CustomResourceTypesSupport>true</CustomResourceTypesSupport>
+    <NoWarn>$(NoWarn);IL2050;IL2062;IL2072;IL2073;IL2104;IL3050;IL2091;IL2090;IL2075;IL2026;IL3000;IL3002;IL3053</NoWarn>
+  </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' != 'Debug' And !$(MSBuildProjectName.Contains('Test')) And !$(MSBuildProjectName.Contains('Demo'))">
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(MSBuildProjectName.Contains('Tests')) Or $(MSBuildProjectName.Contains('Demo'))">
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugSymbols>True</DebugSymbols>
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+    <DebugType>embedded</DebugType>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Tokens Include="Box13_ClientId">
+      <ReplacementValue>$(Box13_ClientId)</ReplacementValue>
+    </Tokens>
+    <Tokens Include="Box13_ClientSecret">
+      <ReplacementValue>$(Box13_ClientSecret)</ReplacementValue>
+    </Tokens>
+    <Tokens Include="DropBox13_ClientId">
+      <ReplacementValue>$(DropBox13_ClientId)</ReplacementValue>
+    </Tokens>
+    <Tokens Include="DropBox13_ClientSecret">
+      <ReplacementValue>$(DropBox13_ClientSecret)</ReplacementValue>
+    </Tokens>
+    <Tokens Include="Imgur13_ClientId">
+      <ReplacementValue>$(Imgur13_ClientId)</ReplacementValue>
+    </Tokens>
+    <Tokens Include="Imgur13_ClientSecret">
+      <ReplacementValue>$(Imgur13_ClientSecret)</ReplacementValue>
+    </Tokens>
+  </ItemGroup>
+
+  
+  <ItemGroup>
+    <PackageReference Include="MSBuildTasks" Version="1.5.0.235" GeneratePathProperty="true" DevelopmentDependency="true" />
+  </ItemGroup>
+
+  <Target Name="PostBuild" BeforeTargets="PostBuildEvent" Condition="$(MSBuildProjectName.StartsWith('SnapVox.Plugin.'))">
+    <Exec Command="
+    IF NOT EXIST &quot;$(SolutionDir)$(SolutionName)\$(OutDir)Plugins\$(TargetName)&quot; (&#xD;&#xA;
+            mkdir &quot;$(SolutionDir)$(SolutionName)\$(OutDir)Plugins\$(TargetName)&quot;&#xD;&#xA;
+        )&#xD;&#xA;
+    xcopy /f /y /d &quot;$(TargetDir)$(TargetName).*&quot; &quot;$(SolutionDir)$(SolutionName)\$(OutDir)\Plugins\$(TargetName)&quot;&#xD;&#xA;
+    xcopy /f /y /d &quot;$(TargetDir)*.dll&quot; &quot;$(SolutionDir)$(SolutionName)\$(OutDir)\Plugins\$(TargetName)&quot;&#xD;&#xA;
+    IF EXIST &quot;$(TargetDir)Languages&quot; (&#xD;&#xA;
+        IF NOT EXIST &quot;$(SolutionDir)$(SolutionName)\$(OutDir)Languages\$(TargetName)&quot; (&#xD;&#xA;
+            mkdir &quot;$(SolutionDir)$(SolutionName)\$(OutDir)Languages\$(TargetName)&quot;&#xD;&#xA;
+        )&#xD;&#xA;
+        xcopy /f /y /d &quot;$(TargetDir)Languages\*en-US.xml&quot; &quot;$(SolutionDir)$(SolutionName)\$(OutDir)Languages\$(TargetName)&quot;&#xD;&#xA;
+	  )
+    for /f &quot;tokens=*&quot; %%F in ('dir /b /A-D $(SolutionDir)$(SolutionName)\$(OutDir)') do if EXIST &quot;$(SolutionDir)$(SolutionName)\$(OutDir)\Plugins\$(TargetName)\%%F&quot; (&#xD;&#xA;echo %%F&#xD;&#xA;del &quot;$(SolutionDir)$(SolutionName)\$(OutDir)\Plugins\$(TargetName)\%%F&quot;&#xD;&#xA;)&#xD;&#xA;
+  " />
+  </Target>
+</Project>

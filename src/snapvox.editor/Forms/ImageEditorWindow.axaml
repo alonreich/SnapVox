@@ -1,0 +1,491 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Avalonia.Svg.Skia"
+        x:Class="snapvox.editor.forms.ImageEditorWindow"
+        Title="SnapVox Editor"
+        Background="#1E1E1E"
+        RequestedThemeVariant="Dark"
+        ShowInTaskbar="True"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        MinWidth="850" MinHeight="650"
+        WindowStartupLocation="Manual">
+    <Window.Resources>
+        <VisualBrush x:Key="CheckerboardBrush" TileMode="Tile" SourceRect="0,0,20,20" DestinationRect="0,0,20,20">
+            <VisualBrush.Visual>
+                <Canvas Width="20" Height="20">
+                    <Rectangle Width="10" Height="10" Fill="#333333" />
+                    <Rectangle Width="10" Height="10" Fill="#333333" Canvas.Left="10" Canvas.Top="10" />
+                    <Rectangle Width="10" Height="10" Fill="#3A3A3A" Canvas.Left="10" />
+                    <Rectangle Width="10" Height="10" Fill="#3A3A3A" Canvas.Top="10" />
+                </Canvas>
+            </VisualBrush.Visual>
+        </VisualBrush>
+    </Window.Resources>
+
+    <Window.Styles>
+        <Style Selector="Button.toolbar">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#2D2D30" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.1" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.action">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Background" Value="#3E3E42" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="ActionBorder" 
+                            Background="{TemplateBinding Background}" 
+                            BorderBrush="Black" 
+                            BorderThickness="1" 
+                            CornerRadius="4" 
+                            BoxShadow="0 2 5 0 #88000000">
+                        <Border.Transitions>
+                            <Transitions>
+                                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.05" />
+                                <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.05" />
+                            </Transitions>
+                        </Border.Transitions>
+                        <ContentPresenter Content="{TemplateBinding Content}" 
+                                          HorizontalAlignment="Center" 
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.action:pressed /template/ Border#ActionBorder">
+            <Setter Property="RenderTransform" Value="scale(0.96) translateY(1px)" />
+            <Setter Property="BoxShadow" Value="0 1 2 0 #AA000000" />
+        </Style>
+        <Style Selector="Button.action:hover /template/ Border#ActionBorder">
+            <Setter Property="Background" Value="#757575" />
+        </Style>
+        <Style Selector="Button.context-delete">
+            <Setter Property="Background" Value="#A51D2D" />
+        </Style>
+        <Style Selector="Button.context-delete:hover /template/ Border#ActionBorder">
+            <Setter Property="Background" Value="#C42B3D" />
+        </Style>
+        <Style Selector="Button.toolbar:hover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#757575" />
+        </Style>
+        <Style Selector="Button.toolbar:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#5A5A5A" />
+        </Style>
+        <Style Selector="Button.toolbar.selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#007ACC" />
+        </Style>
+        <Style Selector="Button.toolbar.selected">
+            <Setter Property="Background" Value="#007ACC" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="White" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="Button.color-preset">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#444444" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.05" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.color-preset.selected">
+            <Setter Property="BorderBrush" Value="White" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="Rectangle.selection-indicator">
+            <Setter Property="Stroke" Value="Yellow"/>
+            <Setter Property="StrokeThickness" Value="2"/>
+            <Setter Property="StrokeDashArray" Value="4,2"/>
+            <Style.Animations>
+                <Animation Duration="0:0:1.5" IterationCount="Infinite">
+                    <KeyFrame KeyTime="0:0:0">
+                        <Setter Property="StrokeDashOffset" Value="0"/>
+                    </KeyFrame>
+                    <KeyFrame KeyTime="0:0:1.5">
+                        <Setter Property="StrokeDashOffset" Value="6"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Button.thickness">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="Button.thickness.selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#402D2D30" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="Button.thickness.selected">
+            <Setter Property="BorderBrush" Value="White" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+    </Window.Styles>
+
+    <Panel>
+    <DockPanel>
+        <!-- Custom Title Bar -->
+        <Grid DockPanel.Dock="Top" Name="TitleBar" Height="32" ColumnDefinitions="Auto,*,Auto" Background="#2D2D30" IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
+                <Image Source="avares://SnapVox/SnapVox.ico" Width="16" Height="16" Margin="0,0,8,0"/>
+                <TextBlock Text="SnapVox Editor" Foreground="#AAAAAA" FontSize="12" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Name="TitleDimensionText" Grid.Column="1" Text="0 x 0" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFFFFF" FontSize="12" FontWeight="SemiBold"/>
+            <!-- Reserve space for Windows system buttons -->
+            <Border Grid.Column="2" Width="140" IsHitTestVisible="False"/>
+        </Grid>
+
+        <!-- Top ToolBar -->
+        <Border DockPanel.Dock="Top" Background="#808080" Height="60" BorderBrush="#555555" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0" Spacing="7" VerticalAlignment="Center">
+                    <Button Classes="toolbar" Name="DownloadButton" ToolTip.Tip="Save image (Ctrl+S)" Click="OnDownloadClick" IsDefault="False">
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/download.svg" />
+                            <TextBlock Name="SaveHintLabel" Text="Save" VerticalAlignment="Center" FontSize="11" Foreground="White" IsVisible="False" />
+                        </StackPanel>
+                    </Button>
+                    <Button Classes="toolbar" Name="CopyButton" ToolTip.Tip="Copy image to clipboard (Ctrl+C)" Click="OnCopyClick" IsDefault="False">
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/copy.svg" />
+                            <TextBlock Name="CopyHintLabel" Text="Copy" VerticalAlignment="Center" FontSize="11" Foreground="White" IsVisible="False" />
+                        </StackPanel>
+                    </Button>
+                    
+                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    
+                    <Button Classes="toolbar" Name="UndoButton" ToolTip.Tip="Undo (Ctrl+Z)" Click="OnUndoClick" IsEnabled="False">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/undo.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="RedoButton" ToolTip.Tip="Redo (Ctrl+Y)" Click="OnRedoClick" IsEnabled="False">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/redo.svg" />
+                    </Button>
+                    
+                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+
+                    <Button Classes="toolbar" Name="RotateCwButton" ToolTip.Tip="Rotate Clockwise" Click="OnRotateCwClick">
+                        <svg:Svg Width="30" Height="30" Path="avares://snapvox.editor/Icons/rotate_clock-wise.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="RotateCcwButton" ToolTip.Tip="Rotate Counter-Clockwise" Click="OnRotateCcwClick">
+                        <svg:Svg Width="30" Height="30" Path="avares://snapvox.editor/Icons/rotate_counter_clock-wise.svg" />
+                    </Button>
+
+                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Button Classes="toolbar" Name="DeleteButton" ToolTip.Tip="Delete Selected Object (Del)" Click="OnDeleteClick" IsEnabled="False">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/delete.svg" />
+                    </Button>
+
+                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Button Classes="toolbar" Name="CropTool" ToolTip.Tip="Crop region. Esc exits this tool." Click="OnToolClick" Tag="Crop">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/crop.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="ResizeButton" ToolTip.Tip="Resize image" Click="OnResizeClick">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/resize.svg" />
+                    </Button>
+
+                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Button Classes="toolbar" Name="OcrButton" ToolTip.Tip="Copy text, save text file, and open Notepad" Click="OnOcrClick" Width="NaN" Padding="5,0">
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/ocr.svg" />
+                            <TextBlock Name="OcrButtonText" Text="OCR Text Extraction" VerticalAlignment="Center" FontSize="11" Foreground="White" />
+                        </StackPanel>
+                    </Button>
+                    <Button Classes="toolbar" Name="ClearAllButton" ToolTip.Tip="Clear all marks only" Click="OnClearAllClick" Background="#22FF0000" Width="NaN" Padding="8,0">
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/nuclear-sharp.svg" />
+                            <TextBlock Text="Clear All" VerticalAlignment="Center" FontSize="11" Foreground="White" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Bottom Status Bar -->
+        <Border DockPanel.Dock="Bottom" Background="#808080" Height="60" BorderBrush="#555555" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,*">
+                <!-- Left: Colors & Fill -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0" Spacing="0" VerticalAlignment="Center" HorizontalAlignment="Left">
+                    <StackPanel Name="ColorPresetsPanel" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                        <Button Classes="color-preset" Background="#000000" Click="OnColorSelectClick" Tag="#000000" />
+                        <Button Classes="color-preset" Background="#00FF00" Click="OnColorSelectClick" Tag="#00FF00" />
+                        <Button Classes="color-preset" Background="#FF0000" Click="OnColorSelectClick" Tag="#FF0000" />
+                        <Button Classes="color-preset" Background="#FFFF00" Click="OnColorSelectClick" Tag="#FFFF00" />
+                        <Button Classes="color-preset" Background="#0000FF" Click="OnColorSelectClick" Tag="#0000FF" />
+                        <Button Classes="color-preset" Background="#FFFFFF" Click="OnColorSelectClick" Tag="#FFFFFF" />
+                    </StackPanel>
+
+                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="5,0" />
+                    
+                    <Button Name="CustomColorBtn" Width="118" Height="40" VerticalAlignment="Center" Cursor="Hand" Padding="8,0" ToolTip.Tip="Current color">
+                        <Button.Flyout>
+                            <Flyout Placement="Top">
+                                <StackPanel Spacing="10" Width="300">
+                                    <ColorView Name="ColorPickerView" />
+                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="8" Click="OnSamplerClick">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/custom-color.svg" />
+                                            <TextBlock Text="Sample From Screen" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Grid ColumnDefinitions="*,*">
+                                        <Button Grid.Column="0" Content="OK" Click="OnColorConfirmClick" Margin="0,0,5,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#007ACC" Foreground="White"/>
+                                        <Button Grid.Column="1" Content="Cancel" Click="OnColorCancelClick" Margin="5,0,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                            <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/custom-color.svg" />
+                            <Border Name="CurrentColorPreview" Width="24" Height="24" CornerRadius="3" Background="#007ACC" BorderBrush="White" BorderThickness="1"/>
+                            <TextBlock Name="CurrentColorHex" Text="#007ACC" VerticalAlignment="Center" FontSize="11" Foreground="White" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Gap of 25px -->
+                    <Border Width="25" />
+
+                    <Button Classes="toolbar" Name="FillToggleBtn" ToolTip.Tip="Toggle Shape Fill" Click="OnFillToggleClick" VerticalAlignment="Center" Width="NaN" Padding="10,0">
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/fill.svg" />
+                            <TextBlock Name="FillToggleText" Text="Fill: Off" VerticalAlignment="Center" FontSize="12" Foreground="White" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Gap of 25px -->
+                    <Border Width="25" />
+
+                    <StackPanel Name="ThicknessPanel" Orientation="Horizontal" Spacing="2" Margin="0" VerticalAlignment="Center">
+                        <Rectangle Width="1" Height="30" Fill="#555555" Margin="0,0,5,0" />
+                        <TextBlock Name="ThicknessLabel" Text="Line size" VerticalAlignment="Center" Foreground="#2D2D30" FontSize="11" FontWeight="SemiBold" Margin="0,0,6,0" />
+                        <Button Classes="thickness" Click="OnThicknessClick" Tag="1" ToolTip.Tip="1px">
+                            <Rectangle Width="1" Height="20" Fill="#2D2D30"/>
+                        </Button>
+                        <Button Classes="thickness" Click="OnThicknessClick" Tag="2" ToolTip.Tip="2px">
+                            <Rectangle Width="2" Height="20" Fill="#2D2D30"/>
+                        </Button>
+                        <Button Classes="thickness" Click="OnThicknessClick" Tag="3" ToolTip.Tip="3px">
+                            <Rectangle Width="3" Height="20" Fill="#2D2D30"/>
+                        </Button>
+                        <Button Classes="thickness" Click="OnThicknessClick" Tag="5" ToolTip.Tip="5px">
+                            <Rectangle Width="5" Height="20" Fill="#2D2D30"/>
+                        </Button>
+                        <Button Classes="thickness" Click="OnThicknessClick" Tag="8" ToolTip.Tip="8px">
+                             <Rectangle Width="8" Height="20" Fill="#2D2D30"/>
+                        </Button>
+                        <Button Classes="thickness" Click="OnThicknessClick" Tag="12" ToolTip.Tip="12px">
+                             <Rectangle Width="12" Height="20" Fill="#2D2D30"/>
+                        </Button>
+                        <Button Classes="thickness" Click="OnThicknessClick" Tag="16" ToolTip.Tip="16px">
+                             <Rectangle Width="16" Height="20" Fill="#2D2D30"/>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Center: Current editor mode -->
+                <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#332D2D30" BorderBrush="#555555" BorderThickness="1" CornerRadius="4" Padding="10,4">
+                    <TextBlock Name="ModeText" Text="Move mode" Foreground="White" FontSize="12" FontWeight="SemiBold" />
+                </Border>
+
+                <!-- Right: Zoom -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="10,0" Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                        <Button Classes="toolbar" Name="ResetZoomButton" ToolTip.Tip="Reset Zoom (100%)" Click="OnZoomResetButtonClick">
+                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/resize.svg" />
+                        </Button>
+                        <Button Classes="toolbar" Click="OnZoomInClick" ToolTip.Tip="Zoom In">
+                            <TextBlock Text="+" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                        <TextBlock Name="ZoomText" Text="100%" VerticalAlignment="Center" Foreground="#2D2D30" FontSize="12" Width="40" TextAlignment="Center" Cursor="Hand" ToolTip.Tip="Reset zoom to 100%" PointerPressed="OnResetZoomClick"/>
+                        <Button Classes="toolbar" Click="OnZoomOutClick" ToolTip.Tip="Zoom Out">
+                            <TextBlock Text="−" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Left ToolBar -->
+        <Border DockPanel.Dock="Left" Background="#808080" Width="60" BorderBrush="#555555" BorderThickness="0,0,1,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Name="LeftToolBar" Orientation="Vertical" Margin="0,10" HorizontalAlignment="Center" Spacing="5">
+                    <Button Classes="toolbar" Name="ArrowTool" ToolTip.Tip="Arrow (A). Esc exits this tool." Click="OnToolClick" Tag="Arrow">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/arrow.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="LineTool" ToolTip.Tip="Line (L). Esc exits this tool." Click="OnToolClick" Tag="Line">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/line.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="RectTool" ToolTip.Tip="Rectangle. Esc exits this tool." Click="OnToolClick" Tag="Rectangle">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/square.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="EllipseTool" ToolTip.Tip="Circle/Ellipse. Esc exits this tool." Click="OnToolClick" Tag="Ellipse">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/circle.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="FreeDrawTool" ToolTip.Tip="Free Draw (D). Esc exits this tool." Click="OnToolClick" Tag="FreeDraw">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/pencil.svg" />
+                    </Button>
+                    
+                    <Rectangle Width="30" Height="1" Fill="#555555" Margin="0,3" />
+                    
+                    <Button Classes="toolbar" Name="HighlightTool" ToolTip.Tip="Highlight (H). Esc exits this tool." Click="OnToolClick" Tag="Highlight">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/highlight.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="BlurTool" ToolTip.Tip="Pixelate (O/P). Esc exits this tool." Click="OnToolClick" Tag="Blur">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/pixelite.svg" />
+                    </Button>
+
+                    <Rectangle Width="30" Height="1" Fill="#555555" Margin="0,3" />
+                    
+                    <Button Classes="toolbar" Name="TextTool" ToolTip.Tip="Text (T). Esc exits this tool." Click="OnToolClick" Tag="Text">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/text.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="CounterTool" Click="OnToolClick" DoubleTapped="OnCounterDoubleTapped" Tag="Counter" ToolTip.Tip="Counter (I). Double-click to reset to 1. Esc exits this tool.">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/counter.svg" />
+                    </Button>
+                    <Button Classes="toolbar" Name="EmojiTool" ToolTip.Tip="Emoji (E). Esc exits this tool.">
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/emoji.svg" />
+                        <Button.Flyout>
+                            <Flyout Placement="Right">
+                                <UniformGrid Columns="5" Width="220">
+                                    <Button Classes="toolbar" Content="😊" Click="OnEmojiSelectClick" Tag="😊" />
+                                    <Button Classes="toolbar" Content="😂" Click="OnEmojiSelectClick" Tag="😂" />
+                                    <Button Classes="toolbar" Content="👍" Click="OnEmojiSelectClick" Tag="👍" />
+                                    <Button Classes="toolbar" Content="🔥" Click="OnEmojiSelectClick" Tag="🔥" />
+                                    <Button Classes="toolbar" Content="⭐" Click="OnEmojiSelectClick" Tag="⭐" />
+                                    <Button Classes="toolbar" Content="📍" Click="OnEmojiSelectClick" Tag="📍" />
+                                    <Button Classes="toolbar" Content="✅" Click="OnEmojiSelectClick" Tag="✅" />
+                                    <Button Classes="toolbar" Content="❌" Click="OnEmojiSelectClick" Tag="❌" />
+                                    <Button Classes="toolbar" Content="⚠️" Click="OnEmojiSelectClick" Tag="⚠️" />
+                                    <Button Classes="toolbar" Content="❗" Click="OnEmojiSelectClick" Tag="❗" />
+                                    <Button Classes="toolbar" Content="➡️" Click="OnEmojiSelectClick" Tag="➡️" />
+                                    <Button Classes="toolbar" Content="⬅️" Click="OnEmojiSelectClick" Tag="⬅️" />
+                                    <Button Classes="toolbar" Content="⬆️" Click="OnEmojiSelectClick" Tag="⬆️" />
+                                    <Button Classes="toolbar" Content="⬇️" Click="OnEmojiSelectClick" Tag="⬇️" />
+                                    <Button Classes="toolbar" Content="💡" Click="OnEmojiSelectClick" Tag="💡" />
+                                    <Button Classes="toolbar" Content="🔒" Click="OnEmojiSelectClick" Tag="🔒" />
+                                    <Button Classes="toolbar" Content="👀" Click="OnEmojiSelectClick" Tag="👀" />
+                                    <Button Classes="toolbar" Content="🎯" Click="OnEmojiSelectClick" Tag="🎯" />
+                                </UniformGrid>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Panel Background="{StaticResource CheckerboardBrush}">
+                <Grid Name="MainGrid">
+                    <Border Name="SnipBorder" BorderBrush="Black" BorderThickness="3" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Image Name="EditorImage" Margin="0" Stretch="None">
+                            <Image.Effect>
+                                <DropShadowEffect BlurRadius="20" Opacity="0.4" OffsetX="0" OffsetY="10" />
+                            </Image.Effect>
+                        </Image>
+                    </Border>
+                    <Canvas Name="AnnotationCanvas" Margin="12" Background="Transparent" 
+                            PointerPressed="OnCanvasPointerPressed" 
+                            PointerMoved="OnCanvasPointerMoved" 
+                            PointerReleased="OnCanvasPointerReleased"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" 
+                            ClipToBounds="True">
+                            
+                        <!-- Contextual Selection Toolbar -->
+                        <StackPanel Name="ContextToolbar" Orientation="Horizontal" Spacing="8" IsVisible="False" ZIndex="10001">
+                            <Button Classes="action context-duplicate" Name="ContextDuplicateButton" Click="OnDuplicateClick" ToolTip.Tip="Duplicate (Ctrl+D)">
+                                <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/copy.svg" />
+                            </Button>
+                            <Rectangle Width="1" Height="28" Fill="#66555555" VerticalAlignment="Center" />
+                            <Button Classes="action context-delete" Name="ContextDeleteButton" Click="OnDeleteClick" ToolTip.Tip="Delete (Del)">
+                                <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/delete.svg" />
+                            </Button>
+                        </StackPanel>
+                        
+                        <!-- Endpoint Handles for Lines/Arrows -->
+                        <Canvas Name="StartPointHandle" Width="14" Height="14" IsVisible="False" ZIndex="10002" Cursor="Hand">
+                            <Ellipse Width="14" Height="14" Fill="White" />
+                            <Ellipse Width="12" Height="12" Margin="1" Stroke="Black" StrokeThickness="1" />
+                            <Ellipse Width="10" Height="10" Margin="2" Fill="White" />
+                        </Canvas>
+                        <Canvas Name="EndPointHandle" Width="14" Height="14" IsVisible="False" ZIndex="10002" Cursor="Hand">
+                            <Ellipse Width="14" Height="14" Fill="White" />
+                            <Ellipse Width="12" Height="12" Margin="1" Stroke="Black" StrokeThickness="1" />
+                            <Ellipse Width="10" Height="10" Margin="2" Fill="White" />
+                        </Canvas>
+                    </Canvas>
+
+                    <Border Name="NotificationChrome"
+                            ClipToBounds="True"/>
+                            
+                    <!-- Pixelate Strength Slider -->
+                    <Slider Name="PixelateSlider" 
+                            IsVisible="False" 
+                            Orientation="Vertical" 
+                            Minimum="2" Maximum="100" 
+                            Width="40" 
+                            ZIndex="10005"
+                            Background="#80000000"
+                            Foreground="DeepSkyBlue" />
+                </Grid>
+            </Panel>
+        </ScrollViewer>
+    </DockPanel>
+
+    <Grid Name="ClosePromptOverlay" IsVisible="False" ZIndex="100000" Background="#99000000">
+        <Border Background="#2D2D30" CornerRadius="8" BorderBrush="#555555" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="20">
+            <StackPanel Spacing="20">
+                <TextBlock Text="Unsaved Changes" FontWeight="Bold" FontSize="18" Foreground="White" />
+                <TextBlock Text="You have unsaved modifications. What would you like to do?" Foreground="#AAAAAA" />
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="Save &amp; Close" Click="OnPromptSaveClose" Background="#007ACC" Foreground="White" Padding="10,5" Cursor="Hand" />
+                    <Button Content="Discard" Click="OnPromptDiscard" Background="#D13438" Foreground="White" Padding="10,5" Cursor="Hand" />
+                    <Button Content="Cancel" Click="OnPromptCancel" Background="#444444" Foreground="White" Padding="10,5" Cursor="Hand" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+    </Panel>
+
+    <Window.Styles>
+        <Style Selector="Border.counter">
+            <Setter Property="Background" Value="Red" />
+            <Setter Property="CornerRadius" Value="17.5" />
+            <Setter Property="Width" Value="35" />
+            <Setter Property="Height" Value="35" />
+        </Style>
+        <Style Selector="Border.counter TextBlock">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontSize" Value="21" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+    </Window.Styles>
+</Window>

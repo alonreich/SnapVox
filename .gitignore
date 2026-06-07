@@ -1,0 +1,26 @@
+# [Build Artifacts]
+**/[Bb]in/
+**/[Oo]bj/
+/compiled/
+[Cc]ompiled/
+[Bb]uild/
+*.log
+
+# [User-Specific]
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# [OS Junk]
+.DS_Store
+Thumbs.db
+
+# [Temporary Files]
+*.tmp
+*.bak
+
+# [Git LFS]
+# We track DLLs and EXEs via LFS if they are outside build folders.
