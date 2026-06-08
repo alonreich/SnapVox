@@ -118,6 +118,19 @@ namespace snapvox
                                 owned = null;
                                 imageForEditor = null;
                                 editor.Show();
+                                
+                                if (IsNoTrayMode)
+                                {
+                                    editor.Closed += (s, ev) =>
+                                    {
+                                        if (desktop.Windows.Count == 0)
+                                        {
+                                            log.Info("All windows closed in No-Tray mode. Shutting down.");
+                                            desktop.Shutdown();
+                                        }
+                                    };
+                                }
+
                                 log.Info($"Editor window shown for file: {file}");
                             }
                             catch

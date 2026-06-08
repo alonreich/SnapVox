@@ -93,17 +93,26 @@ namespace snapvox.editor.forms
                 lock(_toastLock) { offset = _activeToasts++; }
 
                 var window = new NotificationOverlayWindow();
+                var chrome = window.FindControl<Border>("NotificationChrome");
                 var textBlock = window.FindControl<TextBlock>("NotificationText");
                 var icon = window.FindControl<TextBlock>("NotificationIcon");
+                if (chrome != null)
+                {
+                    chrome.Background = new SolidColorBrush(Color.Parse("#CC2D2D30"));
+                    chrome.Padding = new Thickness(14, 8);
+                    chrome.MinWidth = 180;
+                }
                 if (textBlock != null) { 
                     textBlock.Text = message; 
-                    textBlock.FontSize = 22;
-                    textBlock.Foreground = new SolidColorBrush(Color.Parse("#FFFF00")); 
+                    textBlock.FontSize = 14;
+                    textBlock.FontWeight = FontWeight.SemiBold;
+                    textBlock.Foreground = new SolidColorBrush(Color.Parse("#FFF2B84B")); 
+                    textBlock.MaxWidth = 300;
                 }
                 if (icon != null) { 
                     icon.Text = "\uE946"; // Info icon
-                    icon.FontSize = 24;
-                    icon.Foreground = new SolidColorBrush(Color.Parse("#FFFF00"));
+                    icon.FontSize = 16;
+                    icon.Foreground = new SolidColorBrush(Color.Parse("#FFF2B84B"));
                 }
 
                 window.Opacity = 0;

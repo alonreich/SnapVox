@@ -78,6 +78,7 @@ if errorlevel 1 exit /b 1
 
 
 
+copy /y "LICENSE.txt" ".\compiled\LICENSE.txt" >nul
 call :VALIDATE_COMPILED_OUTPUT
 
 if errorlevel 1 exit /b 1
@@ -183,63 +184,38 @@ exit /b 0
 
 
 :PURGE_COMPILED_EXTRAS
-
 for %%F in (".\compiled\*") do (
-
-  if /I not "%%~xF"==".exe" (
-
+  if /I not "%%~xF"==".exe" if /I not "%%~nxF"=="LICENSE.txt" (
     echo ERROR: Removing disallowed artifact from compiled: %%~fF
-
     rd /s /q "%%~fF" 2>nul
-
     del /f /q "%%~fF" 2>nul
-
     exit /b 1
-
   )
-
 )
-
 exit /b 0
 
 
 
 :VALIDATE_COMPILED_OUTPUT
-
 set "FILE_COUNT=0"
-
 set "INVALID=0"
-
 if not exist ".\compiled\SnapVox.exe" set "INVALID=1"
-
 if not exist ".\compiled\SnapVox_tesseract.exe" set "INVALID=1"
-
+if not exist ".\compiled\LICENSE.txt" set "INVALID=1"
 for %%F in (".\compiled\*") do (
-
   set /a FILE_COUNT+=1
-
-  if /I not "%%~xF"==".exe" set "INVALID=1"
-
+  if /I not "%%~xF"==".exe" if /I not "%%~nxF"=="LICENSE.txt" set "INVALID=1"
 )
-
-if not "!FILE_COUNT!"=="2" set "INVALID=1"
-
+if not "!FILE_COUNT!"=="3" set "INVALID=1"
 if "!INVALID!"=="1" (
-
-  echo ERROR: .\compiled must contain exactly these two installer EXE files and nothing else:
-
+  echo ERROR: .\compiled must contain exactly these files and nothing else:
   echo   SnapVox.exe
-
   echo   SnapVox_tesseract.exe
-
+  echo   LICENSE.txt
   dir /b ".\compiled" 2>nul
-
   exit /b 1
-
 )
-
-echo Verified .\compiled contains exactly 2 standalone installer EXE files with no DLLs or subfolders.
-
+echo Verified .\compiled contains exactly 2 EXE files and LICENSE.txt.
 exit /b 0
 
 

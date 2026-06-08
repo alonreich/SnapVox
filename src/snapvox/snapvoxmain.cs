@@ -50,8 +50,10 @@ public class snapvoxMain
         bool isInstaller = !StartupTaskHelper.IsRunningFromInstallPath() && !DeploymentLifecycle.IsLifecycleCommand(args);
         bool isLifecycle = DeploymentLifecycle.IsLifecycleCommand(args);
 
+        bool hasFiles = args.Any(a => !a.StartsWith("-") && !a.StartsWith("/"));
+
         using var appMutex = new Mutex(false, "Global\\SnapVox_SingleInstance_Mutex", out bool createdNew);
-        if (!createdNew && !isInstaller && !isLifecycle)
+        if (!createdNew && !isInstaller && !isLifecycle && !hasFiles)
         {
             return;
         }

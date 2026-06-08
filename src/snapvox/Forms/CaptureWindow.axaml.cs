@@ -575,7 +575,7 @@ namespace snapvox.forms
                 System.IO.Directory.CreateDirectory(tempDir);
                 string fileName = $"Capture_{DateTime.Now:yyyy-MM-dd HH_mm_ss_fff}.jpg";
                 string fullPath = System.IO.Path.Combine(tempDir, fileName);
-                await Task.Run(() => captured.Save(fullPath, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 100 })).ConfigureAwait(false);
+                await Task.Run(() => captured.Save(fullPath, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality })).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -953,9 +953,13 @@ namespace snapvox.forms
             ImageSharpImage owned = null;
             try
             {
+                var nativeRect = RECT.FromXYWH(rect.X, rect.Y, rect.Width, rect.Height);
+                ImageSharpImage frozenCaptured = CaptureHelper.GetFrozenSnapshot(nativeRect);
+
                 await CloseAllCaptureOverlaysAsync().ConfigureAwait(false);
-                if (rect.Width <= 0 || rect.Height <= 0) 
+                if (rect.Width <= 0 || rect.Height <= 0)
                 {
+                    frozenCaptured?.Dispose();
                     CaptureHelper.ClearFrozenSnapshot();
                     return;
                 }
@@ -963,20 +967,19 @@ namespace snapvox.forms
                 CaptureHelper.RememberRegion(rect);
                 owned = await Task.Run(() =>
                 {
-                    var nativeRect = RECT.FromXYWH(rect.X, rect.Y, rect.Width, rect.Height);
-                    ImageSharpImage captured = CaptureHelper.GetFrozenSnapshot(nativeRect);
+                    ImageSharpImage captured = frozenCaptured;
                     if (captured == null) captured = NativeCapture.CaptureRegion(nativeRect);
-                    
+
                     if (captured == null) return null;
                     var clone = captured.Clone(x => { });
                     if (captured != null) captured.Dispose(); // Dispose if it was a new capture or just clean up clone source
-                    
+
                     // Mandate: Every capture saved to %TMP%\SnapVox immediately (raw)
                     string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
                     Directory.CreateDirectory(tempDir);
                     string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                    clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 100 });
-                    
+                    clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+
                     return clone;
                 }).ConfigureAwait(false);
 

@@ -12,28 +12,28 @@
         SizeToContent="WidthAndHeight">
     <Border Name="NotificationChrome"
             Background="Transparent"
-            CornerRadius="14"
-            Padding="32,20"
-            MinWidth="420"
+            CornerRadius="8"
+            Padding="18,10"
+            MinWidth="220"
             BorderBrush="Transparent"
             BorderThickness="0">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="24" Opacity="0.75" OffsetX="0" OffsetY="8" />
+            <DropShadowEffect BlurRadius="12" Opacity="0.35" OffsetX="0" OffsetY="4" />
         </Border.Effect>
-        <StackPanel Orientation="Horizontal" Spacing="18" HorizontalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
             <TextBlock Name="NotificationIcon"
                        Text="&#xE73E;"
                        FontFamily="Segoe MDL2 Assets"
                        Foreground="White"
                        VerticalAlignment="Center"
-                       FontSize="46"/>
+                       FontSize="28"/>
             <TextBlock Name="NotificationText"
                        Foreground="White"
-                       FontSize="35"
-                       FontWeight="Bold"
+                       FontSize="22"
+                       FontWeight="SemiBold"
                        VerticalAlignment="Center"
                        TextWrapping="Wrap"
-                       MaxWidth="520"/>
+                       MaxWidth="360"/>
         </StackPanel>
     </Border>
 </Window>

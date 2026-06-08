@@ -281,6 +281,13 @@
                         </StackPanel>
                     </Button>
 
+                    <Button Classes="toolbar" Name="ResetCounterBtn" ToolTip.Tip="Reset Counter to 1" Click="OnCounterResetClick" VerticalAlignment="Center" Width="NaN" Padding="10,0" IsVisible="False">
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/counter.svg" />
+                            <TextBlock Text="Reset Counter" VerticalAlignment="Center" FontSize="12" Foreground="White" />
+                        </StackPanel>
+                    </Button>
+
                     <!-- Gap of 25px -->
                     <Border Width="25" />
 
@@ -310,11 +317,6 @@
                         </Button>
                     </StackPanel>
                 </StackPanel>
-
-                <!-- Center: Current editor mode -->
-                <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#332D2D30" BorderBrush="#555555" BorderThickness="1" CornerRadius="4" Padding="10,4">
-                    <TextBlock Name="ModeText" Text="Move mode" Foreground="White" FontSize="12" FontWeight="SemiBold" />
-                </Border>
 
                 <!-- Right: Zoom -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="10,0" Spacing="10">
@@ -402,7 +404,7 @@
             </ScrollViewer>
         </Border>
 
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Name="EditorScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <Panel Background="{StaticResource CheckerboardBrush}">
                 <Grid Name="MainGrid">
                     <Border Name="SnipBorder" BorderBrush="Black" BorderThickness="3" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -431,15 +433,15 @@
                         </StackPanel>
                         
                         <!-- Endpoint Handles for Lines/Arrows -->
-                        <Canvas Name="StartPointHandle" Width="14" Height="14" IsVisible="False" ZIndex="10002" Cursor="Hand">
-                            <Ellipse Width="14" Height="14" Fill="White" />
-                            <Ellipse Width="12" Height="12" Margin="1" Stroke="Black" StrokeThickness="1" />
-                            <Ellipse Width="10" Height="10" Margin="2" Fill="White" />
+                        <Canvas Name="StartPointHandle" Width="18" Height="18" IsVisible="False" ZIndex="10002" Cursor="Hand">
+                            <Ellipse Width="18" Height="18" Fill="White" />
+                            <Ellipse Width="16" Height="16" Margin="1" Stroke="#2E7D32" StrokeThickness="2" />
+                            <Ellipse Width="8" Height="8" Margin="5" Fill="#2E7D32" />
                         </Canvas>
-                        <Canvas Name="EndPointHandle" Width="14" Height="14" IsVisible="False" ZIndex="10002" Cursor="Hand">
-                            <Ellipse Width="14" Height="14" Fill="White" />
-                            <Ellipse Width="12" Height="12" Margin="1" Stroke="Black" StrokeThickness="1" />
-                            <Ellipse Width="10" Height="10" Margin="2" Fill="White" />
+                        <Canvas Name="EndPointHandle" Width="18" Height="18" IsVisible="False" ZIndex="10002" Cursor="Hand">
+                            <Ellipse Width="18" Height="18" Fill="White" />
+                            <Ellipse Width="16" Height="16" Margin="1" Stroke="#007ACC" StrokeThickness="2" />
+                            <Ellipse Width="8" Height="8" Margin="5" Fill="#007ACC" />
                         </Canvas>
                     </Canvas>
 
@@ -450,7 +452,7 @@
                     <Slider Name="PixelateSlider" 
                             IsVisible="False" 
                             Orientation="Vertical" 
-                            Minimum="2" Maximum="100" 
+                            Minimum="2" Maximum="29" 
                             Width="40" 
                             ZIndex="10005"
                             Background="#80000000"

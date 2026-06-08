@@ -1,4 +1,10 @@
-﻿using System;
+﻿/*
+ * Portions of this file, specifically the native capture logic and 
+ * bounds calculations, were adapted from the Greenshot project, 
+ * which is licensed under the GNU General Public License (GPL).
+ * SnapVox acknowledges and complies with this license.
+ */
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -224,7 +230,7 @@ namespace snapvox.helpers
                                     string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
                                     Directory.CreateDirectory(tempDir);
                                     string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                                    owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 100 });
+                                    owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
                                 }
                                 catch (Exception ex)
                                 {
@@ -266,7 +272,7 @@ namespace snapvox.helpers
                         string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
                         Directory.CreateDirectory(tempDir);
                         string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                        owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 100 });
+                        owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
                     }
                     catch (Exception ex)
                     {
@@ -353,7 +359,7 @@ namespace snapvox.helpers
                         string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
                         Directory.CreateDirectory(tempDir);
                         string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                        clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 100 });
+                        clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
                     }
                     catch (Exception ex)
                     {

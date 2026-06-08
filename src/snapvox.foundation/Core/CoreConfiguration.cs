@@ -1,3 +1,9 @@
+/*
+ * Portions of this file, specifically the configuration schema and 
+ * INI property bindings, were adapted from the Greenshot project, 
+ * which is licensed under the GNU General Public License (GPL).
+ * SnapVox acknowledges and complies with this license.
+ */
 using snapvox.native;
 using snapvox.native.foundation;
 using snapvox.native.graphics;
@@ -89,8 +95,8 @@ namespace snapvox.foundation.core
         [IniProperty("OutputFileFormat", Description = "Default file type for writing screenshots. (Always jpg in v3.0)", DefaultValue = "jpg")]
         public OutputFormat OutputFileFormat { get; set; } = OutputFormat.jpg;
 
-        [IniProperty("OutputFileJpegQuality", Description = "JPEG file save quality in %.", DefaultValue = "100")]
-        public int OutputFileJpegQuality { get; set; } = 100;
+        [IniProperty("OutputFileJpegQuality", Description = "JPEG file save quality in %.", DefaultValue = "92")]
+        public int OutputFileJpegQuality { get; set; } = 92;
 
         [IniProperty("LogFile", Description = "The path to the log file.")]
         public string LogFile { get; set; }
@@ -119,8 +125,8 @@ namespace snapvox.foundation.core
         [IniProperty("UserDownloadPath", Description = "Custom download path if default Downloads folder is missing.")]
         public string UserDownloadPath { get; set; }
 
-        [IniProperty("LastPixelateStrength", DefaultValue = "30")]
-        public int LastPixelateStrength { get; set; } = 30;
+        [IniProperty("LastPixelateStrength", DefaultValue = "25")]
+        public int LastPixelateStrength { get; set; } = 25;
 
         [IniProperty("OcrEngine", Description = "English Language Default OCR Engine", DefaultValue = "Tesseract (External OCR Engine)")]
         public string OcrEngine { get; set; } = "Tesseract (External OCR Engine)";
@@ -191,8 +197,11 @@ namespace snapvox.foundation.core
         [IniProperty("LastEmojiSize", DefaultValue = "60")]
         public double LastEmojiSize { get; set; } = 60.0;
 
-        [IniProperty("LastCounterSize", DefaultValue = "35")]
-        public double LastCounterSize { get; set; } = 35.0;
+        [IniProperty("LastCounterSize", DefaultValue = "42")]
+        public double LastCounterSize { get; set; } = 42.0;
+
+        [IniProperty("LastCounterColor", DefaultValue = "#FF0000")]
+        public string LastCounterColor { get; set; } = "#FF0000";
 
         public override object GetDefault(string property) => property switch
         {
@@ -205,7 +214,7 @@ namespace snapvox.foundation.core
             if (string.IsNullOrWhiteSpace(OutputFileFilenamePattern)) OutputFileFilenamePattern = "${capturetime:d\"yyyy-MM-dd HH_mm_ss\"}-${title}";
             if (ClipboardFormats == null || ClipboardFormats.Count == 0) ClipboardFormats = new List<ClipboardFormat> { ClipboardFormat.DIB };
             OutputFileFormat = OutputFormat.jpg;
-            OutputFileJpegQuality = 100;
+            if (OutputFileJpegQuality == 100) OutputFileJpegQuality = 92;
             OutputFilePath = Path.Combine(Path.GetTempPath(), "snapvox");
         }
     }
