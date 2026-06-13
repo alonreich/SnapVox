@@ -7,9 +7,6 @@ namespace snapvox.native
 {
     public static class Win32WindowHelper
     {
-        private const int GwlExstyle = -20;
-        private const long WsExTransparent = 0x00000020L;
-
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 
@@ -60,27 +57,12 @@ namespace snapvox.native
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
-        private static extern IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
-        private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
-
-        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
-        private static extern IntPtr SetWindowLong32(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
-        private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-        private static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex)
-        {
-            return IntPtr.Size == 8 ? GetWindowLongPtr64(hWnd, nIndex) : GetWindowLong32(hWnd, nIndex);
-        }
-
-        private static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
-        {
-            return IntPtr.Size == 8 ? SetWindowLongPtr64(hWnd, nIndex, dwNewLong) : SetWindowLong32(hWnd, nIndex, dwNewLong);
-        }
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
 
         public static string GetWindowClassName(IntPtr hWnd)
         {
@@ -120,38 +102,16 @@ namespace snapvox.native
         {
             IntPtr hWnd = WindowFromPoint(point);
             uint currentProcessId = (uint)Environment.ProcessId;
-            for (int attempt = 0; attempt < 16 && hWnd != IntPtr.Zero; attempt++)
+            while (hWnd != IntPtr.Zero)
             {
                 GetWindowThreadProcessId(hWnd, out uint processId);
                 if (processId != currentProcessId)
                 {
-                    return hWnd;
+                    if (IsWindowVisible(hWnd) && GetWindowRect(hWnd, out RECT r) && point.X >= r.Left && point.X < r.Right && point.Y >= r.Top && point.Y < r.Bottom) return hWnd;
                 }
-
-                IntPtr under = WindowFromPointSkipping(hWnd, point);
-                if (under == IntPtr.Zero || under == hWnd)
-                {
-                    return IntPtr.Zero;
-                }
-
-                hWnd = under;
+                hWnd = GetWindow(hWnd, 2);
             }
-
             return IntPtr.Zero;
-        }
-
-        private static IntPtr WindowFromPointSkipping(IntPtr skipHwnd, POINT point)
-        {
-            IntPtr style = GetWindowLongPtr(skipHwnd, GwlExstyle);
-            SetWindowLongPtr(skipHwnd, GwlExstyle, (IntPtr)(style.ToInt64() | WsExTransparent));
-            try
-            {
-                return WindowFromPoint(point);
-            }
-            finally
-            {
-                SetWindowLongPtr(skipHwnd, GwlExstyle, style);
-            }
         }
 
         [DllImport("user32.dll")]

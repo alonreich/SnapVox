@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Portions of this file, specifically the native capture logic and 
  * bounds calculations, were adapted from the Greenshot project, 
  * which is licensed under the GNU General Public License (GPL).
@@ -41,7 +41,7 @@ namespace snapvox.helpers
 
         public static void CaptureRegion(bool fromHotkey)
         {
-            App.SetTrayIconState(true);
+            App.ForceRedTrayIcon(true);
             _ = Task.Run(() => CaptureRegionAsync(fromHotkey));
         }
 
@@ -110,7 +110,7 @@ namespace snapvox.helpers
                     if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
 
                     using var cropped = fullSnapshot.Clone(x => x.Crop(cropRect));
-                    if (Config.AddFrameBorders) cropped.Mutate(x => x.Draw(SixLabors.ImageSharp.Color.Black, 3, new Rectangle(0, 0, cropped.Width, cropped.Height)));
+                    if (Config.AddFrameBorders) cropped.Mutate(x => { int t = 3; if (cropped.Width > t * 2 && cropped.Height > t * 2) x.Crop(new Rectangle(t, t, cropped.Width - t * 2, cropped.Height - t * 2)).Pad(cropped.Width, cropped.Height, SixLabors.ImageSharp.Color.Black); });
                     using var ms = new MemoryStream();
                     cropped.Save(ms, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
                     screenData.Add((screen.Bounds, ms.ToArray()));
@@ -168,7 +168,6 @@ namespace snapvox.helpers
         {
             _ = App.FlickerTrayIcon();
             
-            // Instant freeze BEFORE any delay
             RECT virtualBounds = GetVirtualDesktopBounds();
             var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
 
@@ -237,7 +236,7 @@ namespace snapvox.helpers
                                     Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
                                 }
 
-                                if (Config.AddFrameBorders) owned.Mutate(x => x.Draw(SixLabors.ImageSharp.Color.Black, 3, new Rectangle(0, 0, owned.Width, owned.Height)));
+                                if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.Black); });
                                 
                                 RememberRegion(rawRect);
                                 await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
@@ -250,6 +249,7 @@ namespace snapvox.helpers
                     }
                 }
                 catch (Exception ex) { Log.Fatal("CaptureActiveWindow failed.", ex); }
+                finally { fullSnapshot?.Dispose(); }
             });
         }
 
@@ -279,7 +279,7 @@ namespace snapvox.helpers
                         Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
                     }
 
-                    if (Config.AddFrameBorders) owned.Mutate(x => x.Draw(SixLabors.ImageSharp.Color.Black, 3, new Rectangle(0, 0, owned.Width, owned.Height)));
+                    if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.Black); });
 
                     await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
                     await Dispatcher.UIThread.InvokeAsync(() =>
@@ -333,7 +333,7 @@ namespace snapvox.helpers
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
 
-        private static RECT GetVirtualDesktopBounds()
+        public static RECT GetVirtualDesktopBounds()
         {
             return RECT.FromXYWH(
                 GetSystemMetrics(SmXVirtualScreen),
@@ -366,7 +366,7 @@ namespace snapvox.helpers
                         Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
                     }
 
-                    if (Config.AddFrameBorders) clone.Mutate(x => x.Draw(SixLabors.ImageSharp.Color.Black, 2, new Rectangle(0, 0, clone.Width, clone.Height)));
+                    if (Config.AddFrameBorders) clone.Mutate(x => { int t = 2; if (clone.Width > t * 2 && clone.Height > t * 2) x.Crop(new Rectangle(t, t, clone.Width - t * 2, clone.Height - t * 2)).Pad(clone.Width, clone.Height, SixLabors.ImageSharp.Color.Black); });
                     return clone;
                 }).ConfigureAwait(false);
 

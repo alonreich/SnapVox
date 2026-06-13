@@ -17,12 +17,9 @@ namespace snapvox.native
     public sealed class TesseractOcrProvider : IOcrProvider, IDisposable, IAsyncDisposable
     {
         private readonly OcrRequestQueue _queue;
-        private readonly object _engineSync = new object();
         private int _disposed;
         private static readonly SemaphoreSlim InitGate = new SemaphoreSlim(1, 1);
         private static volatile bool _initialized;
-        private TesseractEngine _engine;
-        private string _enginePath;
 
         public TesseractOcrProvider()
         {
@@ -39,27 +36,6 @@ namespace snapvox.native
             return HasTessData(tessDataPath, "eng.traineddata") && HasTessData(tessDataPath, "heb.traineddata");
         }
 
-        public static bool IsAnySupportedLanguageAvailable()
-        {
-            try
-            {
-                string path = OcrInstallationHelper.GetTessDataDirectory();
-                return Directory.Exists(path) && Directory.EnumerateFiles(path, "*.traineddata").Any();
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public static string GetAvailabilityMessage()
-        {
-            string path = OcrInstallationHelper.GetTessDataDirectory();
-            bool eng = File.Exists(Path.Combine(path, "eng.traineddata"));
-            bool heb = File.Exists(Path.Combine(path, "heb.traineddata"));
-            if (eng && heb) return string.Empty;
-            return "Tesseract OCR is missing language data files (eng/heb).";
-        }
 
         public Task<OcrInformation> DoOcrAsync(Image image) => DoOcrAsync(image, CancellationToken.None);
 
@@ -78,12 +54,7 @@ namespace snapvox.native
             }
 
             await _queue.DisposeAsync().ConfigureAwait(false);
-            lock (_engineSync)
-            {
-                _engine?.Dispose();
-                _engine = null;
-                _enginePath = null;
-            }
+
         }
 
         private static async Task EnsureInitializedAsync(CancellationToken cancellationToken)
@@ -111,23 +82,6 @@ namespace snapvox.native
             }
         }
 
-        private TesseractEngine GetOrCreateEngine(string tessDataPath)
-        {
-            lock (_engineSync)
-            {
-                if (_engine != null && string.Equals(_enginePath, tessDataPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    return _engine;
-                }
-
-                var replacement = new TesseractEngine(tessDataPath, "eng+heb", EngineMode.Default);
-                var oldEngine = _engine;
-                _engine = replacement;
-                _enginePath = tessDataPath;
-                oldEngine?.Dispose();
-                return _engine;
-            }
-        }
 
         private static bool HasTessData(string tessDataPath, string fileName)
         {
@@ -168,7 +122,7 @@ namespace snapvox.native
                     cancellationToken.ThrowIfCancellationRequested();
                     using var buffer = new MemoryStream();
                     preprocessed.Save(buffer, new PngEncoder());
-                    TesseractEngine engine = GetOrCreateEngine(tessDataPath);
+                    using var engine = new TesseractEngine(tessDataPath, "heb+eng", EngineMode.Default);
                     using Pix pix = Pix.LoadFromMemory(buffer.ToArray());
                     using Page page = engine.Process(pix);
                     return MapPage(page, scaleX, scaleY);

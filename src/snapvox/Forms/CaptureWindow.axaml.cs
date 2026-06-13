@@ -28,11 +28,13 @@ namespace snapvox.forms
 {
     public partial class CaptureWindow : Window
     {
+        private static readonly Avalonia.Input.Cursor HandCursor = new Avalonia.Input.Cursor(StandardCursorType.Hand);
+        private static readonly Avalonia.Input.Cursor CrossCursor = new Avalonia.Input.Cursor(StandardCursorType.Cross);
+        private static readonly IBrush OcrHighlightBrush = new SolidColorBrush(AvaloniaColor.FromArgb(102, 255, 255, 0));
+
         private static readonly log4net.ILog Log = LogHelper.GetLogger(typeof(CaptureWindow));
         private static List<CaptureWindow> _activeWindows = new List<CaptureWindow>();
         private static readonly object SharedOcrLock = new object();
-        private static CancellationTokenSource _sharedOcrCts;
-        private static Task<OcrInformation> _sharedOcrTask;
         private static bool _globalOcrMode;
         private const int MagneticThresholdPixels = 5;
         private Avalonia.Point _startPoint;
@@ -138,7 +140,7 @@ namespace snapvox.forms
             
             LayoutInstructionBanner(null);
             LayoutOcrStatus();
-            App.SetTrayIconState(true);
+            App.ForceRedTrayIcon(true);
             UiClipboard.Register(text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
             if (_highlightBorder != null) _highlightBorder.IsVisible = false;
             if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
@@ -149,14 +151,14 @@ namespace snapvox.forms
             _isWindowOpen = false;
             CloseAll();
             CaptureHelper.ClearFrozenSnapshot();
-            App.SetTrayIconState(false);
+            App.ForceRedTrayIcon(false);
             await StopLocalOcrAsync().ConfigureAwait(true);
             lock (_activeWindows)
             {
                 if (_activeWindows.Count == 0)
                 {
                     _globalOcrMode = false;
-                    CancelSharedPreemptiveOcr();
+                    CancelLocalPreemptiveOcr();
                 }
             }
             if (_backgroundControl != null)
@@ -171,7 +173,6 @@ namespace snapvox.forms
         protected override void OnClosing(WindowClosingEventArgs e)
         {
             base.OnClosing(e);
-            App.SetTrayIconState(false);
         }
 
         private void TryPostToUi(Action action)
@@ -232,32 +233,36 @@ namespace snapvox.forms
             Canvas.SetTop(_ocrProcessingStatus, top);
         }
 
-        private static Task<OcrInformation> StartSharedPreemptiveOcr(PixelRect targetRegion)
+        private readonly object LocalOcrLock = new object();
+        private CancellationTokenSource _localOcrCts;
+        private Task<OcrInformation> _localOcrTask;
+
+        private Task<OcrInformation> StartLocalPreemptiveOcr(PixelRect targetRegion)
         {
-            lock (SharedOcrLock)
+            lock (LocalOcrLock)
             {
-                if (_sharedOcrTask != null && !_sharedOcrTask.IsCompleted)
+                if (_localOcrTask != null && !_localOcrTask.IsCompleted)
                 {
-                    return _sharedOcrTask;
+                    return _localOcrTask;
                 }
 
-                _sharedOcrCts?.Dispose();
-                _sharedOcrCts = new CancellationTokenSource();
-                _sharedOcrTask = RunSharedPreemptiveOcrAsync(targetRegion, _sharedOcrCts.Token);
-                return _sharedOcrTask;
+                _localOcrCts?.Dispose();
+                _localOcrCts = new CancellationTokenSource();
+                _localOcrTask = RunLocalPreemptiveOcrAsync(targetRegion, _localOcrCts.Token);
+                return _localOcrTask;
             }
         }
 
-        private static void CancelSharedPreemptiveOcr()
+        private void CancelLocalPreemptiveOcr()
         {
             CancellationTokenSource cts;
             Task<OcrInformation> task;
-            lock (SharedOcrLock)
+            lock (LocalOcrLock)
             {
-                cts = _sharedOcrCts;
-                task = _sharedOcrTask;
-                _sharedOcrCts = null;
-                _sharedOcrTask = null;
+                cts = _localOcrCts;
+                task = _localOcrTask;
+                _localOcrCts = null;
+                _localOcrTask = null;
             }
 
             if (cts == null)
@@ -293,7 +298,7 @@ namespace snapvox.forms
             return OcrProviderSelector.Select(providers, config.OcrEngine);
         }
 
-        private static async Task<OcrInformation> RunSharedPreemptiveOcrAsync(PixelRect targetRegion, CancellationToken cancellationToken)
+        private static async Task<OcrInformation> RunLocalPreemptiveOcrAsync(PixelRect targetRegion, CancellationToken cancellationToken)
         {
             var ocrProvider = SelectOcrProvider();
             if (ocrProvider == null)
@@ -302,7 +307,7 @@ namespace snapvox.forms
             }
 
             var nativeRect = RECT.FromXYWH(targetRegion.X, targetRegion.Y, targetRegion.Width, targetRegion.Height);
-            using ImageSharpImage image = await Task.Run(() => NativeCapture.CaptureRegion(nativeRect), cancellationToken).ConfigureAwait(false);
+            using ImageSharpImage image = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false);
             if (image == null)
             {
                 return null;
@@ -313,12 +318,12 @@ namespace snapvox.forms
             return result;
         }
 
-        private async Task ObserveSharedPreemptiveOcrAsync(CancellationTokenSource cts)
+        private async Task ObserveLocalPreemptiveOcrAsync(CancellationTokenSource cts)
         {
             try
             {
                 TryPostToUi(() => { if (_isPainterMode && _ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = true; });
-                OcrInformation result = await StartSharedPreemptiveOcr(_screenBounds).WaitAsync(cts.Token).ConfigureAwait(false);
+                OcrInformation result = await StartLocalPreemptiveOcr(_screenBounds).WaitAsync(cts.Token).ConfigureAwait(false);
                 if (result == null || cts.Token.IsCancellationRequested || !_isWindowOpen)
                 {
                     _ocrFailed = result == null;
@@ -442,23 +447,15 @@ namespace snapvox.forms
             if (e.Key == Key.C) { CaptureAndCopyCurrentSelection(); return; }
             if (e.Key == Key.T || e.Key == Key.O)
             {
-                Log.Info("OCR mode toggled via hotkey (scoping to current monitor).");
-                SetGlobalOcrMode(!_globalOcrMode, _screenBounds);
+                Log.Info("OCR mode toggled via hotkey (scoping to local screens).");
+                SetGlobalOcrMode(!_globalOcrMode);
                 e.Handled = true;
             }
         }
 
-        private static void SetGlobalOcrMode(bool enable, PixelRect targetRegion)
+        private static void SetGlobalOcrMode(bool enable)
         {
             _globalOcrMode = enable;
-            if (enable)
-            {
-                StartSharedPreemptiveOcr(targetRegion);
-            }
-            else
-            {
-                CancelSharedPreemptiveOcr();
-            }
 
             List<CaptureWindow> windows;
             lock (_activeWindows) { windows = _activeWindows.ToList(); }
@@ -489,7 +486,7 @@ namespace snapvox.forms
                 if (_ocrScanResult == null && _ocrCts == null)
                 {
                     _ocrCts = new CancellationTokenSource();
-                    _ocrTask = ObserveSharedPreemptiveOcrAsync(_ocrCts);
+                    _ocrTask = ObserveLocalPreemptiveOcrAsync(_ocrCts);
                 }
                 else if (_ocrScanResult == null && _ocrProcessingStatus != null)
                 {
@@ -503,7 +500,7 @@ namespace snapvox.forms
                 _ocrText.Text = "T = Exit text capture";
                 _ocrText.Foreground = Brushes.White;
             }
-            Cursor = new Cursor(StandardCursorType.Hand);
+            Cursor = HandCursor;
             _rubberband.IsVisible = false;
             if (_highlightBorder != null) _highlightBorder.IsVisible = false;
             if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
@@ -515,7 +512,7 @@ namespace snapvox.forms
         {
             _isPainterMode = false;
             _ = StopLocalOcrAsync();
-            CancelSharedPreemptiveOcr();
+            CancelLocalPreemptiveOcr();
 
             _isDragging = false;
             _isWindowSnapActive = false;
@@ -785,47 +782,53 @@ namespace snapvox.forms
             if (double.IsNaN(canvasWidth) || canvasWidth <= 0) canvasWidth = _screenBounds.Width / Math.Max(Scaling, 1.0);
             if (double.IsNaN(canvasHeight) || canvasHeight <= 0) canvasHeight = _screenBounds.Height / Math.Max(Scaling, 1.0);
 
-            var candidates = new List<Rect>();
-            void Add(double left, double top) => candidates.Add(new Rect(left, top, magSize, magSize));
+            Rect best = new Rect();
+            double bestScore = double.MaxValue;
 
             if (avoidRect.HasValue)
             {
                 var avoid = avoidRect.Value;
-                double avoidRight = avoid.X + avoid.Width;
-                double avoidBottom = avoid.Y + avoid.Height;
+                double ar = avoid.X + avoid.Width;
+                double ab = avoid.Y + avoid.Height;
 
-                Add(avoidRight + offset, cursor.Y - magSize / 2);
-                Add(avoid.X - magSize - offset, cursor.Y - magSize / 2);
-                Add(cursor.X - magSize / 2, avoidBottom + offset);
-                Add(cursor.X - magSize / 2, avoid.Y - magSize - offset);
-                Add(avoidRight + offset, avoidBottom + offset);
-                Add(avoid.X - magSize - offset, avoidBottom + offset);
-                Add(avoidRight + offset, avoid.Y - magSize - offset);
-                Add(avoid.X - magSize - offset, avoid.Y - magSize - offset);
+                void Eval(double left, double top)
+                {
+                    Rect candidate = new Rect(left, top, magSize, magSize);
+                    Rect clamped = ClampRect(candidate, canvasWidth, canvasHeight);
+                    double overlapPenalty = avoidRect.HasValue ? RectOverlapArea(clamped, avoidRect.Value) * 100000 : 0;
+                    double clampPenalty = Distance(candidate.X, candidate.Y, clamped.X, clamped.Y) * 10;
+                    double cursorPenalty = Distance(cursor.X, cursor.Y, clamped.X + clamped.Width / 2, clamped.Y + clamped.Height / 2);
+                    double avoidBonus = avoidRect.HasValue ? RectDistance(clamped, avoidRect.Value) * 0.25 : 0;
+                    double score = overlapPenalty + clampPenalty + cursorPenalty - avoidBonus;
+                    if (score < bestScore) { bestScore = score; best = clamped; }
+                }
+
+                Eval(ar + offset, cursor.Y - magSize / 2);
+                Eval(avoid.X - magSize - offset, cursor.Y - magSize / 2);
+                Eval(cursor.X - magSize / 2, ab + offset);
+                Eval(cursor.X - magSize / 2, avoid.Y - magSize - offset);
+                Eval(ar + offset, ab + offset);
+                Eval(avoid.X - magSize - offset, ab + offset);
+                Eval(ar + offset, avoid.Y - magSize - offset);
+                Eval(avoid.X - magSize - offset, avoid.Y - magSize - offset);
             }
 
-            Add(cursor.X + offset, cursor.Y + offset);
-            Add(cursor.X - magSize - offset, cursor.Y + offset);
-            Add(cursor.X + offset, cursor.Y - magSize - offset);
-            Add(cursor.X - magSize - offset, cursor.Y - magSize - offset);
-
-            Rect best = ClampRect(candidates[0], canvasWidth, canvasHeight);
-            double bestScore = double.MaxValue;
-            foreach (var candidate in candidates)
+            void EvalDirect(double left, double top)
             {
-                var clamped = ClampRect(candidate, canvasWidth, canvasHeight);
+                Rect candidate = new Rect(left, top, magSize, magSize);
+                Rect clamped = ClampRect(candidate, canvasWidth, canvasHeight);
                 double overlapPenalty = avoidRect.HasValue ? RectOverlapArea(clamped, avoidRect.Value) * 100000 : 0;
                 double clampPenalty = Distance(candidate.X, candidate.Y, clamped.X, clamped.Y) * 10;
                 double cursorPenalty = Distance(cursor.X, cursor.Y, clamped.X + clamped.Width / 2, clamped.Y + clamped.Height / 2);
                 double avoidBonus = avoidRect.HasValue ? RectDistance(clamped, avoidRect.Value) * 0.25 : 0;
                 double score = overlapPenalty + clampPenalty + cursorPenalty - avoidBonus;
-
-                if (score < bestScore)
-                {
-                    bestScore = score;
-                    best = clamped;
-                }
+                if (score < bestScore) { bestScore = score; best = clamped; }
             }
+
+            EvalDirect(cursor.X + offset, cursor.Y + offset);
+            EvalDirect(cursor.X - magSize - offset, cursor.Y + offset);
+            EvalDirect(cursor.X + offset, cursor.Y - magSize - offset);
+            EvalDirect(cursor.X - magSize - offset, cursor.Y - magSize - offset);
 
             return best;
         }
@@ -903,10 +906,14 @@ namespace snapvox.forms
                 return;
             }
 
-            if (!isIntentionalDrag && _isWindowSnapActive && !_snappedRect.IsEmpty)
+            if (!isIntentionalDrag)
             {
-                StartCaptureAndClose(_snappedRect);
-                return;
+                CheckMagneticSnap(_startPoint);
+                if (_isWindowSnapActive && !_snappedRect.IsEmpty)
+                {
+                    StartCaptureAndClose(_snappedRect);
+                    return;
+                }
             }
 
             if (_isWindowSnapActive && _snappedRect.Width > 0 && isIntentionalDrag) { StartCaptureAndClose(_snappedRect); return; }
@@ -928,7 +935,6 @@ namespace snapvox.forms
 
         private static async Task CloseAllCaptureOverlaysAsync()
         {
-            CancelSharedPreemptiveOcr();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 List<CaptureWindow> toClose;
@@ -940,6 +946,7 @@ namespace snapvox.forms
 
                 foreach (var window in toClose)
                 {
+                    window.CancelLocalPreemptiveOcr();
                     window._isWindowOpen = false;
                     window.Close();
                 }

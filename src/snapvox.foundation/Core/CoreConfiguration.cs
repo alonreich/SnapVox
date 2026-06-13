@@ -40,12 +40,15 @@ namespace snapvox.foundation.core
 
         [IniProperty("FullscreenHotkey", Description = "Hotkey for starting the fullscreen capture", DefaultValue = "Ctrl + PrintScreen")]
         public string FullscreenHotkey { get; set; } = "Ctrl + PrintScreen";
+        
+        [IniProperty("LastregionHotkey", Description = "Hotkey for starting the last region capture", DefaultValue = "")]
+        public string LastregionHotkey { get; set; } = "";
 
-        [IniProperty("LastregionHotkey", Description = "Hotkey for starting the last region capture", DefaultValue = "None")]
-        public string LastregionHotkey { get; set; } = "None";
+        [IniProperty("ClipboardHotkey", Description = "Hotkey for starting capture from clipboard", DefaultValue = "")]
+        public string ClipboardHotkey { get; set; } = "";
 
-        [IniProperty("ClipboardHotkey", Description = "Hotkey for opening the clipboard contents into the editor", ExcludeIfNull = true)]
-        public string ClipboardHotkey { get; set; } = "None";
+        [IniProperty("TextToolThickness", Description = "Default thickness for Text tool", DefaultValue = "2.0")]
+        public double TextToolThickness { get; set; } = 2.0;
 
         [IniProperty("IsFirstLaunch", Description = "Is this the first time launch?", DefaultValue = "true")]
         public bool IsFirstLaunch { get; set; } = true;
@@ -130,6 +133,9 @@ namespace snapvox.foundation.core
 
         [IniProperty("OcrEngine", Description = "English Language Default OCR Engine", DefaultValue = "Tesseract (External OCR Engine)")]
         public string OcrEngine { get; set; } = "Tesseract (External OCR Engine)";
+
+        [IniProperty("LeavePictureAsIsDuringOcr", Description = "Should the picture remain as is during OCR?", DefaultValue = "false")]
+        public bool LeavePictureAsIsDuringOcr { get; set; } = false;
 
         [IniProperty("AddFrameBorders", Description = "Add Frame Borders to Snips.", DefaultValue = "true")]
         public bool AddFrameBorders { get; set; } = true;

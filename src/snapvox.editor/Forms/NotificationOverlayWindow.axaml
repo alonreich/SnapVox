@@ -20,20 +20,23 @@
         <Border.Effect>
             <DropShadowEffect BlurRadius="12" Opacity="0.35" OffsetX="0" OffsetY="4" />
         </Border.Effect>
-        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-            <TextBlock Name="NotificationIcon"
-                       Text="&#xE73E;"
-                       FontFamily="Segoe MDL2 Assets"
-                       Foreground="White"
-                       VerticalAlignment="Center"
-                       FontSize="28"/>
-            <TextBlock Name="NotificationText"
-                       Foreground="White"
-                       FontSize="22"
-                       FontWeight="SemiBold"
-                       VerticalAlignment="Center"
-                       TextWrapping="Wrap"
-                       MaxWidth="360"/>
-        </StackPanel>
+        <Viewbox Name="NotificationViewbox" Stretch="Uniform" StretchDirection="Both">
+            <StackPanel Name="NotificationPanel" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                <TextBlock Name="NotificationIcon"
+                           Text="&#xE73E;"
+                           FontFamily="Segoe MDL2 Assets"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="28"/>
+                <TextBlock Name="NotificationText"
+                           Foreground="White"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           TextWrapping="NoWrap"/>
+            </StackPanel>
+        </Viewbox>
     </Border>
 </Window>

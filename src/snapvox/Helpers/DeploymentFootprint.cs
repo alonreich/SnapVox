@@ -17,12 +17,12 @@ internal static class DeploymentFootprint
     public const string ScheduledTaskName = "snapvox";
     public const string InstallerMutexName = @"Global\snapvox_Installer";
     public const string ProgId = "snapvox.editor.1";
-    public const string OpenWithShellName = "Open with snapvox";
-    public const string DisplayName = "snapvox";
+    public const string OpenWithShellName = "Open with SnapVox";
+    public const string DisplayName = "SnapVox";
 
-    public const string UninstallKeyName = "snapvox";
+    public const string UninstallKeyName = "SnapVox";
     public const string UninstallKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\" + UninstallKeyName;
-    public const string AppRegistryKeyPath = @"SOFTWARE\snapvox";
+    public const string AppRegistryKeyPath = @"SOFTWARE\SnapVox";
 
     public static readonly string ProgramDataFolder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),

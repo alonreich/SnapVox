@@ -194,9 +194,12 @@ namespace snapvox
                 if (icons != null && icons.Count > 0)
                 {
                     _trayIcon = icons[0];
-                    _blueIcon = _trayIcon.Icon;
                     try
                     {
+                        using var blueAssetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
+                        _blueIcon = new WindowIcon(blueAssetLoader);
+                        _trayIcon.Icon = _blueIcon;
+
                         using var assetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
                         using var avaloniaBitmap = new Avalonia.Media.Imaging.Bitmap(assetLoader);
                         
@@ -219,12 +222,10 @@ namespace snapvox
                                     row[i].Z = b * 0.2f;
                                 } 
                             }));
-                            using (var ms = new MemoryStream()) 
-                            { 
-                                image.Save(ms, new PngEncoder()); 
-                                ms.Seek(0, SeekOrigin.Begin); 
-                                _redIcon = new WindowIcon(ms); 
-                            }
+                            var ms = new MemoryStream(); 
+                            image.Save(ms, new PngEncoder()); 
+                            ms.Seek(0, SeekOrigin.Begin); 
+                            _redIcon = new WindowIcon(ms); 
                         }
                     }
                     catch (Exception ex)
@@ -234,10 +235,19 @@ namespace snapvox
                 }
             });
         }
+        private static bool _forceRedState = false;
+
+        public static void ForceRedTrayIcon(bool force)
+        {
+            _forceRedState = force;
+            if (!force) SetTrayIconState(false);
+            else SetTrayIconState(true);
+        }
 
         public static void SetTrayIconState(bool active)
         {
             if (_trayIcon == null) return;
+            if (!active && _forceRedState) return;
             Dispatcher.UIThread.Post(() => { _trayIcon.Icon = active && _redIcon != null ? _redIcon : _blueIcon; });
         }
 

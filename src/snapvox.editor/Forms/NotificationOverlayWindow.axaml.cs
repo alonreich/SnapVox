@@ -1,26 +1,16 @@
-﻿using Avalonia;
-
+using Avalonia;
+using Avalonia.Platform;
 using Avalonia.Controls;
-
 using Avalonia.Controls.ApplicationLifetimes;
-
 using Avalonia.Markup.Xaml;
-
 using Avalonia.Media;
-
 using Avalonia.Threading;
-
 using System;
-
 using System.Linq;
-
 using System.Threading.Tasks;
 
-
 namespace snapvox.editor.forms
-
 {
-
     public partial class NotificationOverlayWindow : Window
     {
         private static int _activeToasts = 0;
@@ -31,39 +21,76 @@ namespace snapvox.editor.forms
             InitializeComponent();
         }
 
-
         private void InitializeComponent()
-
         {
-
             AvaloniaXamlLoader.Load(this);
-
         }
-
 
         public static void ShowNotification(string message, Window owner)
         {
+            var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+            var contextWindow = owner ?? desktop?.Windows.FirstOrDefault(w => w.IsActive) ?? desktop?.Windows.FirstOrDefault();
+            if (contextWindow == null) return;
+            
+            Screen targetScreen;
+            try
+            {
+                targetScreen = contextWindow.Screens.ScreenFromWindow(contextWindow) ?? contextWindow.Screens.Primary;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (targetScreen == null) return;
+
             Dispatcher.UIThread.Post(async () =>
             {
-                var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
-                var contextWindow = owner ?? desktop?.Windows.FirstOrDefault(w => w.IsActive) ?? desktop?.Windows.FirstOrDefault();
-                if (contextWindow == null) return;
-                var targetScreen = contextWindow.Screens.ScreenFromWindow(contextWindow) ?? contextWindow.Screens.Primary;
-                if (targetScreen == null) return;
 
                 var window = new NotificationOverlayWindow();
                 var textBlock = window.FindControl<TextBlock>("NotificationText");
                 var icon = window.FindControl<TextBlock>("NotificationIcon");
-                if (textBlock != null) textBlock.Text = message;
+                var chrome = window.FindControl<Border>("NotificationChrome");
+                var panel = window.FindControl<StackPanel>("NotificationPanel");
+                
+                var work = targetScreen.WorkingArea;
+                double scaleFactor = Math.Sqrt(0.07);
+                double targetWidth = work.Width * scaleFactor;
+                double targetHeight = work.Height * scaleFactor;
+                
+                window.SizeToContent = SizeToContent.Manual;
+                window.Width = targetWidth;
+                window.Height = targetHeight;
+                
+                if (chrome != null)
+                {
+                    chrome.Background = new SolidColorBrush(Color.FromArgb(220, 20, 20, 20));
+                    chrome.Width = targetWidth;
+                    chrome.Height = targetHeight;
+                    chrome.Padding = new Avalonia.Thickness(targetWidth * 0.05, targetHeight * 0.05);
+                    chrome.CornerRadius = new CornerRadius(targetHeight * 0.1);
+                }
+                
+                if (panel != null)
+                {
+                    panel.Orientation = Avalonia.Layout.Orientation.Vertical;
+                    panel.Spacing = targetHeight * 0.1;
+                    panel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+                    panel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
+                }
+                
+                if (textBlock != null) 
+                {
+                    textBlock.Text = message;
+                    textBlock.TextAlignment = Avalonia.Media.TextAlignment.Center;
+                }
 
                 window.Show();
-                window.UpdateLayout();
 
-                var bounds = window.Bounds;
-                var work = targetScreen.WorkingArea;
+                // Center manually after Show() so actual bounds are known
                 window.Position = new PixelPoint(
-                    work.X + (work.Width - (int)bounds.Width) / 2,
-                    work.Y + (work.Height - (int)bounds.Height) / 2);
+                    work.X + (work.Width - (int)window.Bounds.Width) / 2,
+                    work.Y + (work.Height - (int)window.Bounds.Height) / 2);
 
                 var whiteBrush = Brushes.White;
                 var redBrush = new SolidColorBrush(Color.Parse("#E00000"));
@@ -83,11 +110,42 @@ namespace snapvox.editor.forms
 
         public static void ShowLightToast(string message, Window owner)
         {
+            var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+            var contextWindow = owner ?? desktop?.Windows.FirstOrDefault(w => w.IsActive) ?? desktop?.Windows.FirstOrDefault();
+            if (contextWindow == null) return;
+
+            Screen targetScreen;
+            try
+            {
+                targetScreen = contextWindow.Screens.ScreenFromWindow(contextWindow) ?? contextWindow.Screens.Primary;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (targetScreen == null) return;
+            var work = targetScreen.WorkingArea;
+
+            // Capture owner bounds and position safely outside UIThread.Post just in case
+            var ownerBounds = new Rect();
+            var ownerPos = new PixelPoint();
+            try {
+                ownerBounds = contextWindow.Bounds;
+                ownerPos = contextWindow.Position;
+            } catch { }
+
+            // Safe reference for SnipBorder Top (evaluated outside because it queries controls)
+            double? snipTopValue = null;
+            try {
+                var snipBorder = contextWindow.FindControl<Control>("SnipBorder");
+                if (snipBorder != null) {
+                    snipTopValue = snipBorder.TranslatePoint(new Point(0, 0), contextWindow)?.Y;
+                }
+            } catch { }
+
             Dispatcher.UIThread.Post(async () =>
             {
-                var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
-                var contextWindow = owner ?? desktop?.Windows.FirstOrDefault(w => w.IsActive) ?? desktop?.Windows.FirstOrDefault();
-                if (contextWindow == null) return;
 
                 int offset;
                 lock(_toastLock) { offset = _activeToasts++; }
@@ -96,6 +154,8 @@ namespace snapvox.editor.forms
                 var chrome = window.FindControl<Border>("NotificationChrome");
                 var textBlock = window.FindControl<TextBlock>("NotificationText");
                 var icon = window.FindControl<TextBlock>("NotificationIcon");
+                var viewbox = window.FindControl<Viewbox>("NotificationViewbox");
+                if (viewbox != null) viewbox.Stretch = Avalonia.Media.Stretch.None;
                 if (chrome != null)
                 {
                     chrome.Background = new SolidColorBrush(Color.Parse("#CC2D2D30"));
@@ -120,34 +180,24 @@ namespace snapvox.editor.forms
                 window.UpdateLayout();
 
                 var bounds = window.Bounds;
-                var ownerBounds = contextWindow.Bounds;
-                var ownerPos = contextWindow.Position;
-                
                 bool positioned = false;
-                var snipBorder = contextWindow.FindControl<Control>("SnipBorder");
-                if (snipBorder != null)
+                if (snipTopValue.HasValue)
                 {
-                    var snipTop = snipBorder.TranslatePoint(new Point(0, 0), contextWindow);
-                    if (snipTop.HasValue)
+                    double toolbarBottom = 92; // Approx 32 title + 60 toolbar
+                    double voidHeight = snipTopValue.Value - toolbarBottom;
+                    if (voidHeight > bounds.Height + 20)
                     {
-                        double toolbarBottom = 92; // Approx 32 title + 60 toolbar
-                        double voidHeight = snipTop.Value.Y - toolbarBottom;
-                        if (voidHeight > bounds.Height + 20)
-                        {
-                            // Place in the top void
-                            double targetY = ownerPos.Y + toolbarBottom + (voidHeight - bounds.Height) / 2 + (offset * (bounds.Height + 5));
-                            window.Position = new PixelPoint(
-                                ownerPos.X + (int)(ownerBounds.Width - bounds.Width) / 2,
-                                (int)targetY);
-                            positioned = true;
-                        }
+                        // Place in the top void
+                        double targetY = ownerPos.Y + toolbarBottom + (voidHeight - bounds.Height) / 2 + (offset * (bounds.Height + 5));
+                        window.Position = new PixelPoint(
+                            ownerPos.X + (int)(ownerBounds.Width - bounds.Width) / 2,
+                            (int)targetY);
+                        positioned = true;
                     }
                 }
 
                 if (!positioned)
                 {
-                    var targetScreen = contextWindow.Screens.ScreenFromWindow(contextWindow) ?? contextWindow.Screens.Primary;
-                    var work = targetScreen.WorkingArea;
                     window.Position = new PixelPoint(
                         work.X + (work.Width - (int)bounds.Width) / 2,
                         work.Y + (work.Height - (int)bounds.Height) / 2 + 100 + (offset * (int)(bounds.Height + 5)));

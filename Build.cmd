@@ -30,7 +30,7 @@ if not defined NUGET_PACKAGES set "NUGET_PACKAGES=%USERPROFILE%\.nuget\packages"
 
 set "PROJECT_FILE=src\SnapVox\SnapVox.csproj"
 
-set "PUBLISH_AOT_ARGS=-p:PublishAot=true -p:TreatWarningsAsErrors=true"
+set "PUBLISH_BASE_ARGS=-p:TreatWarningsAsErrors=true"
 
 set "DOTNET_LOG_ARGS=-consoleLoggerParameters:Summary;NoItemAndPropertyList"
 
@@ -58,7 +58,7 @@ echo BUILDING BRANCH 1: Native
 
 echo ###########################################################
 
-call :BUILD_STANDALONE "Branch1" "SnapVox" "USE_TESSERACT=false"
+call :BUILD_STANDALONE "Branch1" "SnapVox" "USE_TESSERACT=false" "-p:PublishAot=true"
 
 if errorlevel 1 exit /b 1
 
@@ -72,7 +72,7 @@ echo BUILDING BRANCH 2: Tesseract (Standard Deployment)
 
 echo ###########################################################
 
-call :BUILD_STANDALONE "Branch2" "SnapVox_tesseract" "USE_TESSERACT=true"
+call :BUILD_STANDALONE "Branch2" "SnapVox_tesseract" "USE_TESSERACT=true" "-p:PublishAot=false -p:SelfContained=true"
 
 if errorlevel 1 exit /b 1
 
@@ -112,6 +112,7 @@ set "BRANCH_NAME=%~1"
 set "OUTPUT_NAME=%~2"
 
 set "EXTRA_ARGS=%~3"
+set "AOT_ARGS=%~4"
 
 set "STAGING_DIR=.\obj\StandaloneTemp\%BRANCH_NAME%_staging"
 
@@ -131,7 +132,7 @@ if exist "src\SnapVox\payload.zip" del /f /q "src\SnapVox\payload.zip"
 
 echo [%BRANCH_NAME%] 2. Publishing raw payload to staging...
 
-dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_AOT_ARGS% -p:%EXTRA_ARGS% -o "%STAGING_DIR%" %DOTNET_LOG_ARGS%
+dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% %AOT_ARGS% -p:%EXTRA_ARGS% -o "%STAGING_DIR%" %DOTNET_LOG_ARGS%
 
 if errorlevel 1 exit /b 1
 
@@ -145,7 +146,7 @@ powershell -NoProfile -Command "Compress-Archive -Path '%STAGING_DIR%\*' -Destin
 
 echo [%BRANCH_NAME%] 4. Publishing standalone installer...
 
-dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_AOT_ARGS% -p:%EXTRA_ARGS% -o "%FINAL_DIR%" %DOTNET_LOG_ARGS%
+dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% -p:PublishAot=true -p:%EXTRA_ARGS% -o "%FINAL_DIR%" %DOTNET_LOG_ARGS%
 
 if errorlevel 1 exit /b 1
 

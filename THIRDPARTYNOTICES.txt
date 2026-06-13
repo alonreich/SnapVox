@@ -1,0 +1,89 @@
+SnapVox uses the following third-party open-source libraries and components. We gratefully acknowledge their contributions.
+
+========================================================================
+1. Greenshot
+========================================================================
+Portions of the native capture logic and bounds calculations in SnapVox 
+are adapted from Greenshot, which is licensed under the GNU General Public License (GPL).
+SnapVox is released under the GNU General Public License v3.0 (GPLv3) to comply with this.
+For the full GPL license text, please see the LICENSE.txt file in this repository.
+Source: https://getgreenshot.org/
+
+========================================================================
+2. Avalonia UI
+========================================================================
+Avalonia is licensed under the MIT License.
+
+Copyright (c) The Avalonia Project
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+Source: https://github.com/AvaloniaUI/Avalonia
+
+========================================================================
+3. SixLabors.ImageSharp (v2.x)
+========================================================================
+SixLabors.ImageSharp is licensed under the SixLabors Split License.
+Because SnapVox is distributed under an OSI-approved open source license (GPLv3), 
+ImageSharp is utilized under the terms of the Apache License, Version 2.0.
+
+Copyright (c) Six Labors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Source: https://github.com/SixLabors/ImageSharp
+
+========================================================================
+4. Tesseract OCR & CharlesWeld / Tesseract (.NET Wrapper)
+========================================================================
+The Tesseract OCR engine and its .NET Wrapper are licensed under the 
+Apache License, Version 2.0.
+
+Copyright 2012 Charles Weld (for the .NET Wrapper)
+Copyright 2006 Google Inc. and others (for the Tesseract Engine)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Source: https://github.com/charlesw/tesseract
+Source: https://github.com/tesseract-ocr/tesseract
+
+========================================================================
+5. log4net
+========================================================================
+log4net is licensed under the Apache License, Version 2.0.
+
+Copyright 2004-2022 The Apache Software Foundation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Source: https://github.com/apache/logging-log4net

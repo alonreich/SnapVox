@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -21,7 +21,7 @@ namespace snapvox.helpers;
 
 internal static class DeploymentLifecycle
 {
-    private const int DeleteRetries = 15;
+    private const int DeleteRetries = 3;
     private static readonly string SessionTempFolder = Path.Combine(DeploymentFootprint.DeploymentTempRoot, "Staging_" + Process.GetCurrentProcess().Id);
     private static int _pendingRebootDeletes;
 
@@ -201,14 +201,14 @@ internal static class DeploymentLifecycle
             
             await ReportAsync(progress, logger, 100, "UNINSTALL", status, detail, ct).ConfigureAwait(false);
             
-            await Task.Delay(3000, ct).ConfigureAwait(false);
+            await Task.Delay(500, ct).ConfigureAwait(false);
             return 0;
         }
         catch (Exception ex)
         {
             BootstrapDebug.Log("Worker FATAL: " + ex);
             await ReportAsync(progress, logger, 100, "FAILURE", "ERROR", ex.Message, ct, ex).ConfigureAwait(false);
-            await Task.Delay(5000, ct).ConfigureAwait(false);
+            await Task.Delay(1000, ct).ConfigureAwait(false);
             return 1;
         }
         finally
@@ -227,7 +227,7 @@ internal static class DeploymentLifecycle
 
         await ReportAsync(progress, logger, start + 5, "CLEANUP", "PROCESSES", "Killing all instances...", ct).ConfigureAwait(false);
         await StartupTaskHelper.KillAllProcessesAsync(s => progress?.Update(start + 5, s), ct).ConfigureAwait(false);
-        await Task.Delay(2000, ct).ConfigureAwait(false);
+        await Task.Delay(500, ct).ConfigureAwait(false);
 
         await ReportAsync(progress, logger, start + 10, "CLEANUP", "TASKS", "Removing triggers...", ct).ConfigureAwait(false);
         await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000, logger, ct).ConfigureAwait(false);
@@ -643,8 +643,8 @@ internal static class DeploymentLifecycle
 
     private static async Task CreateStartMenuShortcutAsync(DeploymentLogger logger, CancellationToken ct)
     {
-        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "snapvox.lnk");
-        await ShellLinkWriter.CreateAsync(path, StartupTaskHelper.InstallPath, StartupTaskHelper.InstallFolder, StartupTaskHelper.InstallPath + ",0", "snapvox", ct).ConfigureAwait(false);
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "SnapVox.lnk");
+        await ShellLinkWriter.CreateAsync(path, StartupTaskHelper.InstallPath, StartupTaskHelper.InstallFolder, StartupTaskHelper.InstallPath + ",0", "SnapVox", ct).ConfigureAwait(false);
         await logger.LogAsync("SHELL", "SHORTCUT", path, ct).ConfigureAwait(false);
     }
 

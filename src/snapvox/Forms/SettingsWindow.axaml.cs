@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -35,6 +35,9 @@ namespace snapvox.Forms
 
             var chkAddBorder = this.FindControl<CheckBox>("ChkAddBorder");
             if (chkAddBorder != null) chkAddBorder.IsChecked = _config.AddFrameBorders;
+
+            var chkLeavePictureAsIs = this.FindControl<CheckBox>("ChkLeavePictureAsIs");
+            if (chkLeavePictureAsIs != null) chkLeavePictureAsIs.IsChecked = _config.LeavePictureAsIsDuringOcr;
 
             var ocrPanel = this.FindControl<StackPanel>("OcrEnginePanel");
             var cboOcrEngine = this.FindControl<ComboBox>("CboOcrEngine");
@@ -222,20 +225,33 @@ namespace snapvox.Forms
 
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
-            var globalKeys = new[] { "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey" };
-            foreach (var name in globalKeys)
+            try
+            {
+                var globalKeys = new[] { "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey" };
+                foreach (var name in globalKeys)
             {
                 var tb = this.FindControl<TextBox>(name);
-                if (tb != null && tb.Background is SolidColorBrush scb && scb.Color.R > 200)
-                {
-                    StartupTaskHelper.ShowForegroundMessageBox(
-                        $"The shortcut key of {tb.Text} is already taken by another app. Please release this key from the other app or select a different key and try again.",
-                        "Hotkey Conflict", 
-                        MessageBoxButtons.OK, 
-                        MessageBoxIcon.Error);
-                    return;
+                    var scb = tb.Background as SolidColorBrush;
+                    if (scb == null && tb.Background != null)
+                    {
+                        var prop = tb.Background.GetType().GetProperty("Color");
+                        if (prop != null)
+                        {
+                            var colorVal = (Avalonia.Media.Color)prop.GetValue(tb.Background);
+                            scb = new SolidColorBrush(colorVal);
+                        }
+                    }
+
+                    if (tb != null && scb != null && scb.Color.A > 0 && scb.Color.R > 200 && scb.Color.G < 100)
+                    {
+                        StartupTaskHelper.ShowForegroundMessageBox(
+                            $"The shortcut key of {tb.Text} is already taken by another app. Please release this key from the other app or select a different key and try again.",
+                            "Hotkey Conflict", 
+                            MessageBoxButtons.OK, 
+                            MessageBoxIcon.Error);
+                        return;
+                    }
                 }
-            }
 
             var chkKeepBackup = this.FindControl<CheckBox>("ChkKeepBackup");
             if (chkKeepBackup != null) _config.KeepBackup = chkKeepBackup.IsChecked ?? true;
@@ -248,6 +264,9 @@ namespace snapvox.Forms
 
             var chkAddBorder = this.FindControl<CheckBox>("ChkAddBorder");
             if (chkAddBorder != null) _config.AddFrameBorders = chkAddBorder.IsChecked ?? true;
+
+            var chkLeavePictureAsIs = this.FindControl<CheckBox>("ChkLeavePictureAsIs");
+            if (chkLeavePictureAsIs != null) _config.LeavePictureAsIsDuringOcr = chkLeavePictureAsIs.IsChecked ?? false;
 
             var cboOcrEngine = this.FindControl<ComboBox>("CboOcrEngine");
             if (cboOcrEngine != null && cboOcrEngine.IsVisible && cboOcrEngine.SelectedItem != null)
@@ -281,15 +300,21 @@ namespace snapvox.Forms
             _config.LastregionHotkey = this.FindControl<TextBox>("TxtLastRegionKey")?.Text ?? _config.LastregionHotkey;
             _config.ClipboardHotkey = this.FindControl<TextBox>("TxtClipboardKey")?.Text ?? _config.ClipboardHotkey;
 
-            IniConfig.Save();
-            
-            if (oldRegion != _config.RegionHotkey || oldWindow != _config.WindowHotkey || oldFull != _config.FullscreenHotkey || oldLast != _config.LastregionHotkey || oldClip != _config.ClipboardHotkey)
-            {
-                HotkeyManager.Stop();
-                HotkeyManager.Start();
+                IniConfig.Save();
+                
+                if (oldRegion != _config.RegionHotkey || oldWindow != _config.WindowHotkey || oldFull != _config.FullscreenHotkey || oldLast != _config.LastregionHotkey || oldClip != _config.ClipboardHotkey)
+                {
+                    HotkeyManager.Stop();
+                    HotkeyManager.Start();
+                }
+                
+                OverlayHelper.ShowNotification("Settings Saved Successfully", this);
+                Close();
             }
-            
-            Close();
+            catch (System.Exception ex)
+            {
+                StartupTaskHelper.ShowForegroundMessageBox($"Error saving settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 }

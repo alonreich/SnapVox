@@ -16,12 +16,11 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
     <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.2.0" />
     <PackageReference Include="Avalonia.Svg.Skia" Version="11.2.0" />
-    <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="1.0.0" />
-    <PackageReference Include="System.Resources.Extensions" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <AvaloniaResource Include="..\..\icons\*.svg" Link="Icons\%(Filename)%(Extension)" />
+    <AvaloniaResource Include="Drawing\Emoji\*.ttf" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,188 +1,852 @@
-SnapVox v3.0 - "The Ghost" Reality Map (Avalonia + ImageSharp Edition)
-================================================================================
-
-SYNCHRONIZED BRANCHES MANDATE
-----------------------------
-CRITICAL: The software is maintained as two functional branches from a SINGLE codebase:
-1. Branch 1: Native (Windows OCR Engine).
-2. Branch 2: Compiled with Embedded Tesseract OCR Engine (LTS/Offline).
-
-ENGINEERING STANDARD:
-Every change (UI, logic, timers, overlay effects, editing tools) MUST be applied to both branches simultaneously.
-Agents MUST ensure that features remain 100% synchronized between branches, except for the underlying OCR engine implementation itself.
-Both branches utilize the high-performance SixLabors.ImageSharp pipeline for image manipulation and OCR pre-processing.
-
-GOAL & PURPOSE
---------------
-SnapVox is a professional-grade, ultra-fast screen capture and OCR tool optimized for .NET 9 Native AOT.
-It serves users who need rapid imaging workflows with 100% privacy (zero cloud dependencies).
-The application follows a "Ghost" philosophy: it stays out of sight until triggered, performs tasks with sub-millisecond responsiveness, and is strictly dependency-free.
-
-CORE MANDATES (THE "GHOST" RULES)
----------------------------------
-1. **Zero UI Friction:** Tray icon click triggers capture immediately. No splash screens.
-2. **Zero WinForms/GDI+:** No trace of legacy .NET UI wrappers. Pure Avalonia UI + SixLabors.ImageSharp.
-3. **Symbol-Only UI:** The Editor uses standard Windows "Segoe MDL2 Assets" symbols. No image-loading overhead.
-4. **Thin-Client Interop:** Use direct Win32/C++ level calls (CsWin32) for performance, bypassing "heavy" .NET wrappers.
-5. **Native Finality:** Compiled to machine code via .NET 9 Native AOT. No JIT, no runtime required.
-6. **Async Everything (Engine Audit Parity):** All I/O, OCR, and cleanup operations MUST be non-blocking. 
-   - No `Thread.Sleep`. Use `Task.Delay`.
-   - No `.Result` or `.Wait()`. Use `await` or `IAsyncDisposable` / `DisposeAsync`.
-   - Both OCR engines must validate required language packs (EN/HE) before execution.
-7. **One-Click Sequential Finality (Zero Prompts):** The editor core is "Zero-Dialog". Only the following three actions trigger the 1.0-second blinking visual overlay before automatically closing the editor window:
-   - "Save Image" (Ctrl+S): Saves 100% quality JPG to user's `Downloads` folder AND `%TMP%\SnapVox\` immediately.
-   - "Copy to Clipboard" (Ctrl+C): Copies `CF_DIB` to clipboard AND saves 100% quality JPG to `%TMP%\SnapVox\`.
-   - "OCR": Copies text to clipboard, saves `.txt` to `%TMP%\SnapVox\`, and opens in Notepad.
-   - **Soft-Fail Fallback:** If the `Downloads` folder is missing/unwritable, popup a folder selection dialog ONCE, memorize the choice, and resume zero-prompt behavior for all future saves.
-8. **Hardcoded JPG-Only Output:**
-   - PNG ingestion is allowed (opening files or injecting from clipboard).
-   - ALL output (manual saves, 24-hour backup, automated history) is ALWAYS `.jpg`. 
-   - Quality is ALWAYS 100%. No quality dialogs.
-9. **Automated 24-Hour Retention:**
-   - **Immediate Raw Backup:** EVERY capture (region, full, window) immediately saves a raw 100% quality JPG to `%TMP%\SnapVox\` before any editing begins.
-   - All artifacts (images, text) purged from `%TMP%\SnapVox\` after 24 hours.
-   - Cleanup task runs on startup and every 4 hours to purge the `%TMP%\SnapVox\` directory of expired files.
-10. **Folder Structure Mandates:**
-   - Persistent Install: `C:\Program Files\SnapVox\`
-   - Persistent Logs: `%PROGRAMDATA%\SnapVox\`
-   - User Config: `%AppData%\SnapVox\`
-   - Local App Data: `%LocalAppData%\SnapVox\`
-   - **Unified Temporary Root:** `%TMP%\SnapVox\`
-     - All user-initiated saves, background snapshots, and OCR outputs MUST use this path for 24-hour retention.
-     - Subfolder `\Lifecycle\`: Used for installer unpacking and self-cleanup.
-     - Subfolder `\Runtime\`: Used for transient DLL extraction.
-   - **Installation Log:** Saved EXCLUSIVELY to a standalone file at `%TMP%\SnapVox_Installation.log`.
-11. **Visual Notification Overlays:**
-   - Any successful download or OCR action MUST trigger a **blinking Red/White/Blue overlay** for 1.0 seconds (4x 250ms cycles).
-   - Text variants: "IMAGE SAVED & COPIED" and "TEXT COPIED & SAVED".
-
-TELEMETRY & LOGGING MANDATE (SINGLE SOURCE OF TRUTH)
-----------------------------------------------------
-1. **Comprehensive User Action Audit:** Secret performance trackers (RAM/CPU/Thread tracing) are strictly forbidden. Instead, the primary application logger MUST capture 100% of user interactions.
-2. **Recorded Events:** Screenshot coordinates, keyboard keys pressed, action cancellations, editor initializations, picture saves/downloads, and precise shape/object placements (including X/Y canvas coordinates).
-3. **Success/Fail Finality:** Every logged action must culminate in a clear `[SUCCESS]` or `[FAIL]` status. Failures must include explicit, detailed exception data identifying the root cause. This log operates as the absolute single source of truth for all troubleshooting.
-4. **Build Logging Tracking:** Compilation execution and output MUST be tracked via a `.\build.log` file at the repository root.
-
-DEPLOYMENT & PACKAGING MANDATES (CRITICAL)
-------------------------------------------
-1. **Single-File Installer:** The deployment output for EACH branch MUST be a single Native AOT `.exe` installer file.
-2. **DLL Persistence:** Any extracted permanent `.dll` dependencies MUST reside exclusively in `C:\Program Files\SnapVox\`.
-3. **Unpacked Persistence:** When the single `.exe` installer is run, it MUST unpack its payload into: `C:\Program Files\SnapVox\`
-
-FUNCTIONAL SPECIFICATIONS (THE USER EXPERIENCE)
------------------------------------------------
-1. **Hotkey Triggers:**
-   - `PrintScreen`: Starts custom rubberband region selection.
-   - `Alt + PrintScreen`: Captures EXACTLY the current active window/app size only.
-   - **High-Compatibility Copy:** Every capture is AUTOMATICALLY pushed to the clipboard as raw `CF_DIB` data for seamless pasting.
-2. **Visual Feedback & Collision Mechanics:**
-   - Systray Icon: Turns **RED** immediately upon entering capture mode. Returns to **BLUE** when finished.
-   - **Intelligent Cursor Dodging:** On-screen instruction banners actively calculate bounding-box collisions and jump away from the mouse cursor to ensure the capture area is never obstructed.
-3. **Unified Magnifier Engine:**
-   - Shared circular UI style for both region selection and color sampler.
-   - **Smart-Flip Region Selection:** Lens stays 30px diagonally away from cursor, "flipping" quadrants to avoid covering the capture area. 2x zoom.
-   - **Color Sampler Magnifier:** Fixed-center logic with 8x zoom, live hex label, precise red crosshair, and full multi-monitor support.
-4. **Magnetic Rubberband Snapping:**
-   - Cursor over window triggers a high-visibility **Blue Highlight Border** snap with a strict **10-pixel proximity threshold**.
-   - Initiating the rubberband selection directly on a window title area renders a dynamic "ghost effect" preview.
-   - Coordinate accuracy is 100% DPI-aware, applying `RenderScaling` to logical Avalonia coordinates.
-5. **OCR Painter Mode & Preemptive Caching (The "T" Toggle):** - Hitting `T` during selection toggles "OCR Painter" mode.
-   - **Preemptive Background Execution:** Toggling the mode instantly triggers silent OCR across the entire virtual desktop before the region is drawn, guaranteeing zero-latency text extraction upon selection release.
-6. **In-Editor OCR:** Clicking OCR symbol extracts text, copies to clipboard, opens Notepad, and saves `.txt` to `%TMP%\SnapVox\`.
-7. **Intelligent Editor Display:** Implements parallelSniplets, Cascading Positioning, Majority Monitor Centering, and Adaptive Sizing to ensure non-overlapping, context-aware window placement across multiple displays.
-8. **Download Workflow:** Clicking "Download" saves 100% JPG to `%TMP%\SnapVox\`, copies to Clipboard as `CF_DIB`, shows overlay, and closes window sequentially.
-9. **Shell "Open With" Integration (Secondary Instance Routing):** Right-clicking any image format in File Explorer and choosing "Open with SnapVox" launches the Editor directly, bypassing Tray Icon initialization. All outputs from this workflow will be strictly saved/converted to `.jpg`.
-
-V3.0 FINAL UI/UX ENHANCEMENTS (COMPLETED)
------------------------------------------
-1. **Smart-Window Capture Filter:** Recursive search (100 layers) to distinguish applications from system UI. Min: 150x150px.
-2. **Universal Clipboard Ingestion Pipeline:** Direct Win32 integration for `CF_DIB` or `PNG` headers to instantly launch Editor. PNG output remains disabled.
-3. **Engine Health & Async Integrity:** Eradicated all Sync-over-Async blocking calls. Fixed UI-thread freezes (`Task.Delay` over `Thread.Sleep`).
-4. **OCR Engine Parity:** Standardized initialization and language pack validation for both providers.
-5. **Context-Sensitive Property Control Management:** Dynamic `ThicknessPanel` reveals itself only when a relevant vector tool is active.
-6. **High-Accuracy Vector Bounding Box Normalization:** Selection indicators tightly wrap the absolute visual frame of Arrows, Lines, and FreeDraw.
-7. **Deterministic Global Zooming Engine:** Center-based scaling using `Ctrl+Scroll` via `PointerWheelChanged` tunneling.
-8. **Precision Proportional Scaling Engine:** Mathematical aspect-ratio lock for Emojis, Counters, and Text.
-9. **Input Interception for Text Commitment:** ESC, Enter, or Right-Click in a TextBox commits text instantly.
-10. **Hue-Shift Red State Feedback:** Dynamically modifies `SnapVox.ico` into vibrant red during capture mode.
-11. **Enhanced Resize Window:** Vertical slider (33% to 300%) for smooth aspect-ratio scaling.
-12. **Refined Selection Visuals:** Animated 1px Yellow dashed lines (1.5s) with End-point handles.
-13. **Structural UI Layout Prioritization:** Bottom Status Bar grants horizontal precedence over Side Toolbar.
-14. **Quadrant-Aware Context Toolbar:** Floating Duplicate/Delete buttons appear in the opposite quadrant relative to selection.
-
-PRODUCT SPECIFICATION (DETAILED REQUIREMENTS)
----------------------------------------------
-1.  **Toolbar Layout Restructuring:** Top toolbar places Crop left of Resize, OCR right. Bottom panel houses "Fill Shape" button.
-2.  **Thickness Selector:** 7 solid vertical line icons (1, 2, 3, 5, 8, 12, 16px). Active highlighted with 2px White border.
-3.  **Vertical Toolbar Scrolling & Organization:** Wrapped in a ScrollViewer. Order: [Arrow, Line, Rect, Ellipse, FreeDraw] -> [Separator] -> [Highlight, Blur] -> [Separator] -> [Text, Counter, Emoji].
-4.  **Toolbar Theming:** Uniform `#808080` background.
-5.  **Per-Tool State Isolation:** Independent Color, Thickness, and Fill state dictionaries per tool.
-6.  **Highlight Color Customization:** Highlight tool allows any color with 80-alpha transparency.
-7.  **Pixelation Strength:** Mosaic factor set to 25. Irreversible redaction.
-8.  **FIFO Color Palette:** 6-slot history with newest-slot deduplication.
-9.  **Snippet Frame Border:** Hardcoded 3px Blue (#000080) border baked into all output.
-10. **Settings GUI Window:** 650x550 modal. Configurable hotkeys with multi-modifier support and real-time clash detection (blocks saving if conflicted).
-11. **Admin Privilege Toggle:** Non-admin by default. Toggles Task Scheduler with toast feedback.
-12. **Deployment Window Casing:** "SnapVox Setup" and "SnapVox Uninstaller".
-13. **Editor Minimum Bounds:** Hardcoded 850x650 minimum window size. Logic-level clamping.
-14. **Non-Destructive Mode Toggling:** Clicking active tool button, ESC, or Right-Click resets to Arrow cursor.
-15. **Notification Overlay System (Dual-Tier):**
-    - **Tier 1: Heavy Blinking Overlay:** 1.0s duration (4x 250ms cycles). White -> Red -> Blue. Used for critical high-value actions: OCR, Save/Download, and Copy to Clipboard.
-    - **Tier 2: Lightweight Yellow Toast:** Fades in/out over 1.0s. Solid Yellow text. Used for frequent minor actions: Shape placement, resizing, undo/redo, crop, color/fill/thickness updates.
-16. **Installer Conflict Heuristics:** Scans 50+ apps (Greenshot, Snagit). Halts install with manual removal instructions.
-17. **Tool Default Hardcoding:** 60x60 first-run size for Emojis/Counters. 8px default for Line/Arrow.
-18. **Counter Smart Contrast:** W3C luminance-based text flipping (Black/White).
-19. **Arrow Vector Integrity:** Shaft and Head points recalculate relative to bounding box during resize.
-20. **Inline Color Picker & Sampler:** Custom 2-click action picker replaces reactive picker. Strictly non-modal. Includes screen sampling.
-21. **Optional Close Confirmation:** "Warn before closing" toggle in Settings (Default: OFF). Instantly close if disabled.
-22. **Managed Temp Consistency:** Disabling backup does NOT create unmanaged files; output stays in `%TEMP%\SnapVox\Session_OCR.txt`.
-23. **OCR Branding:** Label "OCR Text Extraction" next to icon.
-24. **Compact Hotkeys:** Textboxes constrained to 80px (Editor) or 100px (Global).
-25. **Vector Endpoint Dragging:** SizeAll circular handles at Start/End points of Line/Arrow for granular adjustment.
-
-FULL PROJECT MINIMAP & NAVIGATION GUIDE
----------------------------------------
-[ROOT]
-├── Build.cmd
-├── build.log
-├── project_structure.txt
-│
-├── [developer_tools]
-│   ├── [documentation]
-│   ├── BuildLog.ps1
-│   ├── Pull_Code_Files.py
-│   └── Find_and_Remove_Comments.py
-│
-├── [compiled]
-│
-└── [src]
-    ├── NuGet.config
-    ├── snapvox.sln
-    │
-    ├── [snapvox]
-    │   ├── App.axaml
-    │   ├── SnapVox.csproj
-    │   ├── [Native]
-    │   │   └── [x64]
-    │   ├── [Forms]
-    │   └── [Helpers]
-    │
-    ├── [snapvox.foundation]
-    │   ├── snapvox.foundation.csproj
-    │   ├── log4net-embedded.xml
-    │   ├── NativeMethods.json
-    │   └── [Core]
-    │
-    ├── [snapvox.editor]
-    │   ├── snapvox.editor.csproj
-    │   ├── [icons]
-    │   ├── [Helpers]
-    │   └── [Forms]
-    │
-    ├── [snapvox.buildtasks]
-    │   └── snapvox.buildtasks.csproj
-    │
-    └── [snapvox.tests]
-        ├── snapvox.tests.csproj
-        ├── ClipboardTests.cs
-        └── RetentionTests.cs
+Folder PATH listing for volume Drive - C
+Volume serial number is 000000B9 A0AC:5D73
+C:.
+|   .gitattributes
+|   .gitignore
+|   Build.cmd
+|   build.log
+|   LICENSE.txt
+|   project_structure.txt
+|   snapvox.sln
+|   THIRDPARTYNOTICES.txt
+|   
++---compiled
+|       LICENSE.txt
+|       SnapVox.exe
+|       SnapVox_tesseract.exe
+|       
++---developer_tools
+|   |   BuildLog.ps1
+|   |   Find_and_Remove_Comments.py
+|   |   Pull_Code_Files.py
+|   |   
+|   \---documentation
+|           AOT_SUPPRESSIONS.md
+|           TECHNICAL_NOTES.md
+|           
++---icons
+|       arrow.svg
+|       circle.svg
+|       copy.svg
+|       counter.svg
+|       crop.svg
+|       custom-color.svg
+|       delete.svg
+|       download.svg
+|       emoji.svg
+|       fill.svg
+|       highlight.svg
+|       line.svg
+|       nuclear-sharp.svg
+|       ocr.svg
+|       pencil.svg
+|       pixelite.svg
+|       redo.svg
+|       resize.svg
+|       rotate_clock-wise.svg
+|       rotate_counter_clock-wise.svg
+|       square.svg
+|       text.svg
+|       undo.svg
+|       
++---obj
+|   \---StandaloneTemp
++---src
+|   |   .editorconfig
+|   |   Directory.Build.props
+|   |   Directory.Build.targets
+|   |   NuGet.config
+|   |   snapvox.sln
+|   |   SnapVox.sln.DotSettings
+|   |   version.json
+|   |   
+|   +---snapvox
+|   |   |   App.axaml
+|   |   |   App.axaml.cs
+|   |   |   log4net-release.xml
+|   |   |   snapvox.csproj
+|   |   |   SnapVox.ico
+|   |   |   snapvox.manifest
+|   |   |   snapvoxmain.cs
+|   |   |   
+|   |   +---bin
+|   |   |   \---Release
+|   |   |       \---net9.0-windows10.0.19041.0
+|   |   |           \---win-x64
+|   |   |               |   Avalonia.Base.dll
+|   |   |               |   Avalonia.Controls.ColorPicker.dll
+|   |   |               |   Avalonia.Controls.dll
+|   |   |               |   Avalonia.DesignerSupport.dll
+|   |   |               |   Avalonia.Desktop.dll
+|   |   |               |   Avalonia.Dialogs.dll
+|   |   |               |   Avalonia.dll
+|   |   |               |   Avalonia.FreeDesktop.dll
+|   |   |               |   Avalonia.Markup.dll
+|   |   |               |   Avalonia.Markup.Xaml.dll
+|   |   |               |   Avalonia.Metal.dll
+|   |   |               |   Avalonia.MicroCom.dll
+|   |   |               |   Avalonia.Native.dll
+|   |   |               |   Avalonia.OpenGL.dll
+|   |   |               |   Avalonia.Remote.Protocol.dll
+|   |   |               |   Avalonia.Skia.dll
+|   |   |               |   Avalonia.Svg.Skia.dll
+|   |   |               |   Avalonia.Themes.Fluent.dll
+|   |   |               |   Avalonia.Vulkan.dll
+|   |   |               |   Avalonia.Win32.dll
+|   |   |               |   Avalonia.X11.dll
+|   |   |               |   av_libglesv2.dll
+|   |   |               |   clretwrc.dll
+|   |   |               |   clrgc.dll
+|   |   |               |   clrgcexp.dll
+|   |   |               |   clrjit.dll
+|   |   |               |   coreclr.dll
+|   |   |               |   createdump.exe
+|   |   |               |   ExCSS.dll
+|   |   |               |   HarfBuzzSharp.dll
+|   |   |               |   hostfxr.dll
+|   |   |               |   hostpolicy.dll
+|   |   |               |   libHarfBuzzSharp.dll
+|   |   |               |   libSkiaSharp.dll
+|   |   |               |   log4net.dll
+|   |   |               |   MicroCom.Runtime.dll
+|   |   |               |   Microsoft.CSharp.dll
+|   |   |               |   Microsoft.DiaSymReader.Native.amd64.dll
+|   |   |               |   Microsoft.VisualBasic.Core.dll
+|   |   |               |   Microsoft.VisualBasic.dll
+|   |   |               |   Microsoft.Win32.Primitives.dll
+|   |   |               |   Microsoft.Win32.Registry.dll
+|   |   |               |   Microsoft.Windows.SDK.NET.dll
+|   |   |               |   mscordaccore.dll
+|   |   |               |   mscordaccore_amd64_amd64_9.0.1726.26416.dll
+|   |   |               |   mscordbi.dll
+|   |   |               |   mscorlib.dll
+|   |   |               |   mscorrc.dll
+|   |   |               |   msquic.dll
+|   |   |               |   netstandard.dll
+|   |   |               |   ShimSkiaSharp.dll
+|   |   |               |   SixLabors.ImageSharp.dll
+|   |   |               |   SkiaSharp.dll
+|   |   |               |   SkiaSharp.HarfBuzz.dll
+|   |   |               |   SnapVox.deps.json
+|   |   |               |   SnapVox.dll
+|   |   |               |   snapvox.editor.dll
+|   |   |               |   snapvox.foundation.dll
+|   |   |               |   SnapVox.runtimeconfig.json
+|   |   |               |   Svg.Custom.dll
+|   |   |               |   Svg.Model.dll
+|   |   |               |   Svg.Skia.dll
+|   |   |               |   System.AppContext.dll
+|   |   |               |   System.Buffers.dll
+|   |   |               |   System.Collections.Concurrent.dll
+|   |   |               |   System.Collections.dll
+|   |   |               |   System.Collections.Immutable.dll
+|   |   |               |   System.Collections.NonGeneric.dll
+|   |   |               |   System.Collections.Specialized.dll
+|   |   |               |   System.ComponentModel.Annotations.dll
+|   |   |               |   System.ComponentModel.DataAnnotations.dll
+|   |   |               |   System.ComponentModel.dll
+|   |   |               |   System.ComponentModel.EventBasedAsync.dll
+|   |   |               |   System.ComponentModel.Primitives.dll
+|   |   |               |   System.ComponentModel.TypeConverter.dll
+|   |   |               |   System.Configuration.ConfigurationManager.dll
+|   |   |               |   System.Configuration.dll
+|   |   |               |   System.Console.dll
+|   |   |               |   System.Core.dll
+|   |   |               |   System.Data.Common.dll
+|   |   |               |   System.Data.DataSetExtensions.dll
+|   |   |               |   System.Data.dll
+|   |   |               |   System.Diagnostics.Contracts.dll
+|   |   |               |   System.Diagnostics.Debug.dll
+|   |   |               |   System.Diagnostics.DiagnosticSource.dll
+|   |   |               |   System.Diagnostics.FileVersionInfo.dll
+|   |   |               |   System.Diagnostics.Process.dll
+|   |   |               |   System.Diagnostics.StackTrace.dll
+|   |   |               |   System.Diagnostics.TextWriterTraceListener.dll
+|   |   |               |   System.Diagnostics.Tools.dll
+|   |   |               |   System.Diagnostics.TraceSource.dll
+|   |   |               |   System.Diagnostics.Tracing.dll
+|   |   |               |   System.dll
+|   |   |               |   System.Drawing.dll
+|   |   |               |   System.Drawing.Primitives.dll
+|   |   |               |   System.Dynamic.Runtime.dll
+|   |   |               |   System.Formats.Asn1.dll
+|   |   |               |   System.Formats.Tar.dll
+|   |   |               |   System.Globalization.Calendars.dll
+|   |   |               |   System.Globalization.dll
+|   |   |               |   System.Globalization.Extensions.dll
+|   |   |               |   System.IO.Compression.Brotli.dll
+|   |   |               |   System.IO.Compression.dll
+|   |   |               |   System.IO.Compression.FileSystem.dll
+|   |   |               |   System.IO.Compression.Native.dll
+|   |   |               |   System.IO.Compression.ZipFile.dll
+|   |   |               |   System.IO.dll
+|   |   |               |   System.IO.FileSystem.AccessControl.dll
+|   |   |               |   System.IO.FileSystem.dll
+|   |   |               |   System.IO.FileSystem.DriveInfo.dll
+|   |   |               |   System.IO.FileSystem.Primitives.dll
+|   |   |               |   System.IO.FileSystem.Watcher.dll
+|   |   |               |   System.IO.IsolatedStorage.dll
+|   |   |               |   System.IO.MemoryMappedFiles.dll
+|   |   |               |   System.IO.Pipelines.dll
+|   |   |               |   System.IO.Pipes.AccessControl.dll
+|   |   |               |   System.IO.Pipes.dll
+|   |   |               |   System.IO.UnmanagedMemoryStream.dll
+|   |   |               |   System.Linq.dll
+|   |   |               |   System.Linq.Expressions.dll
+|   |   |               |   System.Linq.Parallel.dll
+|   |   |               |   System.Linq.Queryable.dll
+|   |   |               |   System.Memory.dll
+|   |   |               |   System.Net.dll
+|   |   |               |   System.Net.Http.dll
+|   |   |               |   System.Net.Http.Json.dll
+|   |   |               |   System.Net.HttpListener.dll
+|   |   |               |   System.Net.Mail.dll
+|   |   |               |   System.Net.NameResolution.dll
+|   |   |               |   System.Net.NetworkInformation.dll
+|   |   |               |   System.Net.Ping.dll
+|   |   |               |   System.Net.Primitives.dll
+|   |   |               |   System.Net.Quic.dll
+|   |   |               |   System.Net.Requests.dll
+|   |   |               |   System.Net.Security.dll
+|   |   |               |   System.Net.ServicePoint.dll
+|   |   |               |   System.Net.Sockets.dll
+|   |   |               |   System.Net.WebClient.dll
+|   |   |               |   System.Net.WebHeaderCollection.dll
+|   |   |               |   System.Net.WebProxy.dll
+|   |   |               |   System.Net.WebSockets.Client.dll
+|   |   |               |   System.Net.WebSockets.dll
+|   |   |               |   System.Numerics.dll
+|   |   |               |   System.Numerics.Vectors.dll
+|   |   |               |   System.ObjectModel.dll
+|   |   |               |   System.Private.CoreLib.dll
+|   |   |               |   System.Private.DataContractSerialization.dll
+|   |   |               |   System.Private.Uri.dll
+|   |   |               |   System.Private.Xml.dll
+|   |   |               |   System.Private.Xml.Linq.dll
+|   |   |               |   System.Reflection.DispatchProxy.dll
+|   |   |               |   System.Reflection.dll
+|   |   |               |   System.Reflection.Emit.dll
+|   |   |               |   System.Reflection.Emit.ILGeneration.dll
+|   |   |               |   System.Reflection.Emit.Lightweight.dll
+|   |   |               |   System.Reflection.Extensions.dll
+|   |   |               |   System.Reflection.Metadata.dll
+|   |   |               |   System.Reflection.Primitives.dll
+|   |   |               |   System.Reflection.TypeExtensions.dll
+|   |   |               |   System.Resources.Reader.dll
+|   |   |               |   System.Resources.ResourceManager.dll
+|   |   |               |   System.Resources.Writer.dll
+|   |   |               |   System.Runtime.CompilerServices.Unsafe.dll
+|   |   |               |   System.Runtime.CompilerServices.VisualC.dll
+|   |   |               |   System.Runtime.dll
+|   |   |               |   System.Runtime.Extensions.dll
+|   |   |               |   System.Runtime.Handles.dll
+|   |   |               |   System.Runtime.InteropServices.dll
+|   |   |               |   System.Runtime.InteropServices.JavaScript.dll
+|   |   |               |   System.Runtime.InteropServices.RuntimeInformation.dll
+|   |   |               |   System.Runtime.Intrinsics.dll
+|   |   |               |   System.Runtime.Loader.dll
+|   |   |               |   System.Runtime.Numerics.dll
+|   |   |               |   System.Runtime.Serialization.dll
+|   |   |               |   System.Runtime.Serialization.Formatters.dll
+|   |   |               |   System.Runtime.Serialization.Json.dll
+|   |   |               |   System.Runtime.Serialization.Primitives.dll
+|   |   |               |   System.Runtime.Serialization.Xml.dll
+|   |   |               |   System.Security.AccessControl.dll
+|   |   |               |   System.Security.Claims.dll
+|   |   |               |   System.Security.Cryptography.Algorithms.dll
+|   |   |               |   System.Security.Cryptography.Cng.dll
+|   |   |               |   System.Security.Cryptography.Csp.dll
+|   |   |               |   System.Security.Cryptography.dll
+|   |   |               |   System.Security.Cryptography.Encoding.dll
+|   |   |               |   System.Security.Cryptography.OpenSsl.dll
+|   |   |               |   System.Security.Cryptography.Primitives.dll
+|   |   |               |   System.Security.Cryptography.ProtectedData.dll
+|   |   |               |   System.Security.Cryptography.X509Certificates.dll
+|   |   |               |   System.Security.dll
+|   |   |               |   System.Security.Permissions.dll
+|   |   |               |   System.Security.Principal.dll
+|   |   |               |   System.Security.Principal.Windows.dll
+|   |   |               |   System.Security.SecureString.dll
+|   |   |               |   System.ServiceModel.Web.dll
+|   |   |               |   System.ServiceProcess.dll
+|   |   |               |   System.Text.Encoding.CodePages.dll
+|   |   |               |   System.Text.Encoding.dll
+|   |   |               |   System.Text.Encoding.Extensions.dll
+|   |   |               |   System.Text.Encodings.Web.dll
+|   |   |               |   System.Text.Json.dll
+|   |   |               |   System.Text.RegularExpressions.dll
+|   |   |               |   System.Threading.Channels.dll
+|   |   |               |   System.Threading.dll
+|   |   |               |   System.Threading.Overlapped.dll
+|   |   |               |   System.Threading.Tasks.Dataflow.dll
+|   |   |               |   System.Threading.Tasks.dll
+|   |   |               |   System.Threading.Tasks.Extensions.dll
+|   |   |               |   System.Threading.Tasks.Parallel.dll
+|   |   |               |   System.Threading.Thread.dll
+|   |   |               |   System.Threading.ThreadPool.dll
+|   |   |               |   System.Threading.Timer.dll
+|   |   |               |   System.Transactions.dll
+|   |   |               |   System.Transactions.Local.dll
+|   |   |               |   System.ValueTuple.dll
+|   |   |               |   System.Web.dll
+|   |   |               |   System.Web.HttpUtility.dll
+|   |   |               |   System.Windows.dll
+|   |   |               |   System.Xml.dll
+|   |   |               |   System.Xml.Linq.dll
+|   |   |               |   System.Xml.ReaderWriter.dll
+|   |   |               |   System.Xml.Serialization.dll
+|   |   |               |   System.Xml.XDocument.dll
+|   |   |               |   System.Xml.XmlDocument.dll
+|   |   |               |   System.Xml.XmlSerializer.dll
+|   |   |               |   System.Xml.XPath.dll
+|   |   |               |   System.Xml.XPath.XDocument.dll
+|   |   |               |   Tesseract.dll
+|   |   |               |   Tmds.DBus.Protocol.dll
+|   |   |               |   WindowsBase.dll
+|   |   |               |   WinRT.Runtime.dll
+|   |   |               |   
+|   |   |               +---native
+|   |   |               |       SnapVox.exe
+|   |   |               |       
+|   |   |               +---x64
+|   |   |               |       leptonica-1.82.0.dll
+|   |   |               |       tesseract50.dll
+|   |   |               |       
+|   |   |               \---x86
+|   |   |                       leptonica-1.82.0.dll
+|   |   |                       tesseract50.dll
+|   |   |                       
+|   |   +---Configuration
+|   |   |       LanguageKeys.cs
+|   |   |       
+|   |   +---Forms
+|   |   |       CaptureWindow.axaml
+|   |   |       CaptureWindow.axaml.cs
+|   |   |       DeploymentProgressWindow.axaml
+|   |   |       DeploymentProgressWindow.axaml.cs
+|   |   |       SettingsWindow.axaml
+|   |   |       SettingsWindow.axaml.cs
+|   |   |       
+|   |   +---Helpers
+|   |   |       ApplicationStartupHelper.cs
+|   |   |       BootstrapDebug.cs
+|   |   |       CaptureHelper.cs
+|   |   |       DeploymentFootprint.cs
+|   |   |       DeploymentLifecycle.cs
+|   |   |       HebrewOcrCorrectionHelper.cs
+|   |   |       HotkeyManager.cs
+|   |   |       IniConfigurationDeployer.cs
+|   |   |       InstallHostContext.cs
+|   |   |       NativeDllSearchPath.cs
+|   |   |       NativeInstallMessage.cs
+|   |   |       NotifyIconNotificationService.cs
+|   |   |       OcrInstallationHelper.cs
+|   |   |       OcrRequestQueue.cs
+|   |   |       OcrResultHandler.cs
+|   |   |       PayloadExtractor.cs
+|   |   |       ResourceMutex.cs
+|   |   |       RetentionHelper.cs
+|   |   |       ShellLinkWriter.cs
+|   |   |       SnapVoxCommandLine.cs
+|   |   |       StartupHelper.cs
+|   |   |       StartupTaskHelper.cs
+|   |   |       ToastHelper.cs
+|   |   |       UiThreadHelper.cs
+|   |   |       
+|   |   +---icons
+|   |   |       cross.png
+|   |   |       folder-open-image.png
+|   |   |       folder_explore.png
+|   |   |       ruler-crop.png
+|   |   |       shape_square_add.png
+|   |   |       wrench.png
+|   |   |       zoom.png
+|   |   |       
+|   |   +---Native
+|   |   |   |   OcrImagePreprocessor.cs
+|   |   |   |   TesseractOcrProvider.cs
+|   |   |   |   Win10OcrProvider.cs
+|   |   |   |   Win32WindowHelper.cs
+|   |   |   |   
+|   |   |   +---x64
+|   |   |   |       leptonica-1.82.0.dll
+|   |   |   |       tesseract50.dll
+|   |   |   |       vcruntime140_cor3.dll
+|   |   |   |       
+|   |   |   \---x86
+|   |   |           leptonica-1.82.0.dll
+|   |   |           tesseract50.dll
+|   |   |           
+|   |   +---obj
+|   |   |   |   project.assets.json
+|   |   |   |   project.nuget.cache
+|   |   |   |   SnapVox.csproj.nuget.dgspec.json
+|   |   |   |   SnapVox.csproj.nuget.g.props
+|   |   |   |   SnapVox.csproj.nuget.g.targets
+|   |   |   |   
+|   |   |   \---Release
+|   |   |       \---net9.0-windows10.0.19041.0
+|   |   |           \---win-x64
+|   |   |               |   .NETCoreApp,Version=v9.0.AssemblyAttributes.cs
+|   |   |               |   apphost.exe
+|   |   |               |   PublishOutputs.31fb2cd61f.txt
+|   |   |               |   PublishOutputs.549adbee45.txt
+|   |   |               |   PublishOutputs.8c6eec0546.txt
+|   |   |               |   PublishOutputs.e3ea22c8a8.txt
+|   |   |               |   SnapVox.AssemblyInfo.cs
+|   |   |               |   SnapVox.AssemblyInfoInputs.cache
+|   |   |               |   SnapVox.assets.cache
+|   |   |               |   SnapVox.csproj.AssemblyReference.cache
+|   |   |               |   SnapVox.csproj.CoreCompileInputs.cache
+|   |   |               |   SnapVox.csproj.FileListAbsolute.txt
+|   |   |               |   SnapVox.csproj.Up2Date
+|   |   |               |   SnapVox.deps.json
+|   |   |               |   SnapVox.dll
+|   |   |               |   SnapVox.GeneratedMSBuildEditorConfig.editorconfig
+|   |   |               |   SnapVox.genpublishdeps.cache
+|   |   |               |   SnapVox.genruntimeconfig.cache
+|   |   |               |   
+|   |   |               +---Avalonia
+|   |   |               |       references
+|   |   |               |       resources
+|   |   |               |       Resources.Inputs.cache
+|   |   |               |       SnapVox.dll
+|   |   |               |       
+|   |   |               +---linked
+|   |   |               |       Avalonia.Base.dll
+|   |   |               |       Avalonia.Controls.ColorPicker.dll
+|   |   |               |       Avalonia.Controls.dll
+|   |   |               |       Avalonia.Desktop.dll
+|   |   |               |       Avalonia.Dialogs.dll
+|   |   |               |       Avalonia.Markup.dll
+|   |   |               |       Avalonia.Markup.Xaml.dll
+|   |   |               |       Avalonia.Metal.dll
+|   |   |               |       Avalonia.MicroCom.dll
+|   |   |               |       Avalonia.OpenGL.dll
+|   |   |               |       Avalonia.Skia.dll
+|   |   |               |       Avalonia.Svg.Skia.dll
+|   |   |               |       Avalonia.Themes.Fluent.dll
+|   |   |               |       Avalonia.Vulkan.dll
+|   |   |               |       Avalonia.Win32.dll
+|   |   |               |       ExCSS.dll
+|   |   |               |       HarfBuzzSharp.dll
+|   |   |               |       Link.semaphore
+|   |   |               |       log4net.dll
+|   |   |               |       MicroCom.Runtime.dll
+|   |   |               |       Microsoft.Win32.Registry.dll
+|   |   |               |       Microsoft.Windows.SDK.NET.dll
+|   |   |               |       netstandard.dll
+|   |   |               |       ShimSkiaSharp.dll
+|   |   |               |       SixLabors.ImageSharp.dll
+|   |   |               |       SkiaSharp.dll
+|   |   |               |       SnapVox.dll
+|   |   |               |       snapvox.editor.dll
+|   |   |               |       snapvox.foundation.dll
+|   |   |               |       Svg.Custom.dll
+|   |   |               |       Svg.Model.dll
+|   |   |               |       Svg.Skia.dll
+|   |   |               |       System.Collections.Concurrent.dll
+|   |   |               |       System.Collections.dll
+|   |   |               |       System.Collections.Immutable.dll
+|   |   |               |       System.Collections.NonGeneric.dll
+|   |   |               |       System.Collections.Specialized.dll
+|   |   |               |       System.ComponentModel.Annotations.dll
+|   |   |               |       System.ComponentModel.dll
+|   |   |               |       System.ComponentModel.EventBasedAsync.dll
+|   |   |               |       System.ComponentModel.Primitives.dll
+|   |   |               |       System.ComponentModel.TypeConverter.dll
+|   |   |               |       System.Configuration.ConfigurationManager.dll
+|   |   |               |       System.Console.dll
+|   |   |               |       System.Data.Common.dll
+|   |   |               |       System.Diagnostics.DiagnosticSource.dll
+|   |   |               |       System.Diagnostics.Process.dll
+|   |   |               |       System.Diagnostics.StackTrace.dll
+|   |   |               |       System.Diagnostics.TraceSource.dll
+|   |   |               |       System.dll
+|   |   |               |       System.Drawing.dll
+|   |   |               |       System.Drawing.Primitives.dll
+|   |   |               |       System.Formats.Asn1.dll
+|   |   |               |       System.IO.Compression.Brotli.dll
+|   |   |               |       System.IO.Compression.dll
+|   |   |               |       System.IO.Compression.ZipFile.dll
+|   |   |               |       System.IO.FileSystem.Watcher.dll
+|   |   |               |       System.IO.MemoryMappedFiles.dll
+|   |   |               |       System.Linq.dll
+|   |   |               |       System.Linq.Expressions.dll
+|   |   |               |       System.Memory.dll
+|   |   |               |       System.Net.Http.dll
+|   |   |               |       System.Net.Mail.dll
+|   |   |               |       System.Net.NameResolution.dll
+|   |   |               |       System.Net.NetworkInformation.dll
+|   |   |               |       System.Net.Primitives.dll
+|   |   |               |       System.Net.Quic.dll
+|   |   |               |       System.Net.Requests.dll
+|   |   |               |       System.Net.Security.dll
+|   |   |               |       System.Net.Sockets.dll
+|   |   |               |       System.Net.WebHeaderCollection.dll
+|   |   |               |       System.ObjectModel.dll
+|   |   |               |       System.Private.CoreLib.dll
+|   |   |               |       System.Private.Uri.dll
+|   |   |               |       System.Private.Xml.dll
+|   |   |               |       System.Reflection.Metadata.dll
+|   |   |               |       System.Runtime.InteropServices.dll
+|   |   |               |       System.Runtime.Numerics.dll
+|   |   |               |       System.Runtime.Serialization.Formatters.dll
+|   |   |               |       System.Security.Claims.dll
+|   |   |               |       System.Security.Cryptography.dll
+|   |   |               |       System.Security.Principal.Windows.dll
+|   |   |               |       System.Text.Encoding.CodePages.dll
+|   |   |               |       System.Text.RegularExpressions.dll
+|   |   |               |       System.Threading.Channels.dll
+|   |   |               |       System.Threading.dll
+|   |   |               |       System.Threading.Tasks.Parallel.dll
+|   |   |               |       Tesseract.dll
+|   |   |               |       WinRT.Runtime.dll
+|   |   |               |       
+|   |   |               +---native
+|   |   |               |       link.rsp
+|   |   |               |       SnapVox.def
+|   |   |               |       SnapVox.ilc.rsp
+|   |   |               |       SnapVox.obj
+|   |   |               |       
+|   |   |               +---ref
+|   |   |               |       SnapVox.dll
+|   |   |               |       
+|   |   |               \---refint
+|   |   |                   |   SnapVox.dll
+|   |   |                   |   
+|   |   |                   \---Avalonia
+|   |   |                           SnapVox.dll
+|   |   |                           
+|   |   \---tessdata
+|   |           eng.traineddata
+|   |           heb.traineddata
+|   |           
+|   +---snapvox.buildtasks
+|   |       snapvox.buildtasks.csproj
+|   |       
+|   +---snapvox.editor
+|   |   |   snapvox.editor.csproj
+|   |   |   
+|   |   +---bin
+|   |   |   \---Release
+|   |   |       \---net9.0-windows10.0.19041.0
+|   |   |           \---win-x64
+|   |   |                   snapvox.editor.deps.json
+|   |   |                   snapvox.editor.dll
+|   |   |                   snapvox.foundation.dll
+|   |   |                   
+|   |   +---Drawing
+|   |   |   \---Emoji
+|   |   |           Twemoji.Mozilla.ttf
+|   |   |           
+|   |   +---Forms
+|   |   |       CustomColorPickerWindow.axaml
+|   |   |       CustomColorPickerWindow.axaml.cs
+|   |   |       ImageEditorWindow.axaml
+|   |   |       ImageEditorWindow.axaml.cs
+|   |   |       NotificationOverlayWindow.axaml
+|   |   |       NotificationOverlayWindow.axaml.cs
+|   |   |       ResizeWindow.axaml
+|   |   |       ResizeWindow.axaml.cs
+|   |   |       
+|   |   +---Helpers
+|   |   |       ImageSharpAvaloniaHelper.cs
+|   |   |       OverlayHelper.cs
+|   |   |       
+|   |   +---icons
+|   |   |       fill.svg
+|   |   |       
+|   |   \---obj
+|   |       |   project.assets.json
+|   |       |   project.nuget.cache
+|   |       |   snapvox.editor.csproj.nuget.dgspec.json
+|   |       |   snapvox.editor.csproj.nuget.g.props
+|   |       |   snapvox.editor.csproj.nuget.g.targets
+|   |       |   
+|   |       \---Release
+|   |           \---net9.0-windows10.0.19041.0
+|   |               \---win-x64
+|   |                   |   .NETCoreApp,Version=v9.0.AssemblyAttributes.cs
+|   |                   |   snapvox..D10330E4.Up2Date
+|   |                   |   snapvox.editor.AssemblyInfo.cs
+|   |                   |   snapvox.editor.AssemblyInfoInputs.cache
+|   |                   |   snapvox.editor.assets.cache
+|   |                   |   snapvox.editor.csproj.AssemblyReference.cache
+|   |                   |   snapvox.editor.csproj.CoreCompileInputs.cache
+|   |                   |   snapvox.editor.csproj.FileListAbsolute.txt
+|   |                   |   snapvox.editor.dll
+|   |                   |   snapvox.editor.GeneratedMSBuildEditorConfig.editorconfig
+|   |                   |   
+|   |                   +---Avalonia
+|   |                   |       references
+|   |                   |       resources
+|   |                   |       Resources.Inputs.cache
+|   |                   |       snapvox.editor.dll
+|   |                   |       
+|   |                   +---ref
+|   |                   |       snapvox.editor.dll
+|   |                   |       
+|   |                   \---refint
+|   |                       |   snapvox.editor.dll
+|   |                       |   
+|   |                       \---Avalonia
+|   |                               snapvox.editor.dll
+|   |                               
+|   +---snapvox.foundation
+|   |   |   log4net-embedded.xml
+|   |   |   NativeMethods.json
+|   |   |   snapvox.foundation.csproj
+|   |   |   WellKnownDestinations.cs
+|   |   |   
+|   |   +---bin
+|   |   |   \---Release
+|   |   |       \---net9.0-windows10.0.19041.0
+|   |   |           \---win-x64
+|   |   |                   snapvox.foundation.deps.json
+|   |   |                   snapvox.foundation.dll
+|   |   |                   
+|   |   +---Core
+|   |   |   |   BinaryStructHelper.cs
+|   |   |   |   CaptureHandler.cs
+|   |   |   |   CoreConfiguration.cs
+|   |   |   |   DisplayKeyAttribute.cs
+|   |   |   |   EnvironmentInfo.cs
+|   |   |   |   ExecutionTrace.cs
+|   |   |   |   Fraction.cs
+|   |   |   |   IImage.cs
+|   |   |   |   Language.cs
+|   |   |   |   LanguageChangedHandler.cs
+|   |   |   |   LanguageFile.cs
+|   |   |   |   LogHelper.cs
+|   |   |   |   NativeCapture.cs
+|   |   |   |   ObjectExtensions.cs
+|   |   |   |   OverlayToastHelper.cs
+|   |   |   |   RegistryKeyExtensions.cs
+|   |   |   |   RuntimePathHelper.cs
+|   |   |   |   SimpleServiceProvider.cs
+|   |   |   |   SnapVoxResources.cs
+|   |   |   |   SnapVoxResources.resx
+|   |   |   |   StringExtensions.cs
+|   |   |   |   Stubs.cs
+|   |   |   |   UiClipboard.cs
+|   |   |   |   WindowDetails.cs
+|   |   |   |   WindowsVersion.cs
+|   |   |   |   
+|   |   |   +---AvaloniaShims
+|   |   |   |       Cursor.cs
+|   |   |   |       DialogShims.cs
+|   |   |   |       DrawingShims.cs
+|   |   |   |       FormShims.cs
+|   |   |   |       IAccessible.cs
+|   |   |   |       IDataObject.cs
+|   |   |   |       IWin32Window.cs
+|   |   |   |       Keys.cs
+|   |   |   |       MenuShims.cs
+|   |   |   |       Message.cs
+|   |   |   |       MouseEventArgs.cs
+|   |   |   |       PaintEventArgs.cs
+|   |   |   |       
+|   |   |   \---Enums
+|   |   |           ClickActions.cs
+|   |   |           ClipboardFormat.cs
+|   |   |           DateCultureMode.cs
+|   |   |           ExifOrientations.cs
+|   |   |           OutputFormat.cs
+|   |   |           
+|   |   +---Effects
+|   |   |       IEffect.cs
+|   |   |       
+|   |   +---Help
+|   |   |       HelpFileLoader.cs
+|   |   |       
+|   |   +---IniFile
+|   |   |       IniAttributes.cs
+|   |   |       IniConfig.cs
+|   |   |       IniReader.cs
+|   |   |       IniSection.cs
+|   |   |       IniValue.cs
+|   |   |       
+|   |   +---Interfaces
+|   |   |   |   CaptureEnums.cs
+|   |   |   |   ICaptureDetails.cs
+|   |   |   |   
+|   |   |   \---Ocr
+|   |   |           IOcrProvider.cs
+|   |   |           IOcrResultHandler.cs
+|   |   |           OcrInformation.cs
+|   |   |           OcrProviderSelector.cs
+|   |   |           
+|   |   +---Interop
+|   |   |       Base.cs
+|   |   |       ComVtableHelper.cs
+|   |   |       IAppVisibility.cs
+|   |   |       IDispatch.cs
+|   |   |       IOleCommandTarget.cs
+|   |   |       IOleWindow.cs
+|   |   |       IServiceProvider.cs
+|   |   |       IUnknown.cs
+|   |   |       NativeTypes.cs
+|   |   |       Win32Interop.cs
+|   |   |       WindowTitleHelper.cs
+|   |   |       
+|   |   +---Languages
+|   |   |       help-en-US.html
+|   |   |       language-en-US.xml
+|   |   |       
+|   |   \---obj
+|   |       |   project.assets.json
+|   |       |   project.nuget.cache
+|   |       |   snapvox.foundation.csproj.nuget.dgspec.json
+|   |       |   snapvox.foundation.csproj.nuget.g.props
+|   |       |   snapvox.foundation.csproj.nuget.g.targets
+|   |       |   
+|   |       \---Release
+|   |           \---net9.0-windows10.0.19041.0
+|   |               \---win-x64
+|   |                   |   .NETCoreApp,Version=v9.0.AssemblyAttributes.cs
+|   |                   |   snapvox.foundation.AssemblyInfo.cs
+|   |                   |   snapvox.foundation.AssemblyInfoInputs.cache
+|   |                   |   snapvox.foundation.assets.cache
+|   |                   |   snapvox.foundation.core.snapvoxResources.resources
+|   |                   |   snapvox.foundation.csproj.AssemblyReference.cache
+|   |                   |   snapvox.foundation.csproj.CoreCompileInputs.cache
+|   |                   |   snapvox.foundation.csproj.FileListAbsolute.txt
+|   |                   |   snapvox.foundation.csproj.GenerateResource.cache
+|   |                   |   snapvox.foundation.dll
+|   |                   |   snapvox.foundation.GeneratedMSBuildEditorConfig.editorconfig
+|   |                   |   
+|   |                   +---Avalonia
+|   |                   |       Resources.Inputs.cache
+|   |                   |       
+|   |                   +---ref
+|   |                   |       snapvox.foundation.dll
+|   |                   |       
+|   |                   \---refint
+|   |                           snapvox.foundation.dll
+|   |                           
+|   \---snapvox.tests
+|           ClipboardTests.cs
+|           RetentionTests.cs
+|           snapvox.tests.csproj
+|           UnitTest1.cs
+|           
+\---test_publish
+    |   Avalonia.Base.dll
+    |   Avalonia.Controls.ColorPicker.dll
+    |   Avalonia.Controls.dll
+    |   Avalonia.Desktop.dll
+    |   Avalonia.Dialogs.dll
+    |   Avalonia.Markup.dll
+    |   Avalonia.Markup.Xaml.dll
+    |   Avalonia.Metal.dll
+    |   Avalonia.MicroCom.dll
+    |   Avalonia.OpenGL.dll
+    |   Avalonia.Skia.dll
+    |   Avalonia.Svg.Skia.dll
+    |   Avalonia.Themes.Fluent.dll
+    |   Avalonia.Vulkan.dll
+    |   Avalonia.Win32.dll
+    |   av_libglesv2.dll
+    |   clretwrc.dll
+    |   clrgc.dll
+    |   clrgcexp.dll
+    |   clrjit.dll
+    |   coreclr.dll
+    |   createdump.exe
+    |   ExCSS.dll
+    |   HarfBuzzSharp.dll
+    |   hostfxr.dll
+    |   hostpolicy.dll
+    |   libHarfBuzzSharp.dll
+    |   libSkiaSharp.dll
+    |   log4net.dll
+    |   MicroCom.Runtime.dll
+    |   Microsoft.DiaSymReader.Native.amd64.dll
+    |   Microsoft.Win32.Registry.dll
+    |   Microsoft.Windows.SDK.NET.dll
+    |   mscordaccore.dll
+    |   mscordaccore_amd64_amd64_9.0.1726.26416.dll
+    |   mscordbi.dll
+    |   mscorrc.dll
+    |   msquic.dll
+    |   netstandard.dll
+    |   ShimSkiaSharp.dll
+    |   SixLabors.ImageSharp.dll
+    |   SkiaSharp.dll
+    |   SnapVox.deps.json
+    |   SnapVox.dll
+    |   snapvox.editor.dll
+    |   SnapVox.exe
+    |   snapvox.foundation.dll
+    |   SnapVox.runtimeconfig.json
+    |   Svg.Custom.dll
+    |   Svg.Model.dll
+    |   Svg.Skia.dll
+    |   System.Collections.Concurrent.dll
+    |   System.Collections.dll
+    |   System.Collections.Immutable.dll
+    |   System.Collections.NonGeneric.dll
+    |   System.Collections.Specialized.dll
+    |   System.ComponentModel.Annotations.dll
+    |   System.ComponentModel.dll
+    |   System.ComponentModel.EventBasedAsync.dll
+    |   System.ComponentModel.Primitives.dll
+    |   System.ComponentModel.TypeConverter.dll
+    |   System.Configuration.ConfigurationManager.dll
+    |   System.Console.dll
+    |   System.Data.Common.dll
+    |   System.Diagnostics.DiagnosticSource.dll
+    |   System.Diagnostics.Process.dll
+    |   System.Diagnostics.StackTrace.dll
+    |   System.Diagnostics.TraceSource.dll
+    |   System.dll
+    |   System.Drawing.dll
+    |   System.Drawing.Primitives.dll
+    |   System.Formats.Asn1.dll
+    |   System.IO.Compression.Brotli.dll
+    |   System.IO.Compression.dll
+    |   System.IO.Compression.Native.dll
+    |   System.IO.Compression.ZipFile.dll
+    |   System.IO.FileSystem.Watcher.dll
+    |   System.IO.MemoryMappedFiles.dll
+    |   System.Linq.dll
+    |   System.Linq.Expressions.dll
+    |   System.Memory.dll
+    |   System.Net.Http.dll
+    |   System.Net.Mail.dll
+    |   System.Net.NameResolution.dll
+    |   System.Net.NetworkInformation.dll
+    |   System.Net.Primitives.dll
+    |   System.Net.Quic.dll
+    |   System.Net.Requests.dll
+    |   System.Net.Security.dll
+    |   System.Net.Sockets.dll
+    |   System.Net.WebHeaderCollection.dll
+    |   System.ObjectModel.dll
+    |   System.Private.CoreLib.dll
+    |   System.Private.Uri.dll
+    |   System.Private.Xml.dll
+    |   System.Reflection.Metadata.dll
+    |   System.Runtime.InteropServices.dll
+    |   System.Runtime.Numerics.dll
+    |   System.Runtime.Serialization.Formatters.dll
+    |   System.Security.Claims.dll
+    |   System.Security.Cryptography.dll
+    |   System.Security.Principal.Windows.dll
+    |   System.Text.Encoding.CodePages.dll
+    |   System.Text.RegularExpressions.dll
+    |   System.Threading.Channels.dll
+    |   System.Threading.dll
+    |   System.Threading.Tasks.Parallel.dll
+    |   Tesseract.dll
+    |   WinRT.Runtime.dll
+    |   
+    +---x64
+    |       leptonica-1.82.0.dll
+    |       tesseract50.dll
+    |       
+    \---x86
+            leptonica-1.82.0.dll
+            tesseract50.dll
+            

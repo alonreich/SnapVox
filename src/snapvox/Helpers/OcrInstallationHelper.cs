@@ -40,6 +40,9 @@ namespace snapvox.helpers
         }
 
 #if USE_TESSERACT
+        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern IntPtr LoadLibrary(string lpFileName);
+
         private static readonly object SyncRoot = new object();
 
         private static bool HasTessData(string fileName)
@@ -58,7 +61,8 @@ namespace snapvox.helpers
             try
             {
                 string targetPath = ResolveOcrStorageRoot(installFolder);
-                var asm = typeof(OcrInstallationHelper).Assembly;
+                var asm = System.Reflection.Assembly.GetEntryAssembly();
+                if (asm == null) asm = typeof(OcrInstallationHelper).Assembly;
                 var resources = asm.GetManifestResourceNames();
                 string[] libs = { "leptonica-1.82.0.dll", "tesseract50.dll" };
 
@@ -76,6 +80,10 @@ namespace snapvox.helpers
                         if (s != null) { using var fs = new FileStream(destPath, FileMode.Create); s.CopyTo(fs); }
                     }
                 }
+                foreach (var lib in libs)
+                {
+                    LoadLibrary(Path.Combine(targetPath, lib));
+                }
             }
             catch (Exception ex) { Log.Error("Binary extraction failed", ex); }
         }
@@ -89,7 +97,8 @@ namespace snapvox.helpers
                 {
                     tessDataPath = Path.Combine(ResolveOcrStorageRoot(installFolder), "tessdata");
                     Directory.CreateDirectory(tessDataPath);
-                    var assembly = typeof(OcrInstallationHelper).Assembly;
+                    var assembly = System.Reflection.Assembly.GetEntryAssembly();
+                    if (assembly == null) assembly = typeof(OcrInstallationHelper).Assembly;
                     var resources = assembly.GetManifestResourceNames();
                     foreach (var languageFile in new[] { "heb.traineddata", "eng.traineddata" })
                     {
