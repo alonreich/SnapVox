@@ -1,6 +1,148 @@
-Folder PATH listing for volume Drive - C
-Volume serial number is 000000B9 A0AC:5D73
-C:.
+SnapVox v3.0 - "The Ghost" Reality Map (Avalonia + ImageSharp Edition)
+================================================================================
+
+SYNCHRONIZED BRANCHES MANDATE
+----------------------------
+CRITICAL: The software is maintained as two functional branches from a SINGLE codebase:
+1. Branch 1: Native (Windows OCR Engine, zero OCR dependencies).
+2. Branch 2: Compiled with bundled Tesseract external OCR engine (LTS/Offline).
+
+ENGINEERING STANDARD:
+Every change (UI, logic, timers, overlay effects, editing tools) MUST be applied to both branches simultaneously.
+Agents MUST ensure that features remain 100% synchronized between branches, except for the underlying OCR engine implementation itself.
+Both branches utilize the high-performance SixLabors.ImageSharp pipeline for image manipulation and OCR pre-processing.
+
+GOAL & PURPOSE
+--------------
+SnapVox is a professional-grade, ultra-fast screen capture and OCR tool optimized for .NET 9 Native AOT in the Windows OCR branch.
+It serves users who need rapid imaging workflows with 100% privacy (zero cloud dependencies).
+The application follows a "Ghost" philosophy: it stays out of sight until triggered, performs tasks with sub-millisecond responsiveness, and stays fully local. The Native branch is dependency-free for OCR; the Tesseract branch bundles local external OCR files.
+
+CORE MANDATES (THE "GHOST" RULES)
+---------------------------------
+1. **Zero UI Friction:** Tray icon click triggers capture immediately. No splash screens.
+2. **Avalonia/ImageSharp Runtime Path:** The active UI and image pipeline is Avalonia UI + SixLabors.ImageSharp; legacy compatibility names and shims may remain for migration support.
+3. **SVG Toolbar UI:** The Editor uses bundled SVG toolbar icons and standard text/icon controls.
+4. **Thin-Client Interop:** Use direct Win32/C++ level calls (CsWin32) for performance, bypassing "heavy" .NET wrappers.
+5. **Native Finality:** Branch 1 is compiled to machine code via .NET 9 Native AOT. Branch 2 uses a Native AOT installer wrapper with a self-contained non-AOT Tesseract payload because the external OCR runtime is not Native AOT-compatible.
+6. **Async Everything (Engine Audit Parity):** All I/O, OCR, and cleanup operations MUST be non-blocking. 
+   - No `Thread.Sleep`. Use `Task.Delay`.
+   - No `.Result` or `.Wait()`. Use `await` or `IAsyncDisposable` / `DisposeAsync`.
+   - Both OCR engines must validate required language packs (EN/HE) before execution.
+7. **One-Click Sequential Finality (Zero Prompts):** The editor core is "Zero-Dialog". Only the following three actions trigger the 1.0-second blinking visual overlay before automatically closing the editor window:
+   - "Save Image" (Ctrl+S): Saves 100% quality JPG to user's `Downloads` folder, copies to clipboard, and, when backup is enabled, saves a 24-hour JPG backup to `%TMP%\SnapVox\`.
+   - "Copy to Clipboard" (Ctrl+C): Copies `CF_DIB` to clipboard and, when backup is enabled, saves a 100% quality JPG backup to `%TMP%\SnapVox\`.
+   - "OCR": Copies text to clipboard and, when backup is enabled, saves `.txt` to `%TMP%\SnapVox\` and opens it in Notepad.
+   - **Soft-Fail Fallback:** If the `Downloads` folder is missing/unwritable, popup a folder selection dialog ONCE, memorize the choice, and resume zero-prompt behavior for all future saves.
+8. **Hardcoded JPG-Only Output:**
+   - PNG ingestion is allowed (opening files or injecting from clipboard).
+   - ALL image output (manual saves, 24-hour backup, automated history) is ALWAYS `.jpg`. 
+   - Quality is ALWAYS 100%. No quality dialogs.
+9. **Automated 24-Hour Retention:**
+   - **Immediate Raw Backup:** When backup is enabled, every capture (region, full, window) immediately saves a raw 100% quality JPG to `%TMP%\SnapVox\` before any editing begins.
+   - All enabled backup artifacts (images, text) purged from `%TMP%\SnapVox\` after 24 hours.
+   - Cleanup task runs on startup and every 4 hours to purge the `%TMP%\SnapVox\` directory of expired files.
+10. **Folder Structure Mandates:**
+   - Persistent Install: `C:\Program Files\SnapVox\`
+   - Persistent Logs: `%PROGRAMDATA%\SnapVox\`
+   - User Config: `%AppData%\SnapVox\`
+   - Local App Data: `%LocalAppData%\SnapVox\`
+   - **Unified Temporary Root:** `%TMP%\SnapVox\`
+     - All user-initiated saves, background snapshots, and OCR outputs MUST use this path for 24-hour retention.
+     - Subfolder `\Lifecycle\`: Used for installer unpacking and self-cleanup.
+     - Subfolder `\Runtime\`: Used for transient DLL extraction.
+   - **Installation Log:** Saved EXCLUSIVELY to a standalone file at `%TMP%\SnapVox_Installation.log`.
+11. **Visual Notification Overlays:**
+   - Any successful download or OCR action MUST trigger a **blinking Red/White/Blue overlay** for 1.0 seconds (4x 250ms cycles).
+   - Text variants: "IMAGE SAVED TO DOWNLOADS", "IMAGE SAVED TO CLIPBOARD", "TEXT COPIED", and "TEXT COPIED & SAVED".
+
+TELEMETRY & LOGGING MANDATE (SINGLE SOURCE OF TRUTH)
+----------------------------------------------------
+1. **Comprehensive User Action Audit:** User interactions are captured by the application logger. Internal `ExecutionTrace` diagnostics may record thread id, memory, GDI/USER counts, queue depth, and elapsed timing for local troubleshooting.
+2. **Recorded Events:** Screenshot coordinates, keyboard keys pressed, action cancellations, editor initializations, picture saves/downloads, and precise shape/object placements (including X/Y canvas coordinates).
+3. **Success/Fail Finality:** Every logged action must culminate in a clear `[SUCCESS]` or `[FAIL]` status. Failures must include explicit, detailed exception data identifying the root cause. This log operates as the absolute single source of truth for all troubleshooting.
+4. **Build Logging Tracking:** Compilation execution and output MUST be tracked via a `.\build.log` file at the repository root.
+
+DEPLOYMENT & PACKAGING MANDATES (CRITICAL)
+------------------------------------------
+1. **Single-File Installer:** The deployment output for EACH branch MUST be a single `.exe` installer file. Branch 1 is Native AOT end-to-end; Branch 2 is a Native AOT installer wrapper containing a self-contained Tesseract payload.
+2. **DLL Persistence:** Any extracted permanent `.dll` dependencies MUST reside exclusively in `C:\Program Files\SnapVox\`.
+3. **Unpacked Persistence:** When the single `.exe` installer is run, it MUST unpack its payload into: `C:\Program Files\SnapVox\`
+
+FUNCTIONAL SPECIFICATIONS (THE USER EXPERIENCE)
+-----------------------------------------------
+1. **Hotkey Triggers:**
+   - `PrintScreen`: Starts custom rubberband region selection.
+   - `Alt + PrintScreen`: Captures EXACTLY the current active window/app size only.
+   - **High-Compatibility Copy:** Every capture is AUTOMATICALLY pushed to the clipboard as raw `CF_DIB` data for seamless pasting.
+2. **Visual Feedback & Collision Mechanics:**
+   - Systray Icon: Turns **RED** immediately upon entering capture mode. Returns to **BLUE** when finished.
+   - **Intelligent Cursor Dodging:** On-screen instruction banners actively calculate bounding-box collisions and jump away from the mouse cursor to ensure the capture area is never obstructed.
+3. **Unified Magnifier Engine:**
+   - Shared circular UI style for both region selection and color sampler.
+   - **Smart-Flip Region Selection:** Lens stays 30px diagonally away from cursor, "flipping" quadrants to avoid covering the capture area. 2x zoom.
+   - **Color Sampler Magnifier:** Fixed-center logic with 8x zoom, live hex label, precise red crosshair, and full multi-monitor support.
+4. **Magnetic Rubberband Snapping:**
+   - Cursor over window triggers a high-visibility **Blue Highlight Border** snap with a strict **10-pixel proximity threshold**.
+   - Initiating the rubberband selection directly on a window title area renders a dynamic "ghost effect" preview.
+   - Coordinate accuracy is 100% DPI-aware, applying `RenderScaling` to logical Avalonia coordinates.
+5. **OCR Painter Mode & Preemptive Caching (The "T" Toggle):** - Hitting `T` during selection toggles "OCR Painter" mode.
+   - **Preemptive Background Execution:** Toggling the mode instantly triggers silent OCR across the entire virtual desktop before the region is drawn, guaranteeing zero-latency text extraction upon selection release.
+6. **In-Editor OCR:** Clicking OCR symbol extracts text, copies to clipboard, opens Notepad, and saves `.txt` to `%TMP%\SnapVox\`.
+7. **Intelligent Editor Display:** Implements parallelSniplets, Cascading Positioning, Majority Monitor Centering, and Adaptive Sizing to ensure non-overlapping, context-aware window placement across multiple displays.
+8. **Download Workflow:** Clicking "Download" saves 100% JPG to `Downloads`, copies to Clipboard as `CF_DIB`, saves a temp backup only when backup is enabled, shows overlay, and closes window sequentially.
+9. **Shell "Open With" Integration (Secondary Instance Routing):** Right-clicking any image format in File Explorer and choosing "Open with SnapVox" launches the Editor directly, bypassing Tray Icon initialization. All outputs from this workflow will be strictly saved/converted to `.jpg`.
+
+V3.0 FINAL UI/UX ENHANCEMENTS (COMPLETED)
+-----------------------------------------
+1. **Smart-Window Capture Filter:** Recursive search (100 layers) to distinguish applications from system UI. Min: 150x150px.
+2. **Universal Clipboard Ingestion Pipeline:** Direct Win32 integration for `CF_DIB` or `PNG` headers to instantly launch Editor. PNG output remains disabled.
+3. **Engine Health & Async Integrity:** Eradicated all Sync-over-Async blocking calls. Fixed UI-thread freezes (`Task.Delay` over `Thread.Sleep`).
+4. **OCR Engine Parity:** Standardized initialization and language pack validation for both providers.
+5. **Context-Sensitive Property Control Management:** Dynamic `ThicknessPanel` reveals itself only when a relevant vector tool is active.
+6. **High-Accuracy Vector Bounding Box Normalization:** Selection indicators tightly wrap the absolute visual frame of Arrows, Lines, and FreeDraw.
+7. **Deterministic Global Zooming Engine:** Center-based scaling using `Ctrl+Scroll` via `PointerWheelChanged` tunneling.
+8. **Precision Proportional Scaling Engine:** Mathematical aspect-ratio lock for Emojis, Counters, and Text.
+9. **Input Interception for Text Commitment:** ESC, Enter, or Right-Click in a TextBox commits text instantly.
+10. **Hue-Shift Red State Feedback:** Dynamically modifies `SnapVox.ico` into vibrant red during capture mode.
+11. **Enhanced Resize Window:** Vertical slider (33% to 300%) for smooth aspect-ratio scaling.
+12. **Refined Selection Visuals:** Animated 1px Yellow dashed lines (1.5s) with End-point handles.
+13. **Structural UI Layout Prioritization:** Bottom Status Bar grants horizontal precedence over Side Toolbar.
+14. **Quadrant-Aware Context Toolbar:** Floating Duplicate/Delete buttons appear in the opposite quadrant relative to selection.
+
+PRODUCT SPECIFICATION (DETAILED REQUIREMENTS)
+---------------------------------------------
+1.  **Toolbar Layout Restructuring:** Top toolbar places Crop left of Resize, OCR right. Bottom panel houses "Fill Shape" button.
+2.  **Thickness Selector:** 7 solid vertical line icons (1, 2, 3, 5, 8, 12, 16px). Active highlighted with 2px White border.
+3.  **Vertical Toolbar Scrolling & Organization:** Wrapped in a ScrollViewer. Order: [Arrow, Line, Rect, Ellipse, FreeDraw] -> [Separator] -> [Highlight, Blur] -> [Separator] -> [Text, Counter, Emoji].
+4.  **Toolbar Theming:** Uniform `#808080` background.
+5.  **Per-Tool State Isolation:** Independent Color, Thickness, and Fill state dictionaries per tool.
+6.  **Highlight Color Customization:** Highlight tool allows any color with 80-alpha transparency.
+7.  **Pixelation Strength:** Mosaic factor set to 25. Irreversible redaction.
+8.  **FIFO Color Palette:** 6-slot history with newest-slot deduplication.
+9.  **Snippet Frame Border:** Hardcoded 3px Blue (#000080) border baked into all output.
+10. **Settings GUI Window:** 850x650 modeless. Configurable hotkeys with multi-modifier support and real-time clash detection (blocks saving if conflicted).
+11. **Admin Privilege Toggle:** Non-admin by default. Toggles Task Scheduler with toast feedback.
+12. **Deployment Window Casing:** "SnapVox Setup" and "SnapVox Uninstaller".
+13. **Editor Minimum Bounds:** Hardcoded 850x650 minimum window size. Logic-level clamping.
+14. **Non-Destructive Mode Toggling:** Clicking active tool button, ESC, or Right-Click resets to Arrow cursor.
+15. **Notification Overlay System (Dual-Tier):**
+    - **Tier 1: Heavy Blinking Overlay:** 1.0s duration (4x 250ms cycles). White -> Red -> Blue. Used for critical high-value actions: OCR, Save/Download, and Copy to Clipboard.
+    - **Tier 2: Lightweight Yellow Toast:** Fades in/out over 1.0s. Solid Yellow text. Used for frequent minor actions: Shape placement, resizing, undo/redo, crop, color/fill/thickness updates.
+16. **Installer Conflict Heuristics:** Scans 50+ apps (Greenshot, Snagit). Halts install with manual removal instructions.
+17. **Tool Default Hardcoding:** 60px first-run size for Emojis, 42px first-run size for Counters, and 8px default for Line/Arrow.
+18. **Counter Smart Contrast:** W3C luminance-based text flipping (Black/White).
+19. **Arrow Vector Integrity:** Shaft and Head points recalculate relative to bounding box during resize.
+20. **Inline Color Picker & Sampler:** Custom 2-click action picker replaces reactive picker. Strictly non-modal. Includes screen sampling.
+21. **Optional Close Confirmation:** "Warn before closing" toggle in Settings (Default: OFF). Instantly close if disabled.
+22. **Managed Temp Consistency:** Disabling backup disables both image backups and text backups; OCR still copies recognized text to clipboard without creating a backup `.txt` file.
+23. **OCR Branding:** Label "OCR Text Extraction" next to icon.
+24. **Compact Hotkeys:** Textboxes are constrained to 90px for editor/action hotkeys and 120px for global capture hotkeys.
+25. **Vector Endpoint Dragging:** SizeAll circular handles at Start/End points of Line/Arrow for granular adjustment.
+
+FULL PROJECT MINIMAP & NAVIGATION GUIDE
+---------------------------------------
+.\
 |   .gitattributes
 |   .gitignore
 |   Build.cmd
@@ -363,6 +505,7 @@ C:.
 |   |   |       zoom.png
 |   |   |       
 |   |   +---Native
+|   |   |   |   MixedLanguageOcrProvider.cs
 |   |   |   |   OcrImagePreprocessor.cs
 |   |   |   |   TesseractOcrProvider.cs
 |   |   |   |   Win10OcrProvider.cs
@@ -675,7 +818,9 @@ C:.
 |   |   |           IOcrProvider.cs
 |   |   |           IOcrResultHandler.cs
 |   |   |           OcrInformation.cs
+|   |   |           OcrTextLayout.cs
 |   |   |           OcrProviderSelector.cs
+|   |   |           OcrWordSpatialIndex.cs
 |   |   |           
 |   |   +---Interop
 |   |   |       Base.cs
@@ -731,122 +876,3 @@ C:.
 |           snapvox.tests.csproj
 |           UnitTest1.cs
 |           
-\---test_publish
-    |   Avalonia.Base.dll
-    |   Avalonia.Controls.ColorPicker.dll
-    |   Avalonia.Controls.dll
-    |   Avalonia.Desktop.dll
-    |   Avalonia.Dialogs.dll
-    |   Avalonia.Markup.dll
-    |   Avalonia.Markup.Xaml.dll
-    |   Avalonia.Metal.dll
-    |   Avalonia.MicroCom.dll
-    |   Avalonia.OpenGL.dll
-    |   Avalonia.Skia.dll
-    |   Avalonia.Svg.Skia.dll
-    |   Avalonia.Themes.Fluent.dll
-    |   Avalonia.Vulkan.dll
-    |   Avalonia.Win32.dll
-    |   av_libglesv2.dll
-    |   clretwrc.dll
-    |   clrgc.dll
-    |   clrgcexp.dll
-    |   clrjit.dll
-    |   coreclr.dll
-    |   createdump.exe
-    |   ExCSS.dll
-    |   HarfBuzzSharp.dll
-    |   hostfxr.dll
-    |   hostpolicy.dll
-    |   libHarfBuzzSharp.dll
-    |   libSkiaSharp.dll
-    |   log4net.dll
-    |   MicroCom.Runtime.dll
-    |   Microsoft.DiaSymReader.Native.amd64.dll
-    |   Microsoft.Win32.Registry.dll
-    |   Microsoft.Windows.SDK.NET.dll
-    |   mscordaccore.dll
-    |   mscordaccore_amd64_amd64_9.0.1726.26416.dll
-    |   mscordbi.dll
-    |   mscorrc.dll
-    |   msquic.dll
-    |   netstandard.dll
-    |   ShimSkiaSharp.dll
-    |   SixLabors.ImageSharp.dll
-    |   SkiaSharp.dll
-    |   SnapVox.deps.json
-    |   SnapVox.dll
-    |   snapvox.editor.dll
-    |   SnapVox.exe
-    |   snapvox.foundation.dll
-    |   SnapVox.runtimeconfig.json
-    |   Svg.Custom.dll
-    |   Svg.Model.dll
-    |   Svg.Skia.dll
-    |   System.Collections.Concurrent.dll
-    |   System.Collections.dll
-    |   System.Collections.Immutable.dll
-    |   System.Collections.NonGeneric.dll
-    |   System.Collections.Specialized.dll
-    |   System.ComponentModel.Annotations.dll
-    |   System.ComponentModel.dll
-    |   System.ComponentModel.EventBasedAsync.dll
-    |   System.ComponentModel.Primitives.dll
-    |   System.ComponentModel.TypeConverter.dll
-    |   System.Configuration.ConfigurationManager.dll
-    |   System.Console.dll
-    |   System.Data.Common.dll
-    |   System.Diagnostics.DiagnosticSource.dll
-    |   System.Diagnostics.Process.dll
-    |   System.Diagnostics.StackTrace.dll
-    |   System.Diagnostics.TraceSource.dll
-    |   System.dll
-    |   System.Drawing.dll
-    |   System.Drawing.Primitives.dll
-    |   System.Formats.Asn1.dll
-    |   System.IO.Compression.Brotli.dll
-    |   System.IO.Compression.dll
-    |   System.IO.Compression.Native.dll
-    |   System.IO.Compression.ZipFile.dll
-    |   System.IO.FileSystem.Watcher.dll
-    |   System.IO.MemoryMappedFiles.dll
-    |   System.Linq.dll
-    |   System.Linq.Expressions.dll
-    |   System.Memory.dll
-    |   System.Net.Http.dll
-    |   System.Net.Mail.dll
-    |   System.Net.NameResolution.dll
-    |   System.Net.NetworkInformation.dll
-    |   System.Net.Primitives.dll
-    |   System.Net.Quic.dll
-    |   System.Net.Requests.dll
-    |   System.Net.Security.dll
-    |   System.Net.Sockets.dll
-    |   System.Net.WebHeaderCollection.dll
-    |   System.ObjectModel.dll
-    |   System.Private.CoreLib.dll
-    |   System.Private.Uri.dll
-    |   System.Private.Xml.dll
-    |   System.Reflection.Metadata.dll
-    |   System.Runtime.InteropServices.dll
-    |   System.Runtime.Numerics.dll
-    |   System.Runtime.Serialization.Formatters.dll
-    |   System.Security.Claims.dll
-    |   System.Security.Cryptography.dll
-    |   System.Security.Principal.Windows.dll
-    |   System.Text.Encoding.CodePages.dll
-    |   System.Text.RegularExpressions.dll
-    |   System.Threading.Channels.dll
-    |   System.Threading.dll
-    |   System.Threading.Tasks.Parallel.dll
-    |   Tesseract.dll
-    |   WinRT.Runtime.dll
-    |   
-    +---x64
-    |       leptonica-1.82.0.dll
-    |       tesseract50.dll
-    |       
-    \---x86
-            leptonica-1.82.0.dll
-            tesseract50.dll
-            

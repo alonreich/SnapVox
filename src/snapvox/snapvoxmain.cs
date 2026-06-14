@@ -47,10 +47,16 @@ public class snapvoxMain
     public static async Task Main(string[] args)
     {
         args ??= Array.Empty<string>();
-        bool isInstaller = !StartupTaskHelper.IsRunningFromInstallPath() && !DeploymentLifecycle.IsLifecycleCommand(args);
-        bool isLifecycle = DeploymentLifecycle.IsLifecycleCommand(args);
+        bool isAdminStartupCommand = StartupTaskHelper.IsAdminStartupCommand(args);
+        bool isInstaller = !StartupTaskHelper.IsRunningFromInstallPath() && !DeploymentLifecycle.IsLifecycleCommand(args) && !isAdminStartupCommand;
+        bool isLifecycle = DeploymentLifecycle.IsLifecycleCommand(args) || isAdminStartupCommand;
 
         bool hasFiles = args.Any(a => !a.StartsWith("-") && !a.StartsWith("/"));
+
+        if (!isInstaller && !isLifecycle && !hasFiles && await TryRedirectToElevatedStartupAsync(args).ConfigureAwait(false))
+        {
+            return;
+        }
 
         using var appMutex = new Mutex(false, "Global\\SnapVox_SingleInstance_Mutex", out bool createdNew);
         if (!createdNew && !isInstaller && !isLifecycle && !hasFiles)
@@ -79,6 +85,12 @@ public class snapvoxMain
                 BootstrapDebug.Log("Headless deployment path (no Avalonia / no Skia preload).");
                 InstallHostContext.WriteEarlyTrace("Headless deployment branch");
                 Environment.Exit(await DeploymentLifecycle.RunHeadlessDeploymentCommandAsync(args).ConfigureAwait(false));
+                return;
+            }
+
+            if (isAdminStartupCommand)
+            {
+                Environment.Exit(await StartupTaskHelper.RunAdminStartupCommandAsync(args).ConfigureAwait(false));
                 return;
             }
 
@@ -127,6 +139,50 @@ public class snapvoxMain
             InstallHostContext.WriteEarlyTrace("Main exception: " + ex.Message);
             if (LOG != null) LOG.Fatal(msg);
             ExecutionTrace.LogException("Bootstrap.Main", ex, msg);
+        }
+    }
+
+    private static async Task<bool> TryRedirectToElevatedStartupAsync(string[] args)
+    {
+        try
+        {
+            if (StartupTaskHelper.IsElevated())
+            {
+                return false;
+            }
+
+            if (args.Any(a => a.Equals("--autorun", StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
+            if (!StartupTaskHelper.IsRunningFromInstallPath())
+            {
+                return false;
+            }
+
+            Directory.CreateDirectory(StartupTaskHelper.ConfigurationFolder);
+            IniConfigurationDeployer.EnsureDefaultsFile(StartupTaskHelper.ConfigurationFolder);
+            IniConfig.IniDirectory = StartupTaskHelper.ConfigurationFolder;
+            IniConfig.Init("snapvox", IniConfigurationDeployer.ConfigBaseName);
+
+            var core = IniConfig.GetIniSection<CoreConfiguration>();
+            if (!core.RunAsAdministratorOnStartup)
+            {
+                return false;
+            }
+
+            if (!await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            return await StartupTaskHelper.TryRunElevatedStartupTaskAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            try { ExecutionTrace.LogException("snapvoxMain.TryRedirectToElevatedStartup", ex, string.Empty); } catch { }
+            return false;
         }
     }
 

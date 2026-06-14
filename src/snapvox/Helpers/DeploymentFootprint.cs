@@ -29,7 +29,8 @@ internal static class DeploymentFootprint
         AppName);
 
     public static readonly string InstallFolder = StartupTaskHelper.InstallFolder;
-    public static readonly string InstallLogPath = Path.Combine(ProgramDataFolder, "install_log.txt");
+    public static readonly string TempInstallationLogPath = Path.Combine(Path.GetTempPath(), "SnapVox_Installation.log");
+    public static readonly string InstallLogPath = TempInstallationLogPath;
 
     public static readonly string RoamingAppDataFolder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -41,9 +42,6 @@ internal static class DeploymentFootprint
 
     public static readonly string TempAppFolder = Path.Combine(Path.GetTempPath(), AppName);
     public static readonly string DeploymentTempRoot = Path.Combine(TempAppFolder, "Lifecycle");
-
-    /// <summary>Early bootstrap / Setup.exe trace before ProgramData logging is available (%TEMP%).</summary>
-    public static readonly string TempInstallationLogPath = Path.Combine(TempAppFolder, "Installation.log");
 
     public static readonly string[] ImageExtensions = { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".ico" };
 

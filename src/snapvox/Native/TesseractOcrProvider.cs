@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using snapvox.native.foundation;
@@ -36,7 +35,6 @@ namespace snapvox.native
             return HasTessData(tessDataPath, "eng.traineddata") && HasTessData(tessDataPath, "heb.traineddata");
         }
 
-
         public Task<OcrInformation> DoOcrAsync(Image image) => DoOcrAsync(image, CancellationToken.None);
 
         public Task<OcrInformation> DoOcrAsync(Image image, CancellationToken ct) => _queue.EnqueueAsync(image, ct);
@@ -54,7 +52,6 @@ namespace snapvox.native
             }
 
             await _queue.DisposeAsync().ConfigureAwait(false);
-
         }
 
         private static async Task EnsureInitializedAsync(CancellationToken cancellationToken)
@@ -81,7 +78,6 @@ namespace snapvox.native
                 InitGate.Release();
             }
         }
-
 
         private static bool HasTessData(string tessDataPath, string fileName)
         {
@@ -112,36 +108,47 @@ namespace snapvox.native
                 return null;
             }
 
-            Image preprocessed = OcrImagePreprocessor.Prepare(image);
-            bool disposePreprocessed = !ReferenceEquals(preprocessed, image);
-            (float scaleX, float scaleY) = OcrImagePreprocessor.GetScaleFactors(image, preprocessed);
-            try
+            using OcrPreparedImage prepared = OcrImagePreprocessor.Prepare(image, OcrPreprocessingProfile.Tesseract);
+            if (prepared?.Image == null)
             {
-                return await Task.Run(() =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    using var buffer = new MemoryStream();
-                    preprocessed.Save(buffer, new PngEncoder());
-                    using var engine = new TesseractEngine(tessDataPath, "heb+eng", EngineMode.Default);
-                    using Pix pix = Pix.LoadFromMemory(buffer.ToArray());
-                    using Page page = engine.Process(pix);
-                    return MapPage(page, scaleX, scaleY);
-                }, cancellationToken).ConfigureAwait(false);
+                return null;
             }
-            finally
+
+            return await Task.Run(() =>
             {
-                if (disposePreprocessed && preprocessed != null)
-                {
-                    preprocessed.Dispose();
-                }
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                using var buffer = new MemoryStream();
+                prepared.Image.Save(buffer, new PngEncoder());
+                using var engine = CreateEngine(tessDataPath);
+                using Pix pix = Pix.LoadFromMemory(buffer.ToArray());
+                using Page page = engine.Process(pix, PageSegMode.Auto);
+                return MapPage(page, prepared);
+            }, cancellationToken).ConfigureAwait(false);
         }
 
-        private static OcrInformation MapPage(Page page, float scaleX, float scaleY)
+        private static TesseractEngine CreateEngine(string tessDataPath)
+        {
+            var engine = new TesseractEngine(tessDataPath, "heb+eng", EngineMode.LstmOnly);
+            engine.DefaultPageSegMode = PageSegMode.Auto;
+            engine.SetVariable("preserve_interword_spaces", "1");
+            engine.SetVariable("load_system_dawg", false);
+            engine.SetVariable("load_freq_dawg", false);
+            engine.SetVariable("classify_enable_learning", false);
+            engine.SetVariable("user_defined_dpi", "300");
+            engine.SetVariable("textord_tabfind_find_tables", false);
+            return engine;
+        }
+
+        private static OcrInformation MapPage(Page page, OcrPreparedImage prepared)
         {
             if (page == null)
             {
                 return null;
+            }
+
+            if (page.GetMeanConfidence() < 0.15f)
+            {
+                return new OcrInformation { Text = string.Empty, Words = new List<OcrWord>() };
             }
 
             var information = new OcrInformation
@@ -167,17 +174,13 @@ namespace snapvox.native
 
                 information.Words.Add(new OcrWord
                 {
-                    Text = text,
-                    Bounds = RECT.FromXYWH(
-                        (int)Math.Round(rect.X1 * scaleX),
-                        (int)Math.Round(rect.Y1 * scaleY),
-                        (int)Math.Round((rect.X2 - rect.X1) * scaleX),
-                        (int)Math.Round((rect.Y2 - rect.Y1) * scaleY))
+                    Text = text.Trim(),
+                    Bounds = prepared.MapBounds(rect.X1, rect.Y1, rect.X2 - rect.X1, rect.Y2 - rect.Y1)
                 });
             }
             while (iterator.Next(PageIteratorLevel.Word));
 
-            HebrewOcrCorrectionHelper.CorrectHebrewOcrInformation(information);
+            OcrTextLayout.NormalizeTextFromWordsWhenEmpty(information);
             return information;
         }
     }

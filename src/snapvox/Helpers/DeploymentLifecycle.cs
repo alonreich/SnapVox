@@ -243,7 +243,10 @@ internal static class DeploymentLifecycle
         await ReportAsync(progress, logger, end - 20, "CLEANUP", "REGISTRY", "Scrubbing all hives...", ct).ConfigureAwait(false);
         await DeleteRegistryFootprintAsync(logger, ct).ConfigureAwait(false);
 
-        await DeleteFileWithRetryAsync(DeploymentFootprint.TempInstallationLogPath, logger, ct).ConfigureAwait(false);
+        if (!string.Equals(op, "Pre-Install Cleanup", StringComparison.OrdinalIgnoreCase))
+        {
+            await DeleteFileWithRetryAsync(DeploymentFootprint.TempInstallationLogPath, logger, ct).ConfigureAwait(false);
+        }
 
         await ReportAsync(progress, logger, end - 10, "CLEANUP", "SHELL", "Cleaning links...", ct).ConfigureAwait(false);
         await DeleteKnownShortcutsAsync(logger, ct).ConfigureAwait(false);
@@ -637,8 +640,13 @@ internal static class DeploymentLifecycle
     private static async Task CreateElevatedStartupTaskAsync(string exe, DeploymentLogger logger, CancellationToken ct)
     {
         string user = WindowsIdentity.GetCurrent().Name;
-        string args = $"/Create /TN \"{DeploymentFootprint.ScheduledTaskName}\" /TR \"\\\"{exe}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /RU \"{user}\" /F";
-        await RunHiddenProcessAsync("schtasks.exe", args, 10000, logger, ct).ConfigureAwait(false);
+        string args = $"/Create /TN \"{DeploymentFootprint.ScheduledTaskName}\" /TR \"\\\"{exe}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /F";
+        int exitCode = await RunHiddenProcessAsync("schtasks.exe", args, 10000, logger, ct).ConfigureAwait(false);
+        if (exitCode != 0)
+        {
+            string fallbackArgs = $"/Create /TN \"{DeploymentFootprint.ScheduledTaskName}\" /TR \"\\\"{exe}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /RU \"{user}\" /F";
+            await RunHiddenProcessAsync("schtasks.exe", fallbackArgs, 10000, logger, ct).ConfigureAwait(false);
+        }
     }
 
     private static async Task CreateStartMenuShortcutAsync(DeploymentLogger logger, CancellationToken ct)
@@ -733,8 +741,7 @@ internal static class DeploymentLifecycle
             }
             catch
             {
-                string fallback = Path.Combine(DeploymentFootprint.TempAppFolder, $"Deployment_{session}_{DateTime.Now:yyyyMMdd_HHmmss}.log");
-                var sw = new StreamWriter(new FileStream(fallback, FileMode.Create, FileAccess.Write, FileShare.Read), Encoding.UTF8) { AutoFlush = true };
+                var sw = new StreamWriter(Stream.Null, Encoding.UTF8) { AutoFlush = true };
                 return new DeploymentLogger(sw);
             }
         }

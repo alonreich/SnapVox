@@ -7,6 +7,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using snapvox.foundation.core;
+using snapvox.foundation.IniFile;
 using snapvox.foundation.interfaces.Ocr;
 using snapvox.editor.forms;
 using snapvox.native;
@@ -32,18 +33,29 @@ namespace snapvox.helpers
                 string fileName = $"OCR_{timestamp}.txt";
 
                 await snapvox.foundation.core.UiClipboard.SetTextAsync(text).ConfigureAwait(false);
-                
-                string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                Directory.CreateDirectory(tempDir);
-                string historyPath = Path.Combine(tempDir, fileName);
-                await File.WriteAllTextAsync(historyPath, text).ConfigureAwait(false);
-                Process.Start(new ProcessStartInfo("notepad.exe", historyPath) { UseShellExecute = true });
+
+                var config = IniConfig.GetIniSection<CoreConfiguration>();
+                if (config.KeepBackup)
+                {
+                    string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                    Directory.CreateDirectory(tempDir);
+                    string historyPath = Path.Combine(tempDir, fileName);
+                    await File.WriteAllTextAsync(historyPath, text).ConfigureAwait(false);
+                    Process.Start(new ProcessStartInfo("notepad.exe", historyPath) { UseShellExecute = true });
+
+                    Dispatcher.UIThread.Post(() => {
+                        NotificationOverlayWindow.ShowNotification("TEXT COPIED & SAVED", null);
+                    });
+
+                    Log.Info($"OCR completed. Text saved to {historyPath} and copied to clipboard.");
+                    return;
+                }
 
                 Dispatcher.UIThread.Post(() => {
-                    NotificationOverlayWindow.ShowNotification("TEXT COPIED & SAVED", null);
+                    NotificationOverlayWindow.ShowNotification("TEXT COPIED", null);
                 });
 
-                Log.Info($"OCR completed. Text saved to {historyPath} and copied to clipboard.");
+                Log.Info("OCR completed. Text copied to clipboard.");
             }
             catch (Exception ex)
             {

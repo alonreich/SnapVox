@@ -193,9 +193,11 @@ namespace snapvox.Forms
             {
                 if (wasAdmin)
                 {
-                    await StartupTaskHelper.DeleteElevatedStartupTaskAsync().ConfigureAwait(true);
-                    if (!await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true))
+                    bool removed = await StartupTaskHelper.DeleteElevatedStartupTaskAsync().ConfigureAwait(true);
+                    if (removed && !await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true))
                     {
+                        _config.RunAsAdministratorOnStartup = false;
+                        IniConfig.Save();
                         OverlayHelper.ShowNotification("Admin Startup Removed", this);
                     }
                     else
@@ -205,9 +207,11 @@ namespace snapvox.Forms
                 }
                 else
                 {
-                    await StartupTaskHelper.ConfigureElevatedStartupTaskAsync().ConfigureAwait(true);
-                    if (await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true))
+                    bool configured = await StartupTaskHelper.ConfigureElevatedStartupTaskAsync().ConfigureAwait(true);
+                    if (configured && await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true))
                     {
+                        _config.RunAsAdministratorOnStartup = true;
+                        IniConfig.Save();
                         OverlayHelper.ShowNotification("Admin Startup Configured", this);
                     }
                     else

@@ -19,7 +19,7 @@ namespace snapvox.foundation.interfaces.Ocr
                 var configured = availableProviders.FirstOrDefault(provider =>
                     string.Equals(provider.DisplayName, configuredEngine, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(provider.EngineId, configuredEngine, StringComparison.OrdinalIgnoreCase));
-                if (configured != null)
+                if (configured != null && configured.HasRequiredLanguages())
                 {
                     return configured;
                 }

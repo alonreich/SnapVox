@@ -23,6 +23,8 @@ public static class StartupTaskHelper
     private static ILog Log => LogHelper.IsInitialized ? snapvox.foundation.core.LogHelper.GetLogger(typeof(StartupTaskHelper)) : null;
     private const string MsiMutexName = @"Global\_MSIExecute";
     private const string ScheduledTaskName = "snapvox";
+    private const string ConfigureAdminStartupArgument = "--configure-admin-startup";
+    private const string RemoveAdminStartupArgument = "--remove-admin-startup";
 
     public static readonly string InstallFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "snapvox");
     public static readonly string ConfigurationFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "snapvox");
@@ -142,24 +144,56 @@ public static class StartupTaskHelper
         return RuntimePathHelper.ExecutablePath;
     }
 
-    private static async Task CreateElevatedStartupTaskAsync(string executablePath)
+    public static bool IsAdminStartupCommand(string[] args)
+    {
+        return args != null && args.Any(arg => arg.Equals(ConfigureAdminStartupArgument, StringComparison.OrdinalIgnoreCase) || arg.Equals(RemoveAdminStartupArgument, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static async Task<int> RunAdminStartupCommandAsync(string[] args)
+    {
+        if (args == null)
+        {
+            return 1;
+        }
+
+        if (args.Any(arg => arg.Equals(ConfigureAdminStartupArgument, StringComparison.OrdinalIgnoreCase)))
+        {
+            return await ConfigureElevatedStartupTaskInCurrentProcessAsync(null).ConfigureAwait(false) ? 0 : 1;
+        }
+
+        if (args.Any(arg => arg.Equals(RemoveAdminStartupArgument, StringComparison.OrdinalIgnoreCase)))
+        {
+            return await DeleteElevatedStartupTaskInCurrentProcessAsync().ConfigureAwait(false) ? 0 : 1;
+        }
+
+        return 1;
+    }
+
+    private static async Task<bool> CreateElevatedStartupTaskAsync(string executablePath)
     {
         try
         {
             Log?.Info("OS: Registering elevated scheduled task for: " + executablePath);
             string userName = WindowsIdentity.GetCurrent().Name;
-            string arguments = string.Format("/Create /TN \"{0}\" /TR \"\\\"{1}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /RU \"{2}\" /F", ScheduledTaskName, executablePath, userName);
+            string arguments = string.Format("/Create /TN \"{0}\" /TR \"\\\"{1}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /F", ScheduledTaskName, executablePath);
             int exitCode = await RunHiddenProcessAsync("schtasks.exe", arguments, 15000).ConfigureAwait(false);
             if (exitCode != 0)
             {
-                Log?.Error("OS: Scheduled task registration failed with exit code " + exitCode);
-                throw new InvalidOperationException("OS: Task registration failed.");
+                string fallbackArguments = string.Format("/Create /TN \"{0}\" /TR \"\\\"{1}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /RU \"{2}\" /F", ScheduledTaskName, executablePath, userName);
+                exitCode = await RunHiddenProcessAsync("schtasks.exe", fallbackArguments, 15000).ConfigureAwait(false);
+                if (exitCode != 0)
+                {
+                    Log?.Error("OS: Scheduled task registration failed with exit code " + exitCode);
+                    return false;
+                }
             }
             Log?.Info("OS: Elevated scheduled task registered successfully for " + userName);
+            return true;
         }
         catch (Exception ex)
         {
             LogSuppressedException("CreateElevatedStartupTask", ex);
+            return false;
         }
     }
 
@@ -168,23 +202,45 @@ public static class StartupTaskHelper
         try
         {
             string targetExecutable = string.IsNullOrWhiteSpace(executablePath) ? GetStartupTaskExecutablePath() : executablePath;
-            StartupHelper.SetRunUser(null, targetExecutable);
             if (!IsElevated())
             {
-                RestartElevated("--install");
-                return true;
+                bool elevated = await RunElevatedAdminCommandAsync(ConfigureAdminStartupArgument).ConfigureAwait(false);
+                return elevated && await HasElevatedStartupTaskAsync().ConfigureAwait(false);
             }
 
-            await CreateElevatedStartupTaskAsync(targetExecutable).ConfigureAwait(false);
-            StartupHelper.DeleteRunAll();
-            StartupHelper.SetRunUser(null, targetExecutable);
-            StartupHelper.DeleteStartupFolderShortcut();
-            ExecutionTrace.LogEvent("StartupTaskHelper.ScheduledTask", "Configured", targetExecutable);
-            return true;
+            return await ConfigureElevatedStartupTaskInCurrentProcessAsync(targetExecutable).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             LogSuppressedException("ConfigureElevatedStartupTask", ex);
+            return false;
+        }
+    }
+
+    private static async Task<bool> ConfigureElevatedStartupTaskInCurrentProcessAsync(string executablePath)
+    {
+        try
+        {
+            if (!IsElevated())
+            {
+                return false;
+            }
+
+            string targetExecutable = string.IsNullOrWhiteSpace(executablePath) ? GetStartupTaskExecutablePath() : executablePath;
+            if (!await CreateElevatedStartupTaskAsync(targetExecutable).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            StartupHelper.DeleteRunAll();
+            StartupHelper.DeleteRunUser();
+            StartupHelper.DeleteStartupFolderShortcut();
+            ExecutionTrace.LogEvent("StartupTaskHelper.ScheduledTask", "Configured", targetExecutable);
+            return await HasElevatedStartupTaskAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LogSuppressedException("ConfigureElevatedStartupTaskInCurrentProcess", ex);
             return false;
         }
     }
@@ -203,17 +259,70 @@ public static class StartupTaskHelper
         }
     }
 
-    public static async Task DeleteElevatedStartupTaskAsync()
+    public static async Task<bool> DeleteElevatedStartupTaskAsync()
     {
         try
         {
-            int exitCode = await RunHiddenProcessAsync("schtasks.exe", string.Format("/Delete /TN \"{0}\" /F", ScheduledTaskName), 10000).ConfigureAwait(false);
-            StartupHelper.SetRunUser(null, GetStartupTaskExecutablePath());
-            ExecutionTrace.LogEvent("StartupTaskHelper.ScheduledTask", "Delete", exitCode.ToString());
+            if (!IsElevated())
+            {
+                bool elevated = await RunElevatedAdminCommandAsync(RemoveAdminStartupArgument).ConfigureAwait(false);
+                return elevated && !await HasElevatedStartupTaskAsync().ConfigureAwait(false);
+            }
+
+            return await DeleteElevatedStartupTaskInCurrentProcessAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             LogSuppressedException("DeleteElevatedStartupTask", ex);
+            return false;
+        }
+    }
+
+    private static async Task<bool> DeleteElevatedStartupTaskInCurrentProcessAsync()
+    {
+        try
+        {
+            if (!IsElevated())
+            {
+                return false;
+            }
+
+            int exitCode = await RunHiddenProcessAsync("schtasks.exe", string.Format("/Delete /TN \"{0}\" /F", ScheduledTaskName), 10000).ConfigureAwait(false);
+            StartupHelper.SetRunUser(null, GetStartupTaskExecutablePath());
+            ExecutionTrace.LogEvent("StartupTaskHelper.ScheduledTask", "Delete", exitCode.ToString());
+            return exitCode == 0 || !await HasElevatedStartupTaskAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LogSuppressedException("DeleteElevatedStartupTaskInCurrentProcess", ex);
+            return false;
+        }
+    }
+
+    private static async Task<bool> RunElevatedAdminCommandAsync(string arguments)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = RuntimePathHelper.ExecutablePath,
+                Arguments = arguments,
+                UseShellExecute = true,
+                Verb = "runas"
+            });
+
+            if (process == null)
+            {
+                return false;
+            }
+
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(90)).ConfigureAwait(false);
+            return process.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            LogSuppressedException("RunElevatedAdminCommand", ex);
+            return false;
         }
     }
 

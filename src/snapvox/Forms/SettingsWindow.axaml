@@ -35,7 +35,7 @@
                         <CheckBox Name="ChkLeavePictureAsIs" Content="Leave Picture As Is While Text Extracting (OCR)" />
                         
                         <StackPanel Name="OcrEnginePanel">
-                            <TextBlock Text="OCR Engine Selection" Classes="header"/>
+                            <TextBlock Text="English OCR Engine Selection" Classes="header"/>
                             <ComboBox Name="CboOcrEngine"/>
                         </StackPanel>
                         
@@ -58,7 +58,6 @@
                         <TextBlock Name="TxtHotkeyWarning" Foreground="#FF5555" FontWeight="Bold" IsVisible="False" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         
                         <Grid ColumnDefinitions="300,*" RowDefinitions="Auto">
-                            <!-- Left Column: Capture Hotkeys -->
                             <StackPanel Grid.Column="0" Spacing="15">
                                 <TextBlock Text="Capture Hotkeys" Classes="header" Margin="0,0,0,5"/>
                                 
@@ -80,7 +79,6 @@
 
                             </StackPanel>
 
-                            <!-- Right Column: Other Tools -->
                             <StackPanel Grid.Column="1" Spacing="20" Margin="20,0,0,0">
                                 <StackPanel Spacing="10">
                                     <TextBlock Text="Drawing Tools" Classes="header" Margin="0,0,0,5"/>

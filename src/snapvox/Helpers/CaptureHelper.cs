@@ -223,17 +223,19 @@ namespace snapvox.helpers
                             {
                                 var owned = fullSnapshot.Clone(x => x.Crop(cropRect));
                                 
-                                // Mandate: Every capture saved to %TMP%\SnapVox immediately (raw)
-                                try
+                                if (Config.KeepBackup)
                                 {
-                                    string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                                    Directory.CreateDirectory(tempDir);
-                                    string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                                    owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
-                                }
-                                catch (Exception ex)
-                                {
-                                    Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                                    try
+                                    {
+                                        string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                                        Directory.CreateDirectory(tempDir);
+                                        string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                                        owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                                    }
                                 }
 
                                 if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.Black); });
@@ -266,17 +268,19 @@ namespace snapvox.helpers
                 if (fullSnapshot != null)
                 {
                     var owned = fullSnapshot.Clone(x => { });
-                    // Mandate: Every capture saved to %TMP%\SnapVox immediately (raw)
-                    try
+                    if (Config.KeepBackup)
                     {
-                        string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                        Directory.CreateDirectory(tempDir);
-                        string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                        owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                        try
+                        {
+                            string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                            Directory.CreateDirectory(tempDir);
+                            string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                            owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                        }
                     }
 
                     if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.Black); });
@@ -353,17 +357,19 @@ namespace snapvox.helpers
                     if (captured == null) return null;
                     var clone = captured.Clone(x => { });
 
-                    // Mandate: Every capture saved to %TMP%\SnapVox immediately (raw)
-                    try
+                    if (Config.KeepBackup)
                     {
-                        string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                        Directory.CreateDirectory(tempDir);
-                        string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                        clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                        try
+                        {
+                            string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                            Directory.CreateDirectory(tempDir);
+                            string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                            clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                        }
                     }
 
                     if (Config.AddFrameBorders) clone.Mutate(x => { int t = 2; if (clone.Width > t * 2 && clone.Height > t * 2) x.Crop(new Rectangle(t, t, clone.Width - t * 2, clone.Height - t * 2)).Pad(clone.Width, clone.Height, SixLabors.ImageSharp.Color.Black); });

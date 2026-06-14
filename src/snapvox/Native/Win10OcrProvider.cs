@@ -23,8 +23,8 @@ namespace snapvox.native
     {
         private readonly OcrRequestQueue _queue;
         private int _disposed;
-        private static OcrEngine _cachedEngine;
         private static readonly object EngineSync = new object();
+        private static readonly Dictionary<string, OcrEngine> CachedEngines = new Dictionary<string, OcrEngine>(StringComparer.OrdinalIgnoreCase);
 
         public Win10OcrProvider()
         {
@@ -58,17 +58,17 @@ namespace snapvox.native
 
         public static bool AreRequiredLanguagesAvailable()
         {
-            try
-            {
-                var languages = OcrEngine.AvailableRecognizerLanguages;
-                bool english = languages.Any(language => language.LanguageTag.StartsWith("en", StringComparison.OrdinalIgnoreCase));
-                bool hebrew = languages.Any(language => language.LanguageTag.StartsWith("he", StringComparison.OrdinalIgnoreCase));
-                return english || hebrew;
-            }
-            catch
-            {
-                return false;
-            }
+            return IsEnglishLanguageAvailable() && IsHebrewLanguageAvailable();
+        }
+
+        public static bool IsEnglishLanguageAvailable()
+        {
+            return ResolveLanguageTag("en") != null;
+        }
+
+        public static bool IsHebrewLanguageAvailable()
+        {
+            return ResolveLanguageTag("he") != null;
         }
 
         public static bool IsAnySupportedLanguageAvailable()
@@ -92,61 +92,108 @@ namespace snapvox.native
 
             if (!IsAnySupportedLanguageAvailable())
             {
-                return "Windows OCR is not available. Install the English and Hebrew language packs with OCR.";
+                return "Windows OCR is not available. Install English and Hebrew language packs with OCR.";
             }
 
-            return "Windows OCR is missing English or Hebrew language support.";
+            if (!IsEnglishLanguageAvailable())
+            {
+                return "Windows OCR is missing English language support.";
+            }
+
+            return "Windows OCR is missing Hebrew language support.";
         }
 
         public static Task EnsureWindowsOcrInstalled() => Task.CompletedTask;
 
-        private static OcrEngine GetOrCreateEngine()
+        internal static Task<OcrInformation> RecognizeEnglishOnlyAsync(Image image, CancellationToken cancellationToken)
         {
-            lock (EngineSync)
-            {
-                if (_cachedEngine != null)
-                {
-                    return _cachedEngine;
-                }
-
-                _cachedEngine = OcrEngine.TryCreateFromUserProfileLanguages() ?? OcrEngine.TryCreateFromLanguage(new Language("en-US"));
-                return _cachedEngine;
-            }
+            return RecognizeCoreAsync(image, cancellationToken, includeHebrew: false);
         }
 
-        private static async Task<OcrInformation> RecognizeCoreAsync(Image image, CancellationToken cancellationToken)
+        private static Task<OcrInformation> RecognizeCoreAsync(Image image, CancellationToken cancellationToken)
         {
-            if (!AreRequiredLanguagesAvailable())
+            return RecognizeCoreAsync(image, cancellationToken, includeHebrew: true);
+        }
+
+        private static async Task<OcrInformation> RecognizeCoreAsync(Image image, CancellationToken cancellationToken, bool includeHebrew)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string englishTag = ResolveLanguageTag("en");
+            string hebrewTag = includeHebrew ? ResolveLanguageTag("he") : null;
+            if (englishTag == null || (includeHebrew && hebrewTag == null))
             {
                 return null;
             }
 
-            Image preprocessed = OcrImagePreprocessor.Prepare(image);
-            bool disposePreprocessed = !ReferenceEquals(preprocessed, image);
-            (float scaleX, float scaleY) = OcrImagePreprocessor.GetScaleFactors(image, preprocessed);
+            using OcrPreparedImage prepared = OcrImagePreprocessor.Prepare(image, OcrPreprocessingProfile.Windows);
+            if (prepared?.Image == null)
+            {
+                return null;
+            }
+
+            using SoftwareBitmap bitmap = await CreateSoftwareBitmapAsync(prepared.Image, cancellationToken).ConfigureAwait(false);
+            if (bitmap == null)
+            {
+                return null;
+            }
+
+            OcrInformation english = await RecognizeWithLanguageAsync(bitmap, englishTag, prepared, cancellationToken).ConfigureAwait(false);
+            if (!includeHebrew)
+            {
+                return english;
+            }
+
+            OcrInformation hebrew = await RecognizeWithLanguageAsync(bitmap, hebrewTag, prepared, cancellationToken).ConfigureAwait(false);
+            return OcrTextLayout.MergeByLanguage(hebrew, english);
+        }
+
+        private static async Task<OcrInformation> RecognizeWithLanguageAsync(SoftwareBitmap bitmap, string languageTag, OcrPreparedImage prepared, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(languageTag))
+            {
+                return null;
+            }
+
+            OcrEngine engine = GetOrCreateEngine(languageTag);
+            if (engine == null)
+            {
+                return null;
+            }
+
+            OcrResult result = await engine.RecognizeAsync(bitmap).AsTask(cancellationToken).ConfigureAwait(false);
+            return MapResult(result, prepared);
+        }
+
+        private static OcrEngine GetOrCreateEngine(string languageTag)
+        {
+            lock (EngineSync)
+            {
+                if (CachedEngines.TryGetValue(languageTag, out var cached))
+                {
+                    return cached;
+                }
+
+                var engine = OcrEngine.TryCreateFromLanguage(new Language(languageTag));
+                if (engine != null)
+                {
+                    CachedEngines[languageTag] = engine;
+                }
+
+                return engine;
+            }
+        }
+
+        private static string ResolveLanguageTag(string prefix)
+        {
             try
             {
-                using SoftwareBitmap bitmap = await CreateSoftwareBitmapAsync(preprocessed, cancellationToken).ConfigureAwait(false);
-                if (bitmap == null)
-                {
-                    return null;
-                }
-
-                OcrEngine engine = GetOrCreateEngine();
-                if (engine == null)
-                {
-                    return null;
-                }
-
-                OcrResult result = await engine.RecognizeAsync(bitmap).AsTask(cancellationToken).ConfigureAwait(false);
-                return MapResult(result, scaleX, scaleY);
+                return OcrEngine.AvailableRecognizerLanguages
+                    .Select(language => language.LanguageTag)
+                    .FirstOrDefault(tag => tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
             }
-            finally
+            catch
             {
-                if (disposePreprocessed && preprocessed != null)
-                {
-                    preprocessed.Dispose();
-                }
+                return null;
             }
         }
 
@@ -160,7 +207,7 @@ namespace snapvox.native
             return await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied).AsTask(cancellationToken).ConfigureAwait(false);
         }
 
-        private static OcrInformation MapResult(OcrResult result, float scaleX, float scaleY)
+        private static OcrInformation MapResult(OcrResult result, OcrPreparedImage prepared)
         {
             if (result == null)
             {
@@ -193,17 +240,13 @@ namespace snapvox.native
                         information.Words.Add(new DomainOcrWord
                         {
                             Text = word.Text,
-                            Bounds = RECT.FromXYWH(
-                                (int)Math.Round(bounds.X * scaleX),
-                                (int)Math.Round(bounds.Y * scaleY),
-                                (int)Math.Round(bounds.Width * scaleX),
-                                (int)Math.Round(bounds.Height * scaleY))
+                            Bounds = prepared.MapBounds(bounds.X, bounds.Y, bounds.Width, bounds.Height)
                         });
                     }
                 }
             }
 
-            HebrewOcrCorrectionHelper.CorrectHebrewOcrInformation(information);
+            OcrTextLayout.NormalizeTextFromWordsWhenEmpty(information);
             return information;
         }
     }

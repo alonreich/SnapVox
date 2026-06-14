@@ -83,8 +83,9 @@ namespace snapvox
                     SimpleServiceProvider.Current.AddService<IOcrResultHandler>(new OcrResultHandler());
 #if USE_TESSERACT
                     log.Info("Using Tesseract OCR Provider with Windows OCR fallback.");
-                    ocrProviders.Add(new native.TesseractOcrProvider());
-                    ocrProviders.Add(new native.Win10OcrProvider());
+                    var tesseractProvider = new native.TesseractOcrProvider();
+                    ocrProviders.Add(tesseractProvider);
+                    ocrProviders.Add(new native.MixedLanguageOcrProvider(tesseractProvider));
 #else
                     log.Info("Using Windows 10 OCR Provider.");
                     ocrProviders.Add(new native.Win10OcrProvider());

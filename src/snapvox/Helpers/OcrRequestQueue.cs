@@ -19,7 +19,7 @@ namespace snapvox.helpers
         public OcrRequestQueue(Func<Image, CancellationToken, Task<snapvox.foundation.interfaces.Ocr.OcrInformation>> recognize)
         {
             _recognize = recognize ?? throw new ArgumentNullException(nameof(recognize));
-            _channel = Channel.CreateBounded<WorkItem>(new BoundedChannelOptions(4)
+            _channel = Channel.CreateBounded<WorkItem>(new BoundedChannelOptions(1)
             {
                 FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = true,
@@ -57,6 +57,7 @@ namespace snapvox.helpers
                 var item = new WorkItem(owned, completion, cancellationToken);
                 owned = null;
 
+                DropPendingItems(cancellationToken);
                 if (!_channel.Writer.TryWrite(item))
                 {
                     return await EnqueueSlowAsync(item, cancellationToken).ConfigureAwait(false);
@@ -141,6 +142,15 @@ namespace snapvox.helpers
             }
 
             ExecutionTrace.SetQueueDepth("Ocr", 0);
+        }
+
+        private void DropPendingItems(CancellationToken cancellationToken)
+        {
+            while (_channel.Reader.TryRead(out var item))
+            {
+                item.Completion.TrySetCanceled(cancellationToken);
+                item.Image.Dispose();
+            }
         }
 
         public void Dispose()

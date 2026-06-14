@@ -14,6 +14,7 @@ using snapvox.foundation.core.AvaloniaShims;
 using snapvox.foundation.interfaces.Ocr;
 using snapvox.editor.helpers;
 using snapvox.foundation.IniFile;
+using snapvox.helpers;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Processing;
@@ -299,7 +300,6 @@ namespace snapvox.editor.forms
                 _toolFillModes[tool] = false;
             }
             
-            // Mandate: Counters are smaller and Red by default OOB
             if (AvaloniaColor.TryParse(config.LastCounterColor ?? "#FF0000", out var counterColor))
                 _toolBrushes[EditorTool.Counter] = new SolidColorBrush(counterColor);
             else
@@ -318,7 +318,7 @@ namespace snapvox.editor.forms
             
             _toolFontSizes[EditorTool.Text] = Math.Max(20, config.LastTextSize);
             _toolFontSizes[EditorTool.Emoji] = Math.Max(60, config.LastEmojiSize);
-            _toolFontSizes[EditorTool.Counter] = config.LastCounterSize > 0 ? config.LastCounterSize : 35.0;
+            _toolFontSizes[EditorTool.Counter] = config.LastCounterSize > 0 ? config.LastCounterSize : 42.0;
 
             if (_toolBrushes.TryGetValue(EditorTool.Rectangle, out var b) && b is SolidColorBrush initialBrush)
             {
@@ -473,7 +473,6 @@ namespace snapvox.editor.forms
                 return;
             }
 
-            // Mandated Default Hotkeys (I, A, L, D, H)
             if (e.Key == Key.I) { TriggerToolButton("CounterTool"); e.Handled = true; return; }
             if (e.Key == Key.A) { TriggerToolButton("ArrowTool"); e.Handled = true; return; }
             if (e.Key == Key.L) { TriggerToolButton("LineTool"); e.Handled = true; return; }
@@ -573,13 +572,15 @@ namespace snapvox.editor.forms
 
         private bool _forceClose = false;
         
-        // Interactive OCR
         private bool _isOcrInteractiveMode = false;
         private OcrInformation _interactiveOcrInfo;
         private List<OcrWord> _selectedOcrWords = new List<OcrWord>();
         private List<Avalonia.Controls.Control> _ocrVisuals = new List<Avalonia.Controls.Control>();
+        private OcrWordSpatialIndex _interactiveOcrIndex;
         private int _ocrSelectionStartIndex = -1;
         private int _ocrSelectionEndIndex = -1;
+        private int _lastOcrSelectionMin = -1;
+        private int _lastOcrSelectionMax = -1;
         private bool _isClosingPromptOpen = false;
         private void OnWindowClosing(object sender, WindowClosingEventArgs e)
         {
@@ -1187,7 +1188,7 @@ namespace snapvox.editor.forms
                 {
                     _ocrSelectionStartIndex = FindClosestOcrWordIndex(pos);
                     _ocrSelectionEndIndex = _ocrSelectionStartIndex;
-                    UpdateOcrSelectionVisuals();
+                    UpdateOcrSelectionVisuals(true);
                     e.Handled = true;
                 }
                 return;
@@ -1206,7 +1207,6 @@ namespace snapvox.editor.forms
 
             var clicked = FindSelectableControlAt(pos);
 
-            // Mandate: Selection should be released when starting to draw a new object on empty canvas
             if (_currentTool != EditorTool.None && clicked == null)
             {
                 _selectedControl = null;
@@ -1216,7 +1216,6 @@ namespace snapvox.editor.forms
             }
             else if (_currentTool != EditorTool.None && clicked != null)
             {
-                // Suspend the drawing tool to select an existing object
                 _currentTool = EditorTool.None;
                 SyncToolButtonSelection();
             }
@@ -1418,7 +1417,7 @@ namespace snapvox.editor.forms
             double angle = Math.Atan2(dy, dx);
             double snappedAngle = Math.Round(angle / (Math.PI / 4)) * (Math.PI / 4);
             
-            if (Math.Abs(angle - snappedAngle) < 0.04) // ~2.3 degrees proximity
+            if (Math.Abs(angle - snappedAngle) < 0.04)
             {
                 return new AvaloniaPoint(anchor.X + Math.Cos(snappedAngle) * length, anchor.Y + Math.Sin(snappedAngle) * length);
             }
@@ -1987,7 +1986,7 @@ namespace snapvox.editor.forms
                         }
                     }
                     
-                    UpdateOcrSelectionVisuals();
+                    UpdateOcrSelectionVisuals(true);
                     
                     var ocrToolbar = this.FindControl<Border>("OcrContextToolbar");
                     if (_selectedOcrWords.Count > 0 && ocrToolbar != null)
@@ -2313,7 +2312,6 @@ namespace snapvox.editor.forms
             string defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
             if (Directory.Exists(defaultPath)) return defaultPath;
 
-            // Soft-fail: Use modern StorageProvider API (Mandate 7)
             if (this.StorageProvider.CanPickFolder)
             {
                 var folders = await this.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -2338,17 +2336,15 @@ namespace snapvox.editor.forms
             if (_image == null || !TryBeginEditorOperation()) return;
             try
             {
-                using var tempImage = GetFlattenedImage();
+                using var tempImage = await GetFlattenedImageForOcrAsync().ConfigureAwait(true);
                 if (tempImage == null) return;
 
                 string fileName = $"Capture_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
                 
-                // 1. Save to Downloads (zero prompt)
                 string downloadsPath = await GetEffectiveDownloadPathAsync().ConfigureAwait(true);
                 Directory.CreateDirectory(downloadsPath);
                 await SaveJpegAsync(tempImage, Path.Combine(downloadsPath, fileName)).ConfigureAwait(true);
 
-                // 2. Save to %TMP%\SnapVox (Mandate 2)
                 await SaveToHistoryBackupAsync(fileName, tempImage).ConfigureAwait(true);
 
                 await UiClipboard.SetImageAsync(tempImage).ConfigureAwait(true);
@@ -2377,13 +2373,11 @@ namespace snapvox.editor.forms
                 using var tempImage = GetFlattenedImage();
                 if (tempImage == null) return;
 
-                // 1. Save to %TMP%\SnapVox (Mandate 3)
                 await SaveToHistoryBackupAsync($"Capture_{DateTime.Now:yyyy-MM-dd HH_mm_ss_fff}.jpg", tempImage).ConfigureAwait(true);
 
-                // 2. Copy CF_DIB (Mandate 3)
                 await UiClipboard.SetImageAsync(tempImage).ConfigureAwait(true);
                 
-                OverlayHelper.ShowNotification("IMAGE SAVED & COPIED", this);
+                OverlayHelper.ShowNotification("IMAGE SAVED TO CLIPBOARD", this);
                 await Task.Delay(1000);
                 _forceClose = true;
                 Close();
@@ -2403,6 +2397,8 @@ namespace snapvox.editor.forms
 
         private static async Task SaveToHistoryBackupAsync(string fileName, ImageSharpImage img)
         {
+            if (!IniConfig.GetIniSection<CoreConfiguration>().KeepBackup) return;
+
             try
             {
                 string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
@@ -2427,7 +2423,6 @@ namespace snapvox.editor.forms
 
             if (_isOcrInteractiveMode)
             {
-                // Exit OCR Mode
                 _isOcrInteractiveMode = false;
                 if (ocrButtonText != null) ocrButtonText.Text = "OCR Text Extraction";
                 if (ocrButton != null) ocrButton.Background = Brushes.Transparent;
@@ -2445,7 +2440,7 @@ namespace snapvox.editor.forms
                 if (ocrButtonText != null) ocrButtonText.Text = "OCR Working...";
 
                 Log.Info("STAGED OCR INITIATED");
-                using var tempImage = GetFlattenedImage();
+                using var tempImage = await GetFlattenedImageForOcrAsync().ConfigureAwait(true);
                 if (tempImage == null) return;
                 
                 var providers = SimpleServiceProvider.Current.GetAllInstances<IOcrProvider>();
@@ -2466,7 +2461,8 @@ namespace snapvox.editor.forms
                 if (config.LeavePictureAsIsDuringOcr)
                 {
                     _interactiveOcrInfo = ocrInfo;
-                                     if (_interactiveOcrInfo.Words == null || _interactiveOcrInfo.Words.Count == 0)
+                    _interactiveOcrIndex = OcrWordSpatialIndex.Create(_interactiveOcrInfo.Words);
+                    if (_interactiveOcrInfo.Words == null || _interactiveOcrInfo.Words.Count == 0)
                     {
                         OverlayHelper.ShowNotification("No Selectable Text Found", this);
                         _isOcrInteractiveMode = false;
@@ -2475,7 +2471,7 @@ namespace snapvox.editor.forms
                     {
                         _isOcrInteractiveMode = true;
                         if (ocrButtonText != null) ocrButtonText.Text = "Exit OCR Mode";
-                        if (ocrButton != null) ocrButton.Background = new SolidColorBrush(AvaloniaColor.Parse("#B23A3A")); // Medium red in between
+                        if (ocrButton != null) ocrButton.Background = new SolidColorBrush(AvaloniaColor.Parse("#B23A3A"));
                         Cursor = new Avalonia.Input.Cursor(StandardCursorType.Ibeam);
                         ToggleToolbarControls(true);
                         PaintOcrWords();
@@ -2483,25 +2479,29 @@ namespace snapvox.editor.forms
                 else
                 {
                     string text = ocrInfo?.Text ?? "";
-                    
-                    // Mandate 4: Copy to clipboard zero prompt
                     var topLevel = TopLevel.GetTopLevel(this);
                     if (topLevel?.Clipboard != null) await topLevel.Clipboard.SetTextAsync(text);
-                    
-                    // Mandate 4: Save to %TMP%\SnapVox and open in notepad
-                    string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                    Directory.CreateDirectory(tempDir);
-                    string fileName = $"OCR_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.txt";
-                    string fullPath = Path.Combine(tempDir, fileName);
-                    
-                    await File.WriteAllTextAsync(fullPath, text).ConfigureAwait(true);
-                    Process.Start(new ProcessStartInfo("notepad.exe", fullPath) { UseShellExecute = true });
-                    
-                    OverlayHelper.ShowNotification("TEXT COPIED & SAVED", this);
+
+                    if (config.KeepBackup)
+                    {
+                        string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                        Directory.CreateDirectory(tempDir);
+                        string fileName = $"OCR_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.txt";
+                        string fullPath = Path.Combine(tempDir, fileName);
+                        
+                        await File.WriteAllTextAsync(fullPath, text).ConfigureAwait(true);
+                        Process.Start(new ProcessStartInfo("notepad.exe", fullPath) { UseShellExecute = true });
+                        
+                        OverlayHelper.ShowNotification("TEXT COPIED & SAVED", this);
+                    }
+                    else
+                    {
+                        OverlayHelper.ShowNotification("TEXT COPIED", this);
+                    }
                     
                     if (config.CloseEditorOnAction)
                     {
-                        await Task.Delay(1000); // Unified 1.0s delay
+                        await Task.Delay(1000);
                         _forceClose = true;
                         Close();
                     }
@@ -2560,55 +2560,59 @@ namespace snapvox.editor.forms
         private int FindClosestOcrWordIndex(AvaloniaPoint pos)
         {
             if (_interactiveOcrInfo?.Words == null || _interactiveOcrInfo.Words.Count == 0) return -1;
-            int bestIndex = -1;
-            double bestDist = double.MaxValue;
-            for (int i = 0; i < _interactiveOcrInfo.Words.Count; i++)
-            {
-                var word = _interactiveOcrInfo.Words[i];
-                // Apply visual offset to hit testing as well
-                var rect = new Avalonia.Rect(word.Bounds.X + 3, word.Bounds.Y + 3, word.Bounds.Width + 2, word.Bounds.Height + 2);
-                if (rect.Contains(pos)) return i;
-                
-                double cx = word.Bounds.X + 3 + (word.Bounds.Width + 2) / 2;
-                double cy = word.Bounds.Y + 3 + (word.Bounds.Height + 2) / 2;
-                double dist = Math.Pow(cx - pos.X, 2) + Math.Pow(cy - pos.Y, 2);
-                if (dist < bestDist)
-                {
-                    bestDist = dist;
-                    bestIndex = i;
-                }
-            }
-            return bestDist < 10000 ? bestIndex : -1;
+            _interactiveOcrIndex ??= OcrWordSpatialIndex.Create(_interactiveOcrInfo.Words);
+            return _interactiveOcrIndex.FindClosestIndex((int)Math.Round(pos.X), (int)Math.Round(pos.Y), 10000);
         }
 
-        private void UpdateOcrSelectionVisuals()
+        private void UpdateOcrSelectionVisuals(bool refreshAll = false)
         {
             if (_interactiveOcrInfo?.Words == null) return;
             
             int minIdx = Math.Min(_ocrSelectionStartIndex, _ocrSelectionEndIndex);
             int maxIdx = Math.Max(_ocrSelectionStartIndex, _ocrSelectionEndIndex);
-            
-            for (int i = 0; i < _ocrVisuals.Count; i++)
+
+            if (refreshAll || _lastOcrSelectionMin == -2 || _lastOcrSelectionMax == -2)
             {
-                if (_ocrVisuals[i] is Avalonia.Controls.Shapes.Rectangle r)
-                {
-                    bool isSelected = minIdx != -1 && maxIdx != -1 && i >= minIdx && i <= maxIdx;
-                    bool isPersisted = _selectedOcrWords.Contains(_interactiveOcrInfo.Words[i]);
-                    
-                    if (isSelected || isPersisted)
-                    {
-                        r.Fill = new SolidColorBrush(AvaloniaColor.FromArgb(140, 0, 191, 255)); // Bright sky blue fill
-                        r.Stroke = new SolidColorBrush(AvaloniaColor.FromArgb(200, 0, 191, 255)); // Solid sky blue border
-                        r.StrokeThickness = 1.5;
-                    }
-                    else
-                    {
-                        // Strong dynamic contrast for unselected words against ANY background
-                        r.Fill = new SolidColorBrush(AvaloniaColor.FromArgb(90, 0, 0, 0)); // Semi-transparent black fill
-                        r.Stroke = new SolidColorBrush(AvaloniaColor.FromArgb(140, 255, 255, 255)); // Semi-transparent white border
-                        r.StrokeThickness = 1;
-                    }
-                }
+                UpdateOcrVisualRange(0, _ocrVisuals.Count - 1, minIdx, maxIdx);
+            }
+            else
+            {
+                UpdateOcrVisualRange(_lastOcrSelectionMin, _lastOcrSelectionMax, minIdx, maxIdx);
+                UpdateOcrVisualRange(minIdx, maxIdx, minIdx, maxIdx);
+            }
+
+            _lastOcrSelectionMin = minIdx;
+            _lastOcrSelectionMax = maxIdx;
+        }
+
+        private void UpdateOcrVisualRange(int start, int end, int minIdx, int maxIdx)
+        {
+            if (start < 0 || end < 0) return;
+            int min = Math.Max(0, Math.Min(start, end));
+            int max = Math.Min(_ocrVisuals.Count - 1, Math.Max(start, end));
+            for (int i = min; i <= max; i++)
+            {
+                UpdateOcrVisual(i, minIdx, maxIdx);
+            }
+        }
+
+        private void UpdateOcrVisual(int index, int minIdx, int maxIdx)
+        {
+            if (index < 0 || index >= _ocrVisuals.Count || index >= _interactiveOcrInfo.Words.Count) return;
+            if (_ocrVisuals[index] is not Avalonia.Controls.Shapes.Rectangle r) return;
+            bool isSelected = minIdx != -1 && maxIdx != -1 && index >= minIdx && index <= maxIdx;
+            bool isPersisted = _selectedOcrWords.Contains(_interactiveOcrInfo.Words[index]);
+            if (isSelected || isPersisted)
+            {
+                r.Fill = new SolidColorBrush(AvaloniaColor.FromArgb(140, 0, 191, 255));
+                r.Stroke = new SolidColorBrush(AvaloniaColor.FromArgb(200, 0, 191, 255));
+                r.StrokeThickness = 1.5;
+            }
+            else
+            {
+                r.Fill = new SolidColorBrush(AvaloniaColor.FromArgb(90, 0, 0, 0));
+                r.Stroke = new SolidColorBrush(AvaloniaColor.FromArgb(140, 255, 255, 255));
+                r.StrokeThickness = 1;
             }
         }
 
@@ -2626,18 +2630,20 @@ namespace snapvox.editor.forms
                 {
                     Width = word.Bounds.Width + 2,
                     Height = word.Bounds.Height + 2,
-                    Fill = new SolidColorBrush(AvaloniaColor.FromArgb(90, 0, 0, 0)), // Semi-transparent black fill
-                    Stroke = new SolidColorBrush(AvaloniaColor.FromArgb(140, 255, 255, 255)), // Semi-transparent white border
+                    Fill = new SolidColorBrush(AvaloniaColor.FromArgb(90, 0, 0, 0)),
+                    Stroke = new SolidColorBrush(AvaloniaColor.FromArgb(140, 255, 255, 255)),
                     StrokeThickness = 1,
                     Tag = word,
                     IsHitTestVisible = false
                 };
-                // Offset +3 Right and +3 Down for precise visual centering
-                Canvas.SetLeft(rect, word.Bounds.X + 3);
-                Canvas.SetTop(rect, word.Bounds.Y + 3);
+                Canvas.SetLeft(rect, word.Bounds.X);
+                Canvas.SetTop(rect, word.Bounds.Y);
                 _canvas.Children.Add(rect);
                 _ocrVisuals.Add(rect);
             }
+            _lastOcrSelectionMin = -2;
+            _lastOcrSelectionMax = -2;
+            UpdateOcrSelectionVisuals(true);
         }
 
         private void ClearOcrVisuals()
@@ -2651,6 +2657,9 @@ namespace snapvox.editor.forms
             }
             _ocrVisuals.Clear();
             _selectedOcrWords.Clear();
+            _interactiveOcrIndex = null;
+            _lastOcrSelectionMin = -1;
+            _lastOcrSelectionMax = -1;
             var ocrToolbar = this.FindControl<Border>("OcrContextToolbar");
             if (ocrToolbar != null) ocrToolbar.IsVisible = false;
         }
@@ -2659,48 +2668,16 @@ namespace snapvox.editor.forms
         {
             if (_selectedOcrWords.Count == 0) return;
             
-            // Sort by Y, then X to get reading order
-            var sortedWords = _selectedOcrWords.OrderBy(w => w.Bounds.Y).ThenBy(w => w.Bounds.X).ToList();
-            var lines = new List<string>();
-            var currentLine = new List<OcrWord>();
-            
-            foreach (var word in sortedWords)
-            {
-                if (currentLine.Count == 0)
-                {
-                    currentLine.Add(word);
-                }
-                else
-                {
-                    var lastWord = currentLine.Last();
-                    if (Math.Abs(word.Bounds.Y - lastWord.Bounds.Y) < lastWord.Bounds.Height / 2) // Same line loosely
-                    {
-                        currentLine.Add(word);
-                    }
-                    else
-                    {
-                        lines.Add(string.Join(" ", currentLine.Select(w => w.Text)));
-                        currentLine.Clear();
-                        currentLine.Add(word);
-                    }
-                }
-            }
-            if (currentLine.Count > 0)
-            {
-                lines.Add(string.Join(" ", currentLine.Select(w => w.Text)));
-            }
-
-            string textToCopy = string.Join(Environment.NewLine, lines);
+            string textToCopy = OcrTextLayout.BuildVisualSelectionText(_selectedOcrWords);
             var topLevel = TopLevel.GetTopLevel(this);
             if (topLevel?.Clipboard != null) await topLevel.Clipboard.SetTextAsync(textToCopy);
             
             OverlayHelper.ShowNotification("TEXT COPIED", this);
             
-            // Clear selection after copying
             _selectedOcrWords.Clear();
             _ocrSelectionStartIndex = -1;
             _ocrSelectionEndIndex = -1;
-            UpdateOcrSelectionVisuals();
+            UpdateOcrSelectionVisuals(true);
             var ocrToolbar = this.FindControl<Border>("OcrContextToolbar");
             if (ocrToolbar != null) ocrToolbar.IsVisible = false;
         }
@@ -3457,7 +3434,28 @@ namespace snapvox.editor.forms
         private ImageSharpImage GetFlattenedImage()
         {
             if (_image == null) return null;
+            byte[] bytes = RenderFlattenedImageBytes();
+            if (bytes == null) return _image.Clone();
+            return LoadFlattenedImage(bytes, IniConfig.GetIniSection<CoreConfiguration>().AddFrameBorders);
+        }
+
+        private async Task<ImageSharpImage> GetFlattenedImageForOcrAsync()
+        {
+            if (_image == null) return null;
+            byte[] bytes = RenderFlattenedImageBytes();
+            if (bytes == null) return await Task.Run(() => _image.Clone()).ConfigureAwait(true);
+            bool addFrameBorders = IniConfig.GetIniSection<CoreConfiguration>().AddFrameBorders;
+            return await Task.Run(() => LoadFlattenedImage(bytes, addFrameBorders)).ConfigureAwait(true);
+        }
+
+        private byte[] RenderFlattenedImageBytes()
+        {
+            if (_image == null) return null;
             var chromeState = SetEditorChromeVisible(false);
+            Panel originalParent = null;
+            int originalIndex = -1;
+            double oldZoom = _zoomFactor;
+            ITransform oldTransform = null;
             try
             {
                 int w = _image.Width;
@@ -3466,17 +3464,16 @@ namespace snapvox.editor.forms
                 var imgClone = new Avalonia.Controls.Image { Source = _displayBitmap, Width = w, Height = h, Stretch = Stretch.None };
                 renderRoot.Children.Add(imgClone);
 
-                var originalParent = _canvas.Parent as Panel;
-                int originalIndex = originalParent?.Children.IndexOf(_canvas) ?? -1;
+                originalParent = _canvas.Parent as Panel;
+                originalIndex = originalParent?.Children.IndexOf(_canvas) ?? -1;
                 originalParent?.Children.Remove(_canvas);
-                
-                double oldZoom = _zoomFactor;
-                var oldTransform = _canvas.RenderTransform;
+
+                oldTransform = _canvas.RenderTransform;
                 _zoomFactor = 1.0;
                 _canvas.RenderTransform = null;
                 _canvas.Width = w;
                 _canvas.Height = h;
-                
+
                 renderRoot.Children.Add(_canvas);
 
                 using var rtb = new RenderTargetBitmap(new PixelSize(w, h), new Vector(96, 96));
@@ -3484,34 +3481,42 @@ namespace snapvox.editor.forms
                 renderRoot.Arrange(new Rect(0, 0, w, h));
                 rtb.Render(renderRoot);
 
-                renderRoot.Children.Remove(_canvas);
-                _zoomFactor = oldZoom;
-                _canvas.RenderTransform = oldTransform;
-                if (originalParent != null && originalIndex != -1) originalParent.Children.Insert(originalIndex, _canvas);
-                
-                ApplyZoom();
-
                 using var ms = new MemoryStream();
                 rtb.Save(ms);
-                ms.Position = 0;
-                var sharpImg = ImageSharpImage.Load(ms);
-                
-                var config = IniConfig.GetIniSection<CoreConfiguration>();
-                if (config.AddFrameBorders)
-                {
-                    sharpImg.Mutate(x => { int t = 3; if (sharpImg.Width > t * 2 && sharpImg.Height > t * 2) x.Crop(new SixLabors.ImageSharp.Rectangle(t, t, sharpImg.Width - t * 2, sharpImg.Height - t * 2)).Pad(sharpImg.Width, sharpImg.Height, SixLabors.ImageSharp.Color.Black); });
-                }
-                return sharpImg;
+                return ms.ToArray();
             }
             catch (Exception ex)
             {
                 Log.Error("Flattening failed", ex);
-                return _image.Clone();
+                return null;
             }
             finally
             {
+                if (_canvas.Parent != originalParent)
+                {
+                    (_canvas.Parent as Panel)?.Children.Remove(_canvas);
+                    if (originalParent != null && originalIndex != -1)
+                    {
+                        originalParent.Children.Insert(originalIndex, _canvas);
+                    }
+                }
+
+                _zoomFactor = oldZoom;
+                _canvas.RenderTransform = oldTransform;
+                ApplyZoom();
                 RestoreVisibility(chromeState);
             }
+        }
+
+        private static ImageSharpImage LoadFlattenedImage(byte[] bytes, bool addFrameBorders)
+        {
+            using var ms = new MemoryStream(bytes);
+            var sharpImg = ImageSharpImage.Load(ms);
+            if (addFrameBorders)
+            {
+                sharpImg.Mutate(x => { int t = 3; if (sharpImg.Width > t * 2 && sharpImg.Height > t * 2) x.Crop(new SixLabors.ImageSharp.Rectangle(t, t, sharpImg.Width - t * 2, sharpImg.Height - t * 2)).Pad(sharpImg.Width, sharpImg.Height, SixLabors.ImageSharp.Color.Black); });
+            }
+            return sharpImg;
         }
 
         private SixLabors.ImageSharp.Rectangle ClampImageRectangle(Rect rect)

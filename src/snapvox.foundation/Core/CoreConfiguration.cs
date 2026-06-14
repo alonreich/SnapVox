@@ -98,8 +98,8 @@ namespace snapvox.foundation.core
         [IniProperty("OutputFileFormat", Description = "Default file type for writing screenshots. (Always jpg in v3.0)", DefaultValue = "jpg")]
         public OutputFormat OutputFileFormat { get; set; } = OutputFormat.jpg;
 
-        [IniProperty("OutputFileJpegQuality", Description = "JPEG file save quality in %.", DefaultValue = "92")]
-        public int OutputFileJpegQuality { get; set; } = 92;
+        [IniProperty("OutputFileJpegQuality", Description = "JPEG file save quality in %.", DefaultValue = "100")]
+        public int OutputFileJpegQuality { get; set; } = 100;
 
         [IniProperty("LogFile", Description = "The path to the log file.")]
         public string LogFile { get; set; }
@@ -220,7 +220,7 @@ namespace snapvox.foundation.core
             if (string.IsNullOrWhiteSpace(OutputFileFilenamePattern)) OutputFileFilenamePattern = "${capturetime:d\"yyyy-MM-dd HH_mm_ss\"}-${title}";
             if (ClipboardFormats == null || ClipboardFormats.Count == 0) ClipboardFormats = new List<ClipboardFormat> { ClipboardFormat.DIB };
             OutputFileFormat = OutputFormat.jpg;
-            if (OutputFileJpegQuality == 100) OutputFileJpegQuality = 92;
+            OutputFileJpegQuality = 100;
             OutputFilePath = Path.Combine(Path.GetTempPath(), "snapvox");
         }
     }

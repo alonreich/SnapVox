@@ -36,7 +36,7 @@ namespace snapvox.forms
         private static List<CaptureWindow> _activeWindows = new List<CaptureWindow>();
         private static readonly object SharedOcrLock = new object();
         private static bool _globalOcrMode;
-        private const int MagneticThresholdPixels = 5;
+        private const int MagneticThresholdPixels = 10;
         private Avalonia.Point _startPoint;
         private bool _isDragging;
         private bool _isWindowSnapActive;
@@ -45,6 +45,7 @@ namespace snapvox.forms
         private bool _isPainterMode;
         private RECT _snappedRect = RECT.Empty;
         private OcrInformation _ocrScanResult;
+        private OcrWordSpatialIndex _ocrWordIndex;
         private readonly object _ocrStateLock = new object();
         private HashSet<OcrWord> _paintedWords = new HashSet<OcrWord>();
         private List<Border> _highlightRects = new List<Border>();
@@ -347,6 +348,7 @@ namespace snapvox.forms
                     }
 
                     _ocrScanResult = result;
+                    _ocrWordIndex = OcrWordSpatialIndex.Create(result.Words);
                     _ocrFailed = false;
                 }
 
@@ -400,6 +402,8 @@ namespace snapvox.forms
                 cts = _ocrCts;
                 _ocrTask = null;
                 _ocrCts = null;
+                _ocrScanResult = null;
+                _ocrWordIndex = null;
             }
 
             cts?.Cancel();
@@ -519,6 +523,11 @@ namespace snapvox.forms
             _snappedRect = RECT.Empty;
             ClearHighlights();
             _paintedWords.Clear();
+            lock (_ocrStateLock)
+            {
+                _ocrScanResult = null;
+                _ocrWordIndex = null;
+            }
 
             if (_rubberband != null)
             {
@@ -566,17 +575,20 @@ namespace snapvox.forms
             using var captured = NativeCapture.CaptureRegion(target);
             if (captured == null) return;
 
-            try
+            if (IniConfig.GetIniSection<CoreConfiguration>().KeepBackup)
             {
-                string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SnapVox");
-                System.IO.Directory.CreateDirectory(tempDir);
-                string fileName = $"Capture_{DateTime.Now:yyyy-MM-dd HH_mm_ss_fff}.jpg";
-                string fullPath = System.IO.Path.Combine(tempDir, fileName);
-                await Task.Run(() => captured.Save(fullPath, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality })).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("[BACKUP_FAILURE] Could not write to temp folder during direct copy.", ex);
+                try
+                {
+                    string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SnapVox");
+                    System.IO.Directory.CreateDirectory(tempDir);
+                    string fileName = $"Capture_{DateTime.Now:yyyy-MM-dd HH_mm_ss_fff}.jpg";
+                    string fullPath = System.IO.Path.Combine(tempDir, fileName);
+                    await Task.Run(() => captured.Save(fullPath, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality })).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("[BACKUP_FAILURE] Could not write to temp folder during direct copy.", ex);
+                }
             }
 
             await UiClipboard.SetImageAsync(captured).ConfigureAwait(false);
@@ -979,13 +991,15 @@ namespace snapvox.forms
 
                     if (captured == null) return null;
                     var clone = captured.Clone(x => { });
-                    if (captured != null) captured.Dispose(); // Dispose if it was a new capture or just clean up clone source
+                    if (captured != null) captured.Dispose();
 
-                    // Mandate: Every capture saved to %TMP%\SnapVox immediately (raw)
-                    string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                    Directory.CreateDirectory(tempDir);
-                    string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                    clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                    if (IniConfig.GetIniSection<CoreConfiguration>().KeepBackup)
+                    {
+                        string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                        Directory.CreateDirectory(tempDir);
+                        string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                        clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                    }
 
                     return clone;
                 }).ConfigureAwait(false);
@@ -1072,7 +1086,8 @@ namespace snapvox.forms
         private void PaintWords(Avalonia.Point pos)
         {
             OcrInformation scan;
-            lock (_ocrStateLock) { scan = _ocrScanResult; }
+            OcrWordSpatialIndex index;
+            lock (_ocrStateLock) { scan = _ocrScanResult; index = _ocrWordIndex; }
             if (scan?.Words == null)
             {
                 if (_ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = true;
@@ -1080,23 +1095,26 @@ namespace snapvox.forms
             }
             double scaling = Scaling;
             var absolutePos = new POINT((int)(pos.X * scaling) + Position.X, (int)(pos.Y * scaling) + Position.Y);
-            foreach (var word in scan.Words)
+            var word = index?.FindContaining(absolutePos);
+            if (word == null)
             {
-                if (!word.Bounds.Contains(absolutePos)) continue;
-                if (!_paintedWords.Add(word)) continue;
-                HideOcrHoverPreview();
-                var highlight = new Border { Background = new SolidColorBrush(AvaloniaColor.FromArgb(102, 255, 255, 0)), Width = word.Bounds.Width / scaling, Height = word.Bounds.Height / scaling, IsHitTestVisible = false };
-                Canvas.SetLeft(highlight, (word.Bounds.Left - Position.X) / scaling);
-                Canvas.SetTop(highlight, (word.Bounds.Top - Position.Y) / scaling);
-                _mainCanvas.Children.Add(highlight);
-                _highlightRects.Add(highlight);
+                return;
             }
+
+            if (!_paintedWords.Add(word)) return;
+            HideOcrHoverPreview();
+            var highlight = new Border { Background = new SolidColorBrush(AvaloniaColor.FromArgb(102, 255, 255, 0)), Width = word.Bounds.Width / scaling, Height = word.Bounds.Height / scaling, IsHitTestVisible = false };
+            Canvas.SetLeft(highlight, (word.Bounds.Left - Position.X) / scaling);
+            Canvas.SetTop(highlight, (word.Bounds.Top - Position.Y) / scaling);
+            _mainCanvas.Children.Add(highlight);
+            _highlightRects.Add(highlight);
         }
 
         private void ShowOcrHoverPreview(Avalonia.Point pos)
         {
             OcrInformation scan;
-            lock (_ocrStateLock) { scan = _ocrScanResult; }
+            OcrWordSpatialIndex index;
+            lock (_ocrStateLock) { scan = _ocrScanResult; index = _ocrWordIndex; }
             if (scan?.Words == null)
             {
                 HideOcrHoverPreview();
@@ -1105,7 +1123,7 @@ namespace snapvox.forms
 
             double scaling = Scaling;
             var absolutePos = new POINT((int)(pos.X * scaling) + Position.X, (int)(pos.Y * scaling) + Position.Y);
-            var word = scan.Words.FirstOrDefault(item => item.Bounds.Contains(absolutePos));
+            var word = index?.FindContaining(absolutePos);
             if (word == null)
             {
                 HideOcrHoverPreview();
