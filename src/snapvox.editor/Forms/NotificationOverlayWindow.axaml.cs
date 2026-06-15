@@ -13,6 +13,9 @@ namespace snapvox.editor.forms
 {
     public partial class NotificationOverlayWindow : Window
     {
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct POINT { public int X; public int Y; }
+
         private static int _activeToasts = 0;
         private static readonly object _toastLock = new object();
 
@@ -180,28 +183,22 @@ namespace snapvox.editor.forms
                 window.UpdateLayout();
 
                 var bounds = window.Bounds;
-                bool positioned = false;
-                if (snipTopValue.HasValue)
-                {
-                    double toolbarBottom = 92; // Approx 32 title + 60 toolbar
-                    double voidHeight = snipTopValue.Value - toolbarBottom;
-                    if (voidHeight > bounds.Height + 20)
-                    {
-                        // Place in the top void
-                        double targetY = ownerPos.Y + toolbarBottom + (voidHeight - bounds.Height) / 2 + (offset * (bounds.Height + 5));
-                        window.Position = new PixelPoint(
-                            ownerPos.X + (int)(ownerBounds.Width - bounds.Width) / 2,
-                            (int)targetY);
-                        positioned = true;
-                    }
-                }
+                [System.Runtime.InteropServices.DllImport("user32.dll")]
+                static extern bool GetCursorPos(out POINT lpPoint);
+                GetCursorPos(out POINT cursor);
 
-                if (!positioned)
-                {
-                    window.Position = new PixelPoint(
-                        work.X + (work.Width - (int)bounds.Width) / 2,
-                        work.Y + (work.Height - (int)bounds.Height) / 2 + 100 + (offset * (int)(bounds.Height + 5)));
-                }
+                double relX = cursor.X - ownerPos.X;
+                double relY = cursor.Y - ownerPos.Y;
+                
+                bool isRight = relX > ownerBounds.Width / 2;
+                bool isTop = relY < ownerBounds.Height / 2;
+
+                double targetX = isRight ? ownerPos.X + 30 : ownerPos.X + ownerBounds.Width - bounds.Width - 30;
+                double targetY = isTop ? ownerPos.Y + ownerBounds.Height - bounds.Height - 30 : ownerPos.Y + 92 + 30;
+
+                targetY += isTop ? -(offset * (bounds.Height + 5)) : (offset * (bounds.Height + 5));
+
+                window.Position = new PixelPoint((int)targetX, (int)targetY);
 
                 // Fade in (200ms)
                 for (int i = 0; i < 5; i++) { window.Opacity += 0.2; await Task.Delay(40); }

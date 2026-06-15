@@ -15,6 +15,7 @@
                         <NativeMenuItem Header="Capture Region" Click="OnCaptureRegionClick" Icon="avares://SnapVox/icons/ruler-crop.png" />
                         <NativeMenuItem Header="Capture Window" Click="OnCaptureWindowClick" Icon="avares://SnapVox/icons/shape_square_add.png" />
                         <NativeMenuItem Header="Capture Fullscreen" Click="OnCaptureFullscreenClick" Icon="avares://SnapVox/icons/zoom.png" />
+                        <NativeMenuItem Header="Scroll Capture" Click="OnScrollCaptureClick" Icon="avares://SnapVox/icons/zoom.png" />
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Open From Clipboard" Click="OnOpenFromClipboardClick" />
                         <NativeMenuItem Header="Show Capture History" Click="OnShowHistoryClick" Icon="avares://SnapVox/icons/folder-open-image.png" />

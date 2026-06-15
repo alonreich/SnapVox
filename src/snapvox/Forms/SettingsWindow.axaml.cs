@@ -72,6 +72,7 @@ namespace snapvox.Forms
             SetHotkeyTextBox("TxtFullscreenKey", _config.FullscreenHotkey);
             SetHotkeyTextBox("TxtLastRegionKey", _config.LastregionHotkey);
             SetHotkeyTextBox("TxtClipboardKey", _config.ClipboardHotkey);
+            SetHotkeyTextBox("TxtScrollCaptureDelimiterKey", _config.ScrollCaptureDelimiterHotkey);
         }
 
         private void SetHotkeyTextBox(string name, string value)
@@ -87,6 +88,7 @@ namespace snapvox.Forms
             SetHotkeyTextBox("TxtFullscreenKey", "Ctrl + PrintScreen");
             SetHotkeyTextBox("TxtLastRegionKey", "None");
             SetHotkeyTextBox("TxtClipboardKey", "None");
+            SetHotkeyTextBox("TxtScrollCaptureDelimiterKey", "Space");
             SetHotkeyTextBox("TxtArrowKey", "A");
             SetHotkeyTextBox("TxtLineKey", "L");
             SetHotkeyTextBox("TxtTextKey", "T");
@@ -303,6 +305,7 @@ namespace snapvox.Forms
             _config.FullscreenHotkey = this.FindControl<TextBox>("TxtFullscreenKey")?.Text ?? _config.FullscreenHotkey;
             _config.LastregionHotkey = this.FindControl<TextBox>("TxtLastRegionKey")?.Text ?? _config.LastregionHotkey;
             _config.ClipboardHotkey = this.FindControl<TextBox>("TxtClipboardKey")?.Text ?? _config.ClipboardHotkey;
+            _config.ScrollCaptureDelimiterHotkey = this.FindControl<TextBox>("TxtScrollCaptureDelimiterKey")?.Text ?? _config.ScrollCaptureDelimiterHotkey;
 
                 IniConfig.Save();
                 

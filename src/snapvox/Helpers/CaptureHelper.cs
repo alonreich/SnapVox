@@ -110,7 +110,7 @@ namespace snapvox.helpers
                     if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
 
                     using var cropped = fullSnapshot.Clone(x => x.Crop(cropRect));
-                    if (Config.AddFrameBorders) cropped.Mutate(x => { int t = 3; if (cropped.Width > t * 2 && cropped.Height > t * 2) x.Crop(new Rectangle(t, t, cropped.Width - t * 2, cropped.Height - t * 2)).Pad(cropped.Width, cropped.Height, SixLabors.ImageSharp.Color.Black); });
+                    if (Config.AddFrameBorders) cropped.Mutate(x => { int t = 3; if (cropped.Width > t * 2 && cropped.Height > t * 2) x.Crop(new Rectangle(t, t, cropped.Width - t * 2, cropped.Height - t * 2)).Pad(cropped.Width, cropped.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
                     using var ms = new MemoryStream();
                     cropped.Save(ms, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
                     screenData.Add((screen.Bounds, ms.ToArray()));
@@ -238,7 +238,7 @@ namespace snapvox.helpers
                                     }
                                 }
 
-                                if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.Black); });
+                                if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
                                 
                                 RememberRegion(rawRect);
                                 await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
@@ -283,7 +283,7 @@ namespace snapvox.helpers
                         }
                     }
 
-                    if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.Black); });
+                    if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
 
                     await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
                     await Dispatcher.UIThread.InvokeAsync(() =>
@@ -372,7 +372,7 @@ namespace snapvox.helpers
                         }
                     }
 
-                    if (Config.AddFrameBorders) clone.Mutate(x => { int t = 2; if (clone.Width > t * 2 && clone.Height > t * 2) x.Crop(new Rectangle(t, t, clone.Width - t * 2, clone.Height - t * 2)).Pad(clone.Width, clone.Height, SixLabors.ImageSharp.Color.Black); });
+                    if (Config.AddFrameBorders) clone.Mutate(x => { int t = 2; if (clone.Width > t * 2 && clone.Height > t * 2) x.Crop(new Rectangle(t, t, clone.Width - t * 2, clone.Height - t * 2)).Pad(clone.Width, clone.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
                     return clone;
                 }).ConfigureAwait(false);
 
@@ -385,6 +385,11 @@ namespace snapvox.helpers
                 });
             }
             catch (Exception ex) { owned?.Dispose(); Log.Fatal("OpenEditorForRegion failed.", ex); }
+        }
+
+        public static void OpenEditorForOwnedImage(ImageSharpImage image, RECT region)
+        {
+            ShowEditorForOwnedImage(image, region, "scroll");
         }
 
         private static void ShowEditorForOwnedImage(ImageSharpImage image, RECT region, string context)

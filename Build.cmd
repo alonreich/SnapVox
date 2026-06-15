@@ -1,5 +1,7 @@
 @echo off
-
+set "DOTNET_CLI_FORCE_UTF8_ENCODING=false"
+set "DOTNET_CLI_UI_LANGUAGE=en-US"
+set "VSCONSOLEOUTPUT=1"
 rem ---------------------------------------------------------------------------
 
 rem  Build.cmd — dual output: live console + .\build.log (ANSI colors in log).

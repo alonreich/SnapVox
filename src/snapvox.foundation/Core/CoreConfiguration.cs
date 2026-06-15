@@ -194,6 +194,9 @@ namespace snapvox.foundation.core
         [IniProperty("DeleteObjectHotkey", DefaultValue = "Delete")]
         public string DeleteObjectHotkey { get; set; } = "Delete";
 
+        [IniProperty("ScrollCaptureDelimiterHotkey", DefaultValue = "Space")]
+        public string ScrollCaptureDelimiterHotkey { get; set; } = "Space";
+
         [IniProperty("CustomColors", Description = "A comma separated list of custom colors.", DefaultValue = "#000000,#00FF00,#FF0000,#FFFF00,#0000FF,#FFFFFF")]
         public string CustomColors { get; set; } = "#000000,#00FF00,#FF0000,#FFFF00,#0000FF,#FFFFFF";
 
@@ -208,6 +211,12 @@ namespace snapvox.foundation.core
 
         [IniProperty("LastCounterColor", DefaultValue = "#FF0000")]
         public string LastCounterColor { get; set; } = "#FF0000";
+
+        [IniProperty("LastToolColors", DefaultValue = "")]
+        public string LastToolColors { get; set; } = "";
+
+        [IniProperty("LastToolThicknesses", DefaultValue = "")]
+        public string LastToolThicknesses { get; set; } = "";
 
         public override object GetDefault(string property) => property switch
         {

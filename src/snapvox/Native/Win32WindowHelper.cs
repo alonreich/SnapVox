@@ -35,6 +35,10 @@ namespace snapvox.native
         public static extern IntPtr GetDesktopWindow();
 
         [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
         public static extern IntPtr GetShellWindow();
 
         [DllImport("dwmapi.dll")]
@@ -73,21 +77,18 @@ namespace snapvox.native
 
         public static RECT GetRootWindowRect(POINT point)
         {
-            IntPtr hWnd = ResolveWindowAtPoint(point);
+            IntPtr hWnd = GetRootWindowHandle(point);
             if (hWnd == IntPtr.Zero) return RECT.Empty;
 
-            IntPtr rootHWnd = GetAncestor(hWnd, GA_ROOT);
-            if (rootHWnd == IntPtr.Zero) rootHWnd = hWnd;
-
-            string className = GetWindowClassName(rootHWnd);
+            string className = GetWindowClassName(hWnd);
             if (className == "Progman" || className == "WorkerW" || className == "Shell_TrayWnd" || className == "Shell_SecondaryTrayWnd")
             {
                 return RECT.Empty;
             }
 
-            if (rootHWnd == GetDesktopWindow() || rootHWnd == GetShellWindow()) return RECT.Empty;
+            if (hWnd == GetDesktopWindow() || hWnd == GetShellWindow()) return RECT.Empty;
 
-            if (GetWindowRectActual(rootHWnd, out RECT rect))
+            if (GetWindowRectActual(hWnd, out RECT rect))
             {
                 int virtualW = GetSystemMetrics(78);
                 int virtualH = GetSystemMetrics(79);
@@ -96,6 +97,15 @@ namespace snapvox.native
                 return rect;
             }
             return RECT.Empty;
+        }
+
+        public static IntPtr GetRootWindowHandle(POINT point)
+        {
+            IntPtr hWnd = ResolveWindowAtPoint(point);
+            if (hWnd == IntPtr.Zero) return IntPtr.Zero;
+
+            IntPtr rootHWnd = GetAncestor(hWnd, GA_ROOT);
+            return rootHWnd == IntPtr.Zero ? hWnd : rootHWnd;
         }
 
         private static IntPtr ResolveWindowAtPoint(POINT point)

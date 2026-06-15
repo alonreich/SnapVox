@@ -270,11 +270,28 @@ internal static class DeploymentLifecycle
 
         try
         {
+            try 
+            { 
+                Directory.Delete(dir, true); 
+                await logger.LogAsync("FILESYSTEM", "DELETE_DIR_FAST", dir, ct).ConfigureAwait(false);
+                return; 
+            } 
+            catch { }
+
             var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
+            var tasks = new System.Collections.Generic.List<Task>();
+            using var throttler = new SemaphoreSlim(20);
+
             foreach (string file in files)
             {
-                await DeleteFileWithRetryAsync(file, logger, ct).ConfigureAwait(false);
+                await throttler.WaitAsync(ct).ConfigureAwait(false);
+                tasks.Add(Task.Run(async () =>
+                {
+                    try { await DeleteFileWithRetryAsync(file, logger, ct).ConfigureAwait(false); }
+                    finally { throttler.Release(); }
+                }, ct));
             }
+            await Task.WhenAll(tasks).ConfigureAwait(false);
 
             var subDirs = Directory.GetDirectories(dir, "*", SearchOption.AllDirectories)
                                    .OrderByDescending(d => d.Length);

@@ -81,6 +81,7 @@ namespace snapvox
                         else { log.Info("Shutting down duplicate instance."); Dispatcher.UIThread.Post(() => desktop.Shutdown()); return; }
                     }
                     SimpleServiceProvider.Current.AddService<IOcrResultHandler>(new OcrResultHandler());
+                    SimpleServiceProvider.Current.AddService<IScrollCaptureLauncher>(new ScrollCaptureLauncher());
 #if USE_TESSERACT
                     log.Info("Using Tesseract OCR Provider with Windows OCR fallback.");
                     var tesseractProvider = new native.TesseractOcrProvider();
@@ -264,6 +265,11 @@ namespace snapvox
         public void OnCaptureRegionClick(object sender, EventArgs e) => CaptureHelper.CaptureRegion(false);
         public void OnCaptureWindowClick(object sender, EventArgs e) => CaptureHelper.CaptureActiveWindow(false);
         private void OnCaptureFullscreenClick(object sender, EventArgs e) => CaptureHelper.CaptureFullscreen(false, ScreenCaptureMode.FullScreen);
+        private void OnScrollCaptureClick(object sender, EventArgs e)
+        {
+            var launcher = SimpleServiceProvider.Current.GetInstance<IScrollCaptureLauncher>(true);
+            _ = launcher?.StartAsync(null);
+        }
         private void OnOpenFromClipboardClick(object sender, EventArgs e) => CaptureHelper.CaptureClipboard();
         public void OnShowHistoryClick(object sender, EventArgs e)
         {

@@ -76,6 +76,10 @@
                                     <TextBox Name="TxtFullscreenKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
                                 </StackPanel>
 
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Scroll:" VerticalAlignment="Center" Width="80"/>
+                                    <TextBox Name="TxtScrollCaptureDelimiterKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                </StackPanel>
 
                             </StackPanel>
 

@@ -35,7 +35,7 @@ namespace snapvox.native
 
         public string DisplayName => "Windows Native OCR Engine";
 
-        public bool HasRequiredLanguages() => AreRequiredLanguagesAvailable();
+        public bool HasRequiredLanguages() => IsEnglishLanguageAvailable();
 
         public Task<OcrInformation> DoOcrAsync(Image image) => DoOcrAsync(image, CancellationToken.None);
 
@@ -100,7 +100,7 @@ namespace snapvox.native
                 return "Windows OCR is missing English language support.";
             }
 
-            return "Windows OCR is missing Hebrew language support.";
+            return "Windows OCR is missing Hebrew language support. English OCR is available.";
         }
 
         public static Task EnsureWindowsOcrInstalled() => Task.CompletedTask;
@@ -120,7 +120,7 @@ namespace snapvox.native
             cancellationToken.ThrowIfCancellationRequested();
             string englishTag = ResolveLanguageTag("en");
             string hebrewTag = includeHebrew ? ResolveLanguageTag("he") : null;
-            if (englishTag == null || (includeHebrew && hebrewTag == null))
+            if (englishTag == null)
             {
                 return null;
             }
@@ -138,7 +138,7 @@ namespace snapvox.native
             }
 
             OcrInformation english = await RecognizeWithLanguageAsync(bitmap, englishTag, prepared, cancellationToken).ConfigureAwait(false);
-            if (!includeHebrew)
+            if (!includeHebrew || hebrewTag == null)
             {
                 return english;
             }

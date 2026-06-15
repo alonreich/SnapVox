@@ -293,6 +293,14 @@
                             <TextBlock Text="Reset Counter" VerticalAlignment="Center" FontSize="12" Foreground="White" />
                         </StackPanel>
                     </Button>
+                    <StackPanel Name="CounterAdjustPanel" Orientation="Vertical" Spacing="2" VerticalAlignment="Center" IsVisible="False" Margin="5,0,0,0">
+                        <Button Classes="toolbar" Name="CounterUpBtn" ToolTip.Tip="Increment Selected Counter" Click="OnCounterUpClick" Width="20" Height="14" Padding="0" Margin="0">
+                            <TextBlock Text="▲" FontSize="8" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Button>
+                        <Button Classes="toolbar" Name="CounterDownBtn" ToolTip.Tip="Decrement Selected Counter" Click="OnCounterDownClick" Width="20" Height="14" Padding="0" Margin="0">
+                            <TextBlock Text="▼" FontSize="8" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Button>
+                    </StackPanel>
 
                     <!-- Gap of 25px -->
                     <Border Width="25" />
@@ -506,22 +514,22 @@
         <ScrollViewer Name="EditorScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <Panel Background="{StaticResource CheckerboardBrush}">
                 <Grid Name="MainGrid">
-                    <Border Name="SnipBorder" BorderBrush="Black" BorderThickness="3" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Image Name="EditorImage" Margin="0" Stretch="None">
-                            <Image.Effect>
-                                <DropShadowEffect BlurRadius="20" Opacity="0.4" OffsetX="0" OffsetY="10" />
-                            </Image.Effect>
-                        </Image>
-                    </Border>
-                    <Canvas Name="AnnotationCanvas" Margin="12" Background="Transparent" 
-                            PointerPressed="OnCanvasPointerPressed" 
-                            PointerMoved="OnCanvasPointerMoved" 
-                            PointerReleased="OnCanvasPointerReleased"
-                            HorizontalAlignment="Center" VerticalAlignment="Center" 
-                            ClipToBounds="True">
-                            
-                        <!-- Contextual Selection Toolbar -->
-                        <Border Name="ContextToolbar" IsVisible="False" ZIndex="10001" Background="#DD222222" CornerRadius="4" Padding="4">
+                    <Panel Name="ZoomContainer" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Border Name="SnipBorder" BorderBrush="#0E2548" BorderThickness="3">
+                            <Image Name="EditorImage" Margin="0" Stretch="None">
+                                <Image.Effect>
+                                    <DropShadowEffect BlurRadius="20" Opacity="0.4" OffsetX="0" OffsetY="10" />
+                                </Image.Effect>
+                            </Image>
+                        </Border>
+                        <Canvas Name="AnnotationCanvas" Background="Transparent" 
+                                PointerPressed="OnCanvasPointerPressed" 
+                                PointerMoved="OnCanvasPointerMoved" 
+                                PointerReleased="OnCanvasPointerReleased"
+                                ClipToBounds="True">
+                                
+                            <!-- Contextual Selection Toolbar -->
+                            <Border Name="ContextToolbar" IsVisible="False" ZIndex="10001" Background="#DD222222" CornerRadius="4" Padding="4">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button Classes="action context-apply" Name="ContextApplyButton" Click="OnContextApplyClick" ToolTip.Tip="Apply (Enter)">
                                     <TextBlock Text="✔" Foreground="#00FF00" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center"/>
@@ -563,9 +571,10 @@
                             <Ellipse Width="8" Height="8" Margin="5" Fill="#007ACC" />
                         </Canvas>
                     </Canvas>
+                    </Panel>
 
                     <Border Name="NotificationChrome"
-                            ClipToBounds="True"/>
+                        ClipToBounds="True"/>
                             
                     <!-- Pixelate Strength Slider -->
                     <Slider Name="PixelateSlider" 

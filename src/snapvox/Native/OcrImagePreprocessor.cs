@@ -118,7 +118,12 @@ namespace snapvox.native
             }
             else
             {
-                working.Mutate(ctx => ctx.Grayscale().Contrast(1.25f).GaussianBlur(0.3f).GaussianSharpen(0.85f).AdaptiveThreshold(0.12f));
+                working.Mutate(ctx => ctx.Grayscale());
+                if (IsMostlyDark(working))
+                {
+                    working.Mutate(ctx => ctx.Invert());
+                }
+                working.Mutate(ctx => ctx.Contrast(1.35f).GaussianBlur(0.25f).GaussianSharpen(0.75f).BinaryThreshold(0.6f));
             }
 
             double skew = EstimateDeskewDegrees(working);
@@ -127,7 +132,7 @@ namespace snapvox.native
                 working.Mutate(ctx => ctx.Rotate((float)(-skew), KnownResamplers.Bicubic).BackgroundColor(Color.White));
                 if (profile == OcrPreprocessingProfile.Tesseract)
                 {
-                    working.Mutate(ctx => ctx.AdaptiveThreshold(0.12f));
+                    working.Mutate(ctx => ctx.BinaryThreshold(0.6f));
                 }
             }
             else
@@ -136,6 +141,31 @@ namespace snapvox.native
             }
 
             return new OcrPreparedImage(working, source.Width, source.Height, targetWidth, targetHeight, skew);
+        }
+
+        private static bool IsMostlyDark(Image<Bgra32> image)
+        {
+            long totalLuminance = 0;
+            int count = 0;
+            int step = Math.Max(1, Math.Min(image.Width, image.Height) / 50);
+
+            image.ProcessPixelRows(accessor =>
+            {
+                for (int y = 0; y < accessor.Height; y += step)
+                {
+                    Span<Bgra32> row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x += step)
+                    {
+                        Bgra32 pixel = row[x];
+                        if (pixel.A < 128) continue;
+                        int luminance = (pixel.R * 299 + pixel.G * 587 + pixel.B * 114) / 1000;
+                        totalLuminance += luminance;
+                        count++;
+                    }
+                }
+            });
+
+            return count > 0 && (totalLuminance / count) < 110;
         }
 
         private static double GetScale(int width, int height)

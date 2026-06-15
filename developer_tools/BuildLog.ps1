@@ -214,7 +214,7 @@ if (Test-Path -LiteralPath $legacyResultPath) {
 $started = Get-Date
 Write-LogHeader
 
-try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 
 Push-Location $root
 try {

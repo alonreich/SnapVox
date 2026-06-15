@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="snapvox.forms.ScrollCaptureWindow"
+        Title="Scroll Capture"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        SystemDecorations="None"
+        Topmost="True"
+        WindowState="Normal"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Focusable="True"
+        Cursor="Cross">
+    <Canvas Name="MainCanvas" Background="#01000000" PointerMoved="OnPointerMoved" PointerPressed="OnPointerPressed" PointerWheelChanged="OnPointerWheelChanged">
+        <Border Name="HighlightBorder" BorderBrush="#00AEEF" BorderThickness="4" Background="#2200AEEF" IsVisible="False" IsHitTestVisible="False" />
+        <Border Name="InstructionBorder" Background="#EE1E1E1E" CornerRadius="8" Padding="14,8" BorderBrush="#00AEEF" BorderThickness="1" IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <TextBlock Name="InstructionText" Text="Point at a window" Foreground="#FFD700" FontSize="18" FontWeight="Bold"/>
+                <TextBlock Name="StatusText" Text="Space = start" Foreground="#FFD700" FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock Text="Esc/right-click = exit" Foreground="#FFD700" FontSize="14"/>
+            </StackPanel>
+        </Border>
+        <Button Name="ExitButton" Content="Exit Scroll Capture" Width="150" Height="34" HorizontalContentAlignment="Center" Background="#AA333333" Foreground="White" Click="OnExitClick" />
+    </Canvas>
+</Window>
