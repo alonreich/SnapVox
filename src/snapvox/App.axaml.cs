@@ -190,75 +190,93 @@ namespace snapvox
 
         private async Task InitializeTrayIconAsync()
         {
+            WindowIcon blueIcon = null;
+            WindowIcon redIcon = null;
+
+            await Task.Run(() =>
+            {
+                try
+                {
+                    using var blueAssetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
+                    blueIcon = new WindowIcon(blueAssetLoader);
+
+                    using var assetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
+                    using var avaloniaBitmap = new Avalonia.Media.Imaging.Bitmap(assetLoader);
+                    using var bridgeMs = new MemoryStream();
+                    avaloniaBitmap.Save(bridgeMs);
+                    bridgeMs.Position = 0;
+
+                    using var image = SixLabors.ImageSharp.Image.Load<Bgra32>(bridgeMs);
+                    image.Mutate(x => x.ProcessPixelRowsAsVector4(row =>
+                    {
+                        for (int i = 0; i < row.Length; i++)
+                        {
+                            float r = row[i].X;
+                            float g = row[i].Y;
+                            float b = row[i].Z;
+                            row[i].X = Math.Max(r, Math.Max(g, b));
+                            row[i].Y = g * 0.2f;
+                            row[i].Z = b * 0.2f;
+                        }
+                    }));
+                    using var ms = new MemoryStream();
+                    image.Save(ms, new PngEncoder());
+                    ms.Seek(0, SeekOrigin.Begin);
+                    redIcon = new WindowIcon(ms);
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.GetLogger(typeof(App)).Error("Failed to create tray icons", ex);
+                }
+            });
+
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 var icons = TrayIcon.GetIcons(this);
                 if (icons != null && icons.Count > 0)
                 {
                     _trayIcon = icons[0];
-                    try
-                    {
-                        using var blueAssetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
-                        _blueIcon = new WindowIcon(blueAssetLoader);
-                        _trayIcon.Icon = _blueIcon;
-
-                        using var assetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
-                        using var avaloniaBitmap = new Avalonia.Media.Imaging.Bitmap(assetLoader);
-                        
-                        using var bridgeMs = new MemoryStream();
-                        avaloniaBitmap.Save(bridgeMs);
-                        bridgeMs.Position = 0;
-
-                        using (var image = SixLabors.ImageSharp.Image.Load<Bgra32>(bridgeMs))
-                        {
-                            image.Mutate(x => x.ProcessPixelRowsAsVector4(row => 
-                            { 
-                                for (int i = 0; i < row.Length; i++) 
-                                { 
-                                    float r = row[i].X;
-                                    float g = row[i].Y;
-                                    float b = row[i].Z;
-                                    
-                                    row[i].X = Math.Max(r, Math.Max(g, b));
-                                    row[i].Y = g * 0.2f;
-                                    row[i].Z = b * 0.2f;
-                                } 
-                            }));
-                            var ms = new MemoryStream(); 
-                            image.Save(ms, new PngEncoder()); 
-                            ms.Seek(0, SeekOrigin.Begin); 
-                            _redIcon = new WindowIcon(ms); 
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LogHelper.GetLogger(typeof(App)).Error("Failed to create red tray icon", ex);
-                    }
+                    _blueIcon = blueIcon;
+                    _redIcon = redIcon;
+                    if (_blueIcon != null) _trayIcon.Icon = _blueIcon;
                 }
             });
         }
-        private static bool _forceRedState = false;
+        private static int _redStateRequestCount = 0;
+        private static bool _currentIconIsRed = false;
+        private static readonly object _iconLock = new object();
 
         public static void ForceRedTrayIcon(bool force)
         {
-            _forceRedState = force;
-            if (!force) SetTrayIconState(false);
-            else SetTrayIconState(true);
+            lock (_iconLock)
+            {
+                if (force) _redStateRequestCount++;
+                else _redStateRequestCount = Math.Max(0, _redStateRequestCount - 1);
+
+                SetTrayIconStateInternal(_redStateRequestCount > 0);
+            }
         }
 
         public static void SetTrayIconState(bool active)
         {
-            if (_trayIcon == null) return;
-            if (!active && _forceRedState) return;
-            Dispatcher.UIThread.Post(() => { _trayIcon.Icon = active && _redIcon != null ? _redIcon : _blueIcon; });
+            lock (_iconLock)
+            {
+                if (_redStateRequestCount > 0)
+                {
+                    SetTrayIconStateInternal(true);
+                    return;
+                }
+                SetTrayIconStateInternal(active);
+            }
         }
 
-        public static async Task FlickerTrayIcon()
+        private static void SetTrayIconStateInternal(bool active)
         {
-            if (_trayIcon == null || _redIcon == null) return;
-            SetTrayIconState(true);
-            await Task.Delay(150);
-            SetTrayIconState(false);
+            if (_trayIcon == null) return;
+            if (_currentIconIsRed == active && _trayIcon.Icon != null) return;
+
+            _currentIconIsRed = active;
+            Dispatcher.UIThread.Post(() => { _trayIcon.Icon = active && _redIcon != null ? _redIcon : _blueIcon; });
         }
 
         public void OnTrayIconClicked(object sender, EventArgs e) => OnCaptureRegionClick(sender, e);

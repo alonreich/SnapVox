@@ -117,7 +117,18 @@ V3.0 FINAL UI/UX ENHANCEMENTS (COMPLETED)
 20. **Duplicate Collision Handling:** Quadrant-aware boundary checks prevent duplicated objects from walking off-canvas.
 21. **Persistent Tool State:** Independent tracking of color and thickness for each tool is saved across application restarts.
 22. **Quadrant-Aware Toasts:** Notification overlays actively evade the user's cursor by spawning in the opposite screen quadrant.
-23. **Dark Navy Frame Enforcement:** Fixed frame rendering to consistently apply a `#000080` border across all output types.
+L120- 23. **Dark Navy Frame Enforcement:** Fixed frame rendering to consistently apply a `#000080` border across all output types.
+24. **Vector Rotation Integrity:** Fixed critical defect where Arrows and Polylines lost orientation/metadata during image rotation.
+25. **Hebrew OCR UX:** Implemented automatic parentheses and bracket mirroring for RTL-dominant text extraction.
+26. **Counter Synchronization:** Vertical tick buttons now correctly update the global counter sequence for subsequent placements.
+27. **Resize Snapping:** Added a 100% "Magnetic Snap" to the vertical resize slider for rapid return to original dimensions.
+
+ROLES & PURPOSES MAP
+--------------------
+- **src\snapvox**: Application lifecycle, Tray Icon, Global Hotkeys, and Capture/OCR selection UI.
+- **src\snapvox.editor**: Image editing canvas, vector annotations, and high-performance saving workflows.
+- **src\snapvox.foundation**: Core abstractions, Win32 Interop (CsWin32), and OCR Interface definitions.
+- **src\snapvox.tests**: Validation suite for critical paths (Clipboard, Retention, I/O).
 
 PRODUCT SPECIFICATION (DETAILED REQUIREMENTS)
 ---------------------------------------------

@@ -60,11 +60,20 @@ namespace snapvox.editor.forms
         {
             if (e.Property.Name == "Value" && !_isUpdating && _ratioCheckbox.IsChecked == true)
             {
-                double scale = _sizeSlider.Value / 100.0;
+                double val = _sizeSlider.Value;
+                if (Math.Abs(val - 100) < 3.5) val = 100;
+
+                if (Math.Abs(_sizeSlider.Value - val) > 0.1)
+                {
+                    _sizeSlider.Value = val;
+                    return;
+                }
+
+                double scale = val / 100.0;
                 _isUpdating = true;
                 _widthInput.Text = ((int)(_originalWidth * scale)).ToString();
                 _heightInput.Text = ((int)(_originalHeight * scale)).ToString();
-                UpdatePercentText(_sizeSlider.Value);
+                UpdatePercentText(val);
                 _isUpdating = false;
             }
         }

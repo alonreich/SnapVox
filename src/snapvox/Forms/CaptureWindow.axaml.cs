@@ -969,6 +969,7 @@ namespace snapvox.forms
 
         private static async Task CaptureAfterOverlaysHiddenAsync(RECT rect)
         {
+            App.ForceRedTrayIcon(true);
             ImageSharpImage owned = null;
             try
             {
@@ -980,6 +981,7 @@ namespace snapvox.forms
                 {
                     frozenCaptured?.Dispose();
                     CaptureHelper.ClearFrozenSnapshot();
+                    App.ForceRedTrayIcon(false);
                     return;
                 }
 
@@ -988,25 +990,28 @@ namespace snapvox.forms
                 {
                     ImageSharpImage captured = frozenCaptured;
                     if (captured == null) captured = NativeCapture.CaptureRegion(nativeRect);
-
                     if (captured == null) return null;
                     var clone = captured.Clone(x => { });
                     if (captured != null) captured.Dispose();
 
                     if (IniConfig.GetIniSection<CoreConfiguration>().KeepBackup)
                     {
-                        string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                        Directory.CreateDirectory(tempDir);
-                        string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                        clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                        try
+                        {
+                            string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                            Directory.CreateDirectory(tempDir);
+                            string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                            clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                        }
+                        catch { }
                     }
-
                     return clone;
                 }).ConfigureAwait(false);
 
                 if (owned == null) 
                 {
                     CaptureHelper.ClearFrozenSnapshot();
+                    App.ForceRedTrayIcon(false);
                     return;
                 }
 
@@ -1017,13 +1022,14 @@ namespace snapvox.forms
                     ShowEditorForOwnedImage(owned, rect);
                     owned = null;
                     CaptureHelper.ClearFrozenSnapshot();
+                    App.ForceRedTrayIcon(false);
                 });
-                owned?.Dispose();
             }
             catch (Exception ex)
             {
                 owned?.Dispose();
                 CaptureHelper.ClearFrozenSnapshot();
+                App.ForceRedTrayIcon(false);
                 Log.Fatal("CaptureAfterOverlaysHiddenAsync failed.", ex);
             }
         }

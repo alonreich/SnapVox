@@ -57,7 +57,12 @@ namespace snapvox.helpers
                 var item = new WorkItem(owned, completion, cancellationToken);
                 owned = null;
 
-                DropPendingItems(cancellationToken);
+                while (_channel.Reader.TryRead(out var pending))
+                {
+                    pending.Completion.TrySetCanceled(cancellationToken);
+                    pending.Image.Dispose();
+                }
+
                 if (!_channel.Writer.TryWrite(item))
                 {
                     return await EnqueueSlowAsync(item, cancellationToken).ConfigureAwait(false);

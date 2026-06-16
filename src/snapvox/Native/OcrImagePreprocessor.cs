@@ -102,45 +102,55 @@ namespace snapvox.native
                 return null;
             }
 
-            Image<Bgra32> working = source is Image<Bgra32> bgra ? bgra.Clone(x => { }) : source.CloneAs<Bgra32>();
-            double scale = GetScale(source.Width, source.Height);
-            int targetWidth = Math.Max(1, (int)Math.Round(source.Width * scale));
-            int targetHeight = Math.Max(1, (int)Math.Round(source.Height * scale));
+            Image<Bgra32> working = null;
+            try
+            {
+                working = source is Image<Bgra32> bgra ? bgra.Clone(x => { }) : source.CloneAs<Bgra32>();
+                double scale = GetScale(source.Width, source.Height);
+                int targetWidth = Math.Max(1, (int)Math.Round(source.Width * scale));
+                int targetHeight = Math.Max(1, (int)Math.Round(source.Height * scale));
 
-            if (targetWidth != working.Width || targetHeight != working.Height)
-            {
-                working.Mutate(ctx => ctx.Resize(targetWidth, targetHeight, KnownResamplers.Lanczos3));
-            }
-
-            if (profile == OcrPreprocessingProfile.Windows)
-            {
-                working.Mutate(ctx => ctx.Grayscale().Contrast(1.12f).GaussianBlur(0.25f).GaussianSharpen(0.65f));
-            }
-            else
-            {
-                working.Mutate(ctx => ctx.Grayscale());
-                if (IsMostlyDark(working))
+                if (targetWidth != working.Width || targetHeight != working.Height)
                 {
-                    working.Mutate(ctx => ctx.Invert());
+                    working.Mutate(ctx => ctx.Resize(targetWidth, targetHeight, KnownResamplers.Lanczos3));
                 }
-                working.Mutate(ctx => ctx.Contrast(1.35f).GaussianBlur(0.25f).GaussianSharpen(0.75f).BinaryThreshold(0.6f));
-            }
 
-            double skew = EstimateDeskewDegrees(working);
-            if (Math.Abs(skew) >= 0.25 && Math.Abs(skew) <= 3.0)
-            {
-                working.Mutate(ctx => ctx.Rotate((float)(-skew), KnownResamplers.Bicubic).BackgroundColor(Color.White));
-                if (profile == OcrPreprocessingProfile.Tesseract)
+                if (profile == OcrPreprocessingProfile.Windows)
                 {
-                    working.Mutate(ctx => ctx.BinaryThreshold(0.6f));
+                    working.Mutate(ctx => ctx.Grayscale().Contrast(1.12f).GaussianBlur(0.25f).GaussianSharpen(0.65f));
                 }
-            }
-            else
-            {
-                skew = 0;
-            }
+                else
+                {
+                    working.Mutate(ctx => ctx.Grayscale());
+                    if (IsMostlyDark(working))
+                    {
+                        working.Mutate(ctx => ctx.Invert());
+                    }
+                    working.Mutate(ctx => ctx.Contrast(1.35f).GaussianBlur(0.25f).GaussianSharpen(0.75f).BinaryThreshold(0.6f));
+                }
 
-            return new OcrPreparedImage(working, source.Width, source.Height, targetWidth, targetHeight, skew);
+                double skew = EstimateDeskewDegrees(working);
+                if (Math.Abs(skew) >= 0.25 && Math.Abs(skew) <= 3.0)
+                {
+                    working.Mutate(ctx => ctx.Rotate((float)(-skew), KnownResamplers.Bicubic).BackgroundColor(Color.White));
+                    if (profile == OcrPreprocessingProfile.Tesseract)
+                    {
+                        working.Mutate(ctx => ctx.BinaryThreshold(0.6f));
+                    }
+                }
+                else
+                {
+                    skew = 0;
+                }
+
+                var result = new OcrPreparedImage(working, source.Width, source.Height, targetWidth, targetHeight, skew);
+                working = null;
+                return result;
+            }
+            finally
+            {
+                working?.Dispose();
+            }
         }
 
         private static bool IsMostlyDark(Image<Bgra32> image)

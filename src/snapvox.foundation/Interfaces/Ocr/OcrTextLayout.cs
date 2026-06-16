@@ -194,10 +194,35 @@ namespace snapvox.helpers
                     orderedRun = run.OrderBy(word => word.Bounds.Left);
                 }
 
-                ordered.AddRange(orderedRun);
+                foreach (var word in orderedRun)
+                {
+                    if (runIsHebrew)
+                    {
+                        word.Text = SwapParentheses(word.Text);
+                    }
+                    ordered.Add(word);
+                }
             }
 
             return string.Join(" ", ordered.Select(word => word.Text.Trim())).Trim();
+        }
+
+        private static string SwapParentheses(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            char[] chars = text.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (chars[i] == '(') chars[i] = ')';
+                else if (chars[i] == ')') chars[i] = '(';
+                else if (chars[i] == '[') chars[i] = ']';
+                else if (chars[i] == ']') chars[i] = '[';
+                else if (chars[i] == '{') chars[i] = '}';
+                else if (chars[i] == '}') chars[i] = '{';
+                else if (chars[i] == '<') chars[i] = '>';
+                else if (chars[i] == '>') chars[i] = '<';
+            }
+            return new string(chars);
         }
 
         private static List<List<snapvox.foundation.interfaces.Ocr.OcrWord>> BuildDirectionalRuns(List<snapvox.foundation.interfaces.Ocr.OcrWord> visual)

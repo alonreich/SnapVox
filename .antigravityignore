@@ -1,0 +1,39 @@
+# Build artifacts and binaries
+**/bin/
+**/obj/
+compiled/
+
+# Version control
+.git/
+
+# Logs and temporary files
+*.log
+**/StandaloneTemp/
+%TMP%/SnapVox/
+
+# Large OCR Data and Resources
+**/tessdata/*.traineddata
+**/Drawing/Emoji/*.ttf
+icons/*.svg
+src/snapvox/icons/*.png
+src/snapvox.editor/icons/*.svg
+
+# Generated and metadata files
+src/snapvox.foundation/NativeMethods.json
+**/project.assets.json
+**/project.nuget.cache
+**/*.nuget.g.props
+**/*.nuget.g.targets
+**/*.AssemblyReference.cache
+**/*.CoreCompileInputs.cache
+**/*.FileListAbsolute.txt
+**/*.Up2Date
+**/*.deps.json
+**/*.runtimeconfig.json
+
+# IDE specific
+.idea/
+.vs/
+*.user
+*.suo
+*.DotSettings.user

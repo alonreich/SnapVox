@@ -43,7 +43,7 @@ namespace snapvox.native
 
         public void Dispose()
         {
-            _ = DisposeAsync().AsTask();
+            DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
         public async ValueTask DisposeAsync()
@@ -203,7 +203,7 @@ namespace snapvox.native
             await image.SaveAsync(stream, new PngEncoder(), cancellationToken).ConfigureAwait(false);
             stream.Position = 0;
             using IRandomAccessStream randomAccessStream = stream.AsRandomAccessStream();
-            BitmapDecoder decoder = await BitmapDecoder.CreateAsync(randomAccessStream).AsTask(cancellationToken).ConfigureAwait(false);
+            var decoder = await BitmapDecoder.CreateAsync(randomAccessStream).AsTask(cancellationToken).ConfigureAwait(false);
             return await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied).AsTask(cancellationToken).ConfigureAwait(false);
         }
 

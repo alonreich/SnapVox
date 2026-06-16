@@ -41,7 +41,7 @@ namespace snapvox.native
 
         public void Dispose()
         {
-            _ = DisposeAsync().AsTask();
+            DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
         public async ValueTask DisposeAsync()

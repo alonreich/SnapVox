@@ -74,7 +74,11 @@ namespace snapvox.helpers
                 RECT virtualBounds = GetVirtualDesktopBounds();
                 // Freeze the snapshot as early as possible
                 ImageSharpImage fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
-                if (fullSnapshot == null) return;
+                if (fullSnapshot == null)
+                {
+                    App.ForceRedTrayIcon(false);
+                    return;
+                }
 
                 if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
 
@@ -100,6 +104,7 @@ namespace snapvox.helpers
                 if (screens == null || !screens.Any()) 
                 {
                     ClearFrozenSnapshot();
+                    App.ForceRedTrayIcon(false);
                     return;
                 }
 
@@ -137,11 +142,13 @@ namespace snapvox.helpers
                         }
                     }
                 });
+                App.ForceRedTrayIcon(false);
             }
             catch (Exception ex) 
             { 
                 Log.Fatal("CaptureRegion failed.", ex);
                 ClearFrozenSnapshot();
+                App.ForceRedTrayIcon(false);
             }
         }
 
@@ -166,7 +173,7 @@ namespace snapvox.helpers
 
         public static void CaptureActiveWindow(bool fromHotkey)
         {
-            _ = App.FlickerTrayIcon();
+            App.ForceRedTrayIcon(true);
             
             RECT virtualBounds = GetVirtualDesktopBounds();
             var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
@@ -251,51 +258,61 @@ namespace snapvox.helpers
                     }
                 }
                 catch (Exception ex) { Log.Fatal("CaptureActiveWindow failed.", ex); }
-                finally { fullSnapshot?.Dispose(); }
+                finally 
+                { 
+                    fullSnapshot?.Dispose(); 
+                    App.ForceRedTrayIcon(false);
+                }
             });
         }
 
         public static void CaptureFullscreen(bool fromHotkey, ScreenCaptureMode mode)
         {
-            _ = App.FlickerTrayIcon();
+            App.ForceRedTrayIcon(true);
             Task.Run(async () =>
             {
-                RECT virtualBounds = GetVirtualDesktopBounds();
-                using var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
-
-                if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
-                
-                if (fullSnapshot != null)
+                try
                 {
-                    var owned = fullSnapshot.Clone(x => { });
-                    if (Config.KeepBackup)
+                    RECT virtualBounds = GetVirtualDesktopBounds();
+                    using var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
+
+                    if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
+                    
+                    if (fullSnapshot != null)
                     {
-                        try
+                        var owned = fullSnapshot.Clone(x => { });
+                        if (Config.KeepBackup)
                         {
-                            string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                            Directory.CreateDirectory(tempDir);
-                            string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                            owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                            try
+                            {
+                                string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                                Directory.CreateDirectory(tempDir);
+                                string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                                owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                            }
                         }
-                        catch (Exception ex)
+
+                        if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
+
+                        await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
+                        await Dispatcher.UIThread.InvokeAsync(() =>
                         {
-                            Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
-                        }
+                            ShowEditorForOwnedImage(owned, virtualBounds, "region");
+                        });
                     }
-
-                    if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
-
-                    await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        ShowEditorForOwnedImage(owned, virtualBounds, "region");
-                    });
                 }
+                catch (Exception ex) { Log.Fatal("CaptureFullscreen failed.", ex); }
+                finally { App.ForceRedTrayIcon(false); }
             });
         }
 
         public static void CaptureClipboard()
         {
+            App.ForceRedTrayIcon(true);
             Task.Run(async () =>
             {
                 try
@@ -308,8 +325,16 @@ namespace snapvox.helpers
                             ShowEditorForOwnedImage(image, RECT.Empty, "clipboard");
                         });
                     }
+                    else
+                    {
+                        App.ForceRedTrayIcon(false);
+                    }
                 }
-                catch (Exception ex) { Log.Error("CaptureClipboard failed", ex); }
+                catch (Exception ex) 
+                { 
+                    Log.Error("CaptureClipboard failed", ex); 
+                    App.ForceRedTrayIcon(false);
+                }
             });
         }
 
@@ -323,9 +348,14 @@ namespace snapvox.helpers
 
         public static void CaptureLastRegion(bool fromHotkey)
         {
+            App.ForceRedTrayIcon(true);
             RECT lastRegion;
             lock (LastRegionSync) lastRegion = _lastRegion;
-            if (lastRegion.IsEmpty || lastRegion.Width <= 0 || lastRegion.Height <= 0) return;
+            if (lastRegion.IsEmpty || lastRegion.Width <= 0 || lastRegion.Height <= 0)
+            {
+                App.ForceRedTrayIcon(false);
+                return;
+            }
             _ = OpenEditorForRegionAsync(lastRegion);
         }
 
@@ -376,7 +406,11 @@ namespace snapvox.helpers
                     return clone;
                 }).ConfigureAwait(false);
 
-                if (owned == null) return;
+                if (owned == null)
+                {
+                    App.ForceRedTrayIcon(false);
+                    return;
+                }
                 RememberRegion(region);
                 await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -384,7 +418,12 @@ namespace snapvox.helpers
                     ShowEditorForOwnedImage(owned, region, "region");
                 });
             }
-            catch (Exception ex) { owned?.Dispose(); Log.Fatal("OpenEditorForRegion failed.", ex); }
+            catch (Exception ex) 
+            { 
+                owned?.Dispose(); 
+                Log.Fatal("OpenEditorForRegion failed.", ex); 
+                App.ForceRedTrayIcon(false);
+            }
         }
 
         public static void OpenEditorForOwnedImage(ImageSharpImage image, RECT region)
@@ -400,11 +439,13 @@ namespace snapvox.helpers
                 editor = new ImageEditorWindow();
                 editor.SetImage(image, region);
                 editor.Show();
+                App.ForceRedTrayIcon(false);
             }
             catch (Exception ex)
             {
                 image?.Dispose();
                 editor?.Close();
+                App.ForceRedTrayIcon(false);
                 Log.Fatal("ShowEditorForOwnedImage failed.", ex);
             }
         }

@@ -1253,9 +1253,16 @@ namespace snapvox.editor.forms
             {
                 if (int.TryParse(tb.Text, out int val))
                 {
-                    tb.Text = (val + 1).ToString();
-                    OverlayHelper.ShowLightToast($"COUNTER: {val + 1}", this);
+                    val++;
+                    tb.Text = val.ToString();
+                    _counterValue = val + 1;
+                    OverlayHelper.ShowLightToast($"COUNTER: {val}", this);
                 }
+            }
+            else
+            {
+                _counterValue++;
+                OverlayHelper.ShowLightToast($"NEXT COUNTER: {_counterValue}", this);
             }
         }
         private void OnCounterDownClick(object sender, RoutedEventArgs e)
@@ -1264,9 +1271,16 @@ namespace snapvox.editor.forms
             {
                 if (int.TryParse(tb.Text, out int val))
                 {
-                    tb.Text = (val - 1).ToString();
-                    OverlayHelper.ShowLightToast($"COUNTER: {val - 1}", this);
+                    val--;
+                    tb.Text = val.ToString();
+                    _counterValue = val + 1;
+                    OverlayHelper.ShowLightToast($"COUNTER: {val}", this);
                 }
+            }
+            else
+            {
+                _counterValue = Math.Max(1, _counterValue - 1);
+                OverlayHelper.ShowLightToast($"NEXT COUNTER: {_counterValue}", this);
             }
         }
 
@@ -3491,41 +3505,105 @@ namespace snapvox.editor.forms
                 int oldH = _image.Height;
                 await Task.Run(() => _image.Mutate(x => x.Rotate(mode))).ConfigureAwait(true);
                 
+                double rotAngle = 0;
+                if (mode == RotateMode.Rotate90) rotAngle = 90;
+                else if (mode == RotateMode.Rotate180) rotAngle = 180;
+                else if (mode == RotateMode.Rotate270) rotAngle = 270;
+
                 foreach (var child in GetUserAnnotations())
                 {
-                    double l = Canvas.GetLeft(child);
-                    double t = Canvas.GetTop(child);
-                    double w = child.Width;
-                    double h = child.Height;
+                    if (!TryGetControlBounds(child, out var oldBounds)) continue;
                     
+                    double l = oldBounds.X;
+                    double t = oldBounds.Y;
+                    double w = oldBounds.Width;
+                    double h = oldBounds.Height;
+                    
+                    double newL, newT, newW, newH;
                     if (mode == RotateMode.Rotate90)
                     {
-                        Canvas.SetLeft(child, oldH - t - h);
-                        Canvas.SetTop(child, l);
+                        newL = oldH - t - h;
+                        newT = l;
+                        newW = h;
+                        newH = w;
                     }
                     else if (mode == RotateMode.Rotate270)
                     {
-                        Canvas.SetLeft(child, t);
-                        Canvas.SetTop(child, oldW - l - w);
+                        newL = t;
+                        newT = oldW - l - w;
+                        newW = h;
+                        newH = w;
                     }
-                    else if (mode == RotateMode.Rotate180)
+                    else // Rotate180
                     {
-                        Canvas.SetLeft(child, oldW - l - w);
-                        Canvas.SetTop(child, oldH - t - h);
+                        newL = oldW - l - w;
+                        newT = oldH - t - h;
+                        newW = w;
+                        newH = h;
                     }
-                    
-                    if (mode == RotateMode.Rotate90 || mode == RotateMode.Rotate270)
+
+                    if (child is Avalonia.Controls.Shapes.Line line)
                     {
-                        child.Width = h;
-                        child.Height = w;
-                        if (child is Avalonia.Controls.Shapes.Line line)
+                        var s = line.StartPoint; var e = line.EndPoint;
+                        // Internal points are relative to the bounding box of the line
+                        if (mode == RotateMode.Rotate90) { line.StartPoint = new AvaloniaPoint(newW - s.Y, s.X); line.EndPoint = new AvaloniaPoint(newW - e.Y, e.X); }
+                        else if (mode == RotateMode.Rotate270) { line.StartPoint = new AvaloniaPoint(s.Y, newH - s.X); line.EndPoint = new AvaloniaPoint(e.Y, newH - e.X); }
+                        else if (mode == RotateMode.Rotate180) { line.StartPoint = new AvaloniaPoint(newW - s.X, newH - s.Y); line.EndPoint = new AvaloniaPoint(newW - e.X, newH - e.Y); }
+                        Canvas.SetLeft(line, newL); Canvas.SetTop(line, newT);
+                    }
+                    else if (child is Avalonia.Controls.Shapes.Polyline poly)
+                    {
+                        var pts = new List<AvaloniaPoint>();
+                        foreach (var p in poly.Points)
                         {
-                            var s = line.StartPoint; var e = line.EndPoint;
-                            if (mode == RotateMode.Rotate90) { line.StartPoint = new AvaloniaPoint(h - s.Y, s.X); line.EndPoint = new AvaloniaPoint(h - e.Y, e.X); }
-                            else { line.StartPoint = new AvaloniaPoint(s.Y, w - s.X); line.EndPoint = new AvaloniaPoint(e.Y, w - e.X); }
+                            if (mode == RotateMode.Rotate90) pts.Add(new AvaloniaPoint(newW - p.Y, p.X));
+                            else if (mode == RotateMode.Rotate270) pts.Add(new AvaloniaPoint(p.Y, newH - p.X));
+                            else if (mode == RotateMode.Rotate180) pts.Add(new AvaloniaPoint(newW - p.X, newH - p.Y));
+                        }
+                        poly.Points = new Avalonia.Collections.AvaloniaList<AvaloniaPoint>(pts);
+                        Canvas.SetLeft(poly, newL); Canvas.SetTop(poly, newT);
+                    }
+                    else if (child is Canvas group && group.Tag is ArrowProperties props)
+                    {
+                        if (mode == RotateMode.Rotate90)
+                        {
+                            props.Start = new AvaloniaPoint(oldH - props.Start.Y, props.Start.X);
+                            props.End = new AvaloniaPoint(oldH - props.End.Y, props.End.X);
+                        }
+                        else if (mode == RotateMode.Rotate270)
+                        {
+                            props.Start = new AvaloniaPoint(props.Start.Y, oldW - props.Start.X);
+                            props.End = new AvaloniaPoint(props.End.Y, oldW - props.End.X);
+                        }
+                        else if (mode == RotateMode.Rotate180)
+                        {
+                            props.Start = new AvaloniaPoint(oldW - props.Start.X, oldH - props.Start.Y);
+                            props.End = new AvaloniaPoint(oldW - props.End.X, oldH - props.End.Y);
+                        }
+                        UpdateArrowVisuals(group, props.Start, props.End);
+                    }
+                    else 
+                    {
+                        Canvas.SetLeft(child, newL);
+                        Canvas.SetTop(child, newT);
+                        child.Width = newW;
+                        child.Height = newH;
+
+                        var tool = GetToolFromControl(child);
+                        if (tool == EditorTool.Text || tool == EditorTool.Counter || tool == EditorTool.Emoji)
+                        {
+                            var transform = child.RenderTransform as RotateTransform;
+                            if (transform == null)
+                            {
+                                transform = new RotateTransform();
+                                child.RenderTransform = transform;
+                                child.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                            }
+                            transform.Angle = (transform.Angle + rotAngle) % 360;
                         }
                     }
                 }
+                UpdateSelectionIndicator();
                 UpdateDisplay();
                 ShowUndoAvailableHint();
             }
