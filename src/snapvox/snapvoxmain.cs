@@ -58,10 +58,15 @@ public class snapvoxMain
             return;
         }
 
-        using var appMutex = new Mutex(false, "Global\\SnapVox_SingleInstance_Mutex", out bool createdNew);
-        if (!createdNew && !isInstaller && !isLifecycle && !hasFiles)
+        Mutex appMutex = null;
+        if (!isInstaller && !isLifecycle && !hasFiles)
         {
-            return;
+            appMutex = new Mutex(false, "Global\\SnapVox_SingleInstance_Mutex", out bool createdNew);
+            if (!createdNew)
+            {
+                appMutex.Dispose();
+                return;
+            }
         }
 
         InstallHostContext.WriteEarlyTrace("ENTER Main PID=" + Environment.ProcessId + " exe=" + Environment.ProcessPath);
@@ -139,6 +144,10 @@ public class snapvoxMain
             InstallHostContext.WriteEarlyTrace("Main exception: " + ex.Message);
             if (LOG != null) LOG.Fatal(msg);
             ExecutionTrace.LogException("Bootstrap.Main", ex, msg);
+        }
+        finally
+        {
+            appMutex?.Dispose();
         }
     }
 

@@ -474,9 +474,27 @@ public static class StartupTaskHelper
         }
     }
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int MessageBox(IntPtr hWnd, string lpText, string lpCaption, uint uType);
+
     public static DialogResult ShowForegroundMessageBox(string message, string title, MessageBoxButtons buttons = MessageBoxButtons.OK, MessageBoxIcon icon = MessageBoxIcon.Information)
     {
-        return MessageBox.Show(message, title, buttons, icon);
+        try
+        {
+            uint type = 0x00000040; // MB_ICONINFORMATION
+            if (icon == MessageBoxIcon.Error) type = 0x00000010; // MB_ICONERROR
+            if (icon == MessageBoxIcon.Warning) type = 0x00000030; // MB_ICONWARNING
+
+            // This brings the message box to the foreground.
+            type |= 0x00040000; // MB_TOPMOST
+
+            return (DialogResult)MessageBox(IntPtr.Zero, message, title, type);
+        }
+        catch
+        {
+            // Fallback for non-windows or other issues
+            return snapvox.foundation.core.AvaloniaShims.MessageBox.Show(message, title, buttons, icon);
+        }
     }
 }
 

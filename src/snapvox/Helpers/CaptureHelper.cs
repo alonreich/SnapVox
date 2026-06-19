@@ -1,9 +1,3 @@
-/*
- * Portions of this file, specifically the native capture logic and 
- * bounds calculations, were adapted from the Greenshot project, 
- * which is licensed under the GNU General Public License (GPL).
- * SnapVox acknowledges and complies with this license.
- */
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -41,7 +35,7 @@ namespace snapvox.helpers
 
         public static void CaptureRegion(bool fromHotkey)
         {
-            App.ForceRedTrayIcon(true);
+            if (!forms.CaptureWindow.BeginCaptureSession()) return;
             _ = Task.Run(() => CaptureRegionAsync(fromHotkey));
         }
 
@@ -69,14 +63,14 @@ namespace snapvox.helpers
 
         private static async Task CaptureRegionAsync(bool fromHotkey)
         {
+            bool overlaysShown = false;
             try
             {
                 RECT virtualBounds = GetVirtualDesktopBounds();
-                // Freeze the snapshot as early as possible
                 ImageSharpImage fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
                 if (fullSnapshot == null)
                 {
-                    App.ForceRedTrayIcon(false);
+                    forms.CaptureWindow.EndCaptureSession();
                     return;
                 }
 
@@ -89,7 +83,7 @@ namespace snapvox.helpers
                     _frozenVirtualBounds = virtualBounds;
                 }
 
-                var screens = await Dispatcher.UIThread.InvokeAsync(() =>
+                var screensInfo = await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     var lifetime = Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
                     var screens = lifetime?.Windows.FirstOrDefault()?.Screens.All;
@@ -98,27 +92,34 @@ namespace snapvox.helpers
                         var probe = new Avalonia.Controls.Window();
                         screens = probe.Screens.All;
                     }
-                    return screens?.ToList();
+                    return screens?.Select(s => new { s.Bounds, s.Scaling }).ToList();
                 });
 
-                if (screens == null || !screens.Any()) 
+                if (screensInfo == null || !screensInfo.Any()) 
                 {
+                    forms.CaptureWindow.EndCaptureSession();
                     ClearFrozenSnapshot();
-                    App.ForceRedTrayIcon(false);
                     return;
                 }
 
                 var screenData = new List<(PixelRect Bounds, byte[] PngData)>();
-                foreach (var screen in screens)
+                foreach (var screen in screensInfo)
                 {
                     var cropRect = ClampCropRectangle(new Rectangle(screen.Bounds.X - virtualBounds.Left, screen.Bounds.Y - virtualBounds.Top, screen.Bounds.Width, screen.Bounds.Height), fullSnapshot.Width, fullSnapshot.Height);
                     if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
 
                     using var cropped = fullSnapshot.Clone(x => x.Crop(cropRect));
-                    if (Config.AddFrameBorders) cropped.Mutate(x => { int t = 3; if (cropped.Width > t * 2 && cropped.Height > t * 2) x.Crop(new Rectangle(t, t, cropped.Width - t * 2, cropped.Height - t * 2)).Pad(cropped.Width, cropped.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
+                    if (Config.AddFrameBorders) cropped.Mutate(x => { int t = 3; if (cropped.Width > t * 2 && cropped.Height > t * 2) x.Crop(new Rectangle(t, t, cropped.Width - t * 2, cropped.Height - t * 2)).Pad(cropped.Width, cropped.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
                     using var ms = new MemoryStream();
                     cropped.Save(ms, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
                     screenData.Add((screen.Bounds, ms.ToArray()));
+                }
+
+                if (screenData.Count == 0)
+                {
+                    forms.CaptureWindow.EndCaptureSession();
+                    ClearFrozenSnapshot();
+                    return;
                 }
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -141,14 +142,14 @@ namespace snapvox.helpers
                             throw;
                         }
                     }
+                    overlaysShown = true;
                 });
-                App.ForceRedTrayIcon(false);
             }
             catch (Exception ex) 
             { 
                 Log.Fatal("CaptureRegion failed.", ex);
+                if (!overlaysShown) forms.CaptureWindow.EndCaptureSession();
                 ClearFrozenSnapshot();
-                App.ForceRedTrayIcon(false);
             }
         }
 
@@ -174,17 +175,19 @@ namespace snapvox.helpers
         public static void CaptureActiveWindow(bool fromHotkey)
         {
             App.ForceRedTrayIcon(true);
-            
-            RECT virtualBounds = GetVirtualDesktopBounds();
-            var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
-
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
+                ImageSharpImage fullSnapshot = null;
+                ImageSharpImage owned = null;
+                bool editorShown = false;
                 try
                 {
+                    RECT virtualBounds = GetVirtualDesktopBounds();
+                    fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
+
                     int delay = Config.CaptureDelay > 0 ? Config.CaptureDelay : (fromHotkey ? 0 : 400);
                     if (delay > 0) await Task.Delay(delay).ConfigureAwait(false);
-                    
+
                     IntPtr activeHwnd = Win32WindowHelper.GetForegroundWindow();
                     if (activeHwnd != IntPtr.Zero)
                     {
@@ -224,12 +227,12 @@ namespace snapvox.helpers
                             {
                                 if (dwmRect.Width > rawRect.Width && dwmRect.Height > rawRect.Height) rawRect = dwmRect;
                             }
-                            
+
                             var cropRect = ClampCropRectangle(new Rectangle(rawRect.Left - virtualBounds.Left, rawRect.Top - virtualBounds.Top, rawRect.Width, rawRect.Height), fullSnapshot.Width, fullSnapshot.Height);
                             if (cropRect.Width > 0 && cropRect.Height > 0)
                             {
-                                var owned = fullSnapshot.Clone(x => x.Crop(cropRect));
-                                
+                                owned = fullSnapshot.Clone(x => x.Crop(cropRect));
+
                                 if (Config.KeepBackup)
                                 {
                                     try
@@ -245,23 +248,24 @@ namespace snapvox.helpers
                                     }
                                 }
 
-                                if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
-                                
+                                if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
+
                                 RememberRegion(rawRect);
                                 await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
-                                await Dispatcher.UIThread.InvokeAsync(() =>
-                                {
-                                    ShowEditorForOwnedImage(owned, rawRect, "region");
-                                });
+                                ImageSharpImage imageForEditor = owned;
+                                await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImage(imageForEditor, rawRect, "region"));
+                                owned = null;
+                                editorShown = true;
                             }
                         }
                     }
                 }
                 catch (Exception ex) { Log.Fatal("CaptureActiveWindow failed.", ex); }
-                finally 
-                { 
-                    fullSnapshot?.Dispose(); 
-                    App.ForceRedTrayIcon(false);
+                finally
+                {
+                    owned?.Dispose();
+                    fullSnapshot?.Dispose();
+                    if (!editorShown) App.ForceRedTrayIcon(false);
                 }
             });
         }
@@ -269,18 +273,20 @@ namespace snapvox.helpers
         public static void CaptureFullscreen(bool fromHotkey, ScreenCaptureMode mode)
         {
             App.ForceRedTrayIcon(true);
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
+                ImageSharpImage owned = null;
+                bool editorShown = false;
                 try
                 {
                     RECT virtualBounds = GetVirtualDesktopBounds();
                     using var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
 
                     if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
-                    
+
                     if (fullSnapshot != null)
                     {
-                        var owned = fullSnapshot.Clone(x => { });
+                        owned = fullSnapshot.Clone(x => { });
                         if (Config.KeepBackup)
                         {
                             try
@@ -296,43 +302,44 @@ namespace snapvox.helpers
                             }
                         }
 
-                        if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
+                        if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
 
                         await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            ShowEditorForOwnedImage(owned, virtualBounds, "region");
-                        });
+                        ImageSharpImage imageForEditor = owned;
+                        await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImage(imageForEditor, virtualBounds, "region"));
+                        owned = null;
+                        editorShown = true;
                     }
                 }
                 catch (Exception ex) { Log.Fatal("CaptureFullscreen failed.", ex); }
-                finally { App.ForceRedTrayIcon(false); }
+                finally
+                {
+                    owned?.Dispose();
+                    if (!editorShown) App.ForceRedTrayIcon(false);
+                }
             });
         }
 
         public static void CaptureClipboard()
         {
             App.ForceRedTrayIcon(true);
-            Task.Run(async () =>
+            _ = Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 try
                 {
                     ImageSharpImage image = await UiClipboard.GetImageAsync();
                     if (image != null)
                     {
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            ShowEditorForOwnedImage(image, RECT.Empty, "clipboard");
-                        });
+                        ShowEditorForOwnedImage(image, RECT.Empty, "clipboard");
                     }
                     else
                     {
                         App.ForceRedTrayIcon(false);
                     }
                 }
-                catch (Exception ex) 
-                { 
-                    Log.Error("CaptureClipboard failed", ex); 
+                catch (Exception ex)
+                {
+                    Log.Error("CaptureClipboard failed", ex);
                     App.ForceRedTrayIcon(false);
                 }
             });
@@ -356,7 +363,7 @@ namespace snapvox.helpers
                 App.ForceRedTrayIcon(false);
                 return;
             }
-            _ = OpenEditorForRegionAsync(lastRegion);
+            OpenEditorForRegionAsync(lastRegion);
         }
 
         private const int SmXVirtualScreen = 76;
@@ -376,54 +383,63 @@ namespace snapvox.helpers
                 GetSystemMetrics(SmCYVirtualScreen));
         }
 
-        private static async Task OpenEditorForRegionAsync(RECT region)
+        private static void OpenEditorForRegionAsync(RECT region)
         {
             ImageSharpImage owned = null;
-            try
+            _ = Task.Run(async () =>
             {
-                owned = await Task.Run(() =>
+                bool editorShown = false;
+                try
                 {
-                    using ImageSharpImage captured = NativeCapture.CaptureRegion(region, Config.CaptureMousepointer);
-                    if (captured == null) return null;
-                    var clone = captured.Clone(x => { });
-
-                    if (Config.KeepBackup)
+                    using (ImageSharpImage captured = NativeCapture.CaptureRegion(region, Config.CaptureMousepointer))
                     {
-                        try
+                        if (captured == null)
                         {
-                            string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                            Directory.CreateDirectory(tempDir);
-                            string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
-                            clone.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                            App.ForceRedTrayIcon(false);
+                            return;
                         }
-                        catch (Exception ex)
+                        owned = captured.Clone(x => { });
+
+                        if (Config.KeepBackup)
                         {
-                            Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                            try
+                            {
+                                string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                                Directory.CreateDirectory(tempDir);
+                                string fileName = $"Raw_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                                owned.Save(Path.Combine(tempDir, fileName), new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality });
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
+                            }
                         }
+
+                        if (Config.AddFrameBorders) owned.Mutate(x => { int t = 2; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
                     }
 
-                    if (Config.AddFrameBorders) clone.Mutate(x => { int t = 2; if (clone.Width > t * 2 && clone.Height > t * 2) x.Crop(new Rectangle(t, t, clone.Width - t * 2, clone.Height - t * 2)).Pad(clone.Width, clone.Height, SixLabors.ImageSharp.Color.ParseHex("#0E2548")); });
-                    return clone;
-                }).ConfigureAwait(false);
-
-                if (owned == null)
-                {
-                    App.ForceRedTrayIcon(false);
-                    return;
+                    if (owned == null)
+                    {
+                        App.ForceRedTrayIcon(false);
+                        return;
+                    }
+                    RememberRegion(region);
+                    await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
+                    ImageSharpImage imageForEditor = owned;
+                    await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImage(imageForEditor, region, "region"));
+                    owned = null;
+                    editorShown = true;
                 }
-                RememberRegion(region);
-                await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                catch (Exception ex)
                 {
-                    ShowEditorForOwnedImage(owned, region, "region");
-                });
-            }
-            catch (Exception ex) 
-            { 
-                owned?.Dispose(); 
-                Log.Fatal("OpenEditorForRegion failed.", ex); 
-                App.ForceRedTrayIcon(false);
-            }
+                    Log.Fatal("OpenEditorForRegion failed.", ex);
+                }
+                finally
+                {
+                    owned?.Dispose();
+                    if (!editorShown) App.ForceRedTrayIcon(false);
+                }
+            });
         }
 
         public static void OpenEditorForOwnedImage(ImageSharpImage image, RECT region)
@@ -443,9 +459,9 @@ namespace snapvox.helpers
             }
             catch (Exception ex)
             {
+                App.ForceRedTrayIcon(false);
                 image?.Dispose();
                 editor?.Close();
-                App.ForceRedTrayIcon(false);
                 Log.Fatal("ShowEditorForOwnedImage failed.", ex);
             }
         }

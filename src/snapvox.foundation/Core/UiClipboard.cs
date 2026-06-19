@@ -33,6 +33,9 @@ namespace snapvox.foundation.core
         private const uint CF_BITMAP = 2;
         private const uint CF_DIB = 8;
         private const uint GHND = 0x0042;
+        private const int ClipboardHistoryPromotionDelayMs = 400;
+        private const string SnapVoxEditorImageFormat = "SnapVox.ImageEditorSource";
+        private static readonly byte[] SnapVoxEditorImageBytes = { 1 };
 
         public static void Register(Func<string, Task> setTextAsync) => _setTextAsync = setTextAsync;
         public static void RegisterGetter(Func<Avalonia.Input.Platform.IClipboard> getClipboard) => _getClipboard = getClipboard;
@@ -45,6 +48,49 @@ namespace snapvox.foundation.core
             {
                 await _setTextAsync(text);
             });
+        }
+
+        public static async Task SetFilePathThenImageAsync(string filePath, Image image, bool markSnapVoxEditorImage = false)
+        {
+            if (!string.IsNullOrWhiteSpace(filePath))
+            {
+                await SetTextAsync(Path.GetFullPath(filePath)).ConfigureAwait(false);
+                await Task.Delay(ClipboardHistoryPromotionDelayMs).ConfigureAwait(false);
+            }
+
+            await SetImageAsync(image, markSnapVoxEditorImage).ConfigureAwait(false);
+        }
+
+        public static async Task<bool> HasSnapVoxEditorImageAsync()
+        {
+            try
+            {
+                var clipboard = GetClipboard();
+                if (clipboard != null)
+                {
+                    bool hasAvaloniaFormat = await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        var formats = await clipboard.GetFormatsAsync();
+                        return formats.Contains(SnapVoxEditorImageFormat);
+                    });
+                    if (hasAvaloniaFormat)
+                    {
+                        return true;
+                    }
+                }
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    uint format = RegisterClipboardFormat(SnapVoxEditorImageFormat);
+                    return format != 0 && IsClipboardFormatAvailable(format);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.GetLogger(typeof(UiClipboard)).Error("Failed to inspect SnapVox clipboard marker", ex);
+            }
+
+            return false;
         }
 
         public static async Task<Image> GetImageAsync()
@@ -289,7 +335,46 @@ namespace snapvox.foundation.core
             return offset;
         }
 
-        public static async Task SetImageAsync(Image image)
+        private static bool SetClipboardBytes(uint format, byte[] bytes)
+        {
+            if (format == 0 || bytes == null || bytes.Length == 0) return false;
+
+            IntPtr hGlobal = GlobalAlloc(GHND, (UIntPtr)bytes.Length);
+            if (hGlobal == IntPtr.Zero) return false;
+
+            bool ownershipTransferred = false;
+            try
+            {
+                IntPtr lpGlobal = GlobalLock(hGlobal);
+                if (lpGlobal == IntPtr.Zero) return false;
+
+                try
+                {
+                    Marshal.Copy(bytes, 0, lpGlobal, bytes.Length);
+                }
+                finally
+                {
+                    GlobalUnlock(hGlobal);
+                }
+
+                if (SetClipboardData(format, hGlobal) != IntPtr.Zero)
+                {
+                    ownershipTransferred = true;
+                    return true;
+                }
+
+                return false;
+            }
+            finally
+            {
+                if (!ownershipTransferred)
+                {
+                    GlobalFree(hGlobal);
+                }
+            }
+        }
+
+        public static async Task SetImageAsync(Image image, bool markSnapVoxEditorImage = false)
         {
             if (image == null) return;
 
@@ -303,6 +388,7 @@ namespace snapvox.foundation.core
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && dibBytes != null)
                 {
                     bool success = false;
+                    uint snapVoxFormat = markSnapVoxEditorImage ? RegisterClipboardFormat(SnapVoxEditorImageFormat) : 0;
                     for (int i = 0; i < 5; i++)
                     {
                         if (OpenClipboard(IntPtr.Zero))
@@ -311,6 +397,7 @@ namespace snapvox.foundation.core
                             {
                                 EmptyClipboard();
                                 IntPtr hGlobal = GlobalAlloc(GHND, (UIntPtr)dibBytes.Length);
+                                bool dibTransferred = false;
                                 if (hGlobal != IntPtr.Zero)
                                 {
                                     bool ownershipTransferred = false;
@@ -331,6 +418,7 @@ namespace snapvox.foundation.core
                                             if (SetClipboardData(CF_DIB, hGlobal) != IntPtr.Zero)
                                             {
                                                 ownershipTransferred = true;
+                                                dibTransferred = true;
                                             }
                                         }
                                     }
@@ -342,17 +430,20 @@ namespace snapvox.foundation.core
                                         }
                                     }
                                 }
-                                success = true;
+                                if (dibTransferred && snapVoxFormat != 0)
+                                {
+                                    SetClipboardBytes(snapVoxFormat, SnapVoxEditorImageBytes);
+                                }
+                                success = dibTransferred;
                                 break;
                             }
                             finally { CloseClipboard(); }
                         }
                         await Task.Delay(50);
                     }
-                    if (success) return; // Exit early if Win32 succeeded so Avalonia doesn't overwrite it
+                    if (success) return;
                 }
 
-                // Fallback for non-Windows or if Win32 fails
                 var clipboard = GetClipboard();
                 if (clipboard != null)
                 {
@@ -360,6 +451,10 @@ namespace snapvox.foundation.core
                     dataObject.Set("PNG", pngBytes);
                     dataObject.Set("image/png", pngBytes);
                     dataObject.Set("Bitmap", bmpFullBytes);
+                    if (markSnapVoxEditorImage)
+                    {
+                        dataObject.Set(SnapVoxEditorImageFormat, SnapVoxEditorImageBytes);
+                    }
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         await clipboard.SetDataObjectAsync(dataObject);

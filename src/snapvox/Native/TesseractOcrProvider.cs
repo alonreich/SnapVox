@@ -19,6 +19,8 @@ namespace snapvox.native
         private int _disposed;
         private static readonly SemaphoreSlim InitGate = new SemaphoreSlim(1, 1);
         private static volatile bool _initialized;
+        private TesseractEngine _engine;
+        private readonly SemaphoreSlim _engineLock = new SemaphoreSlim(1, 1);
 
         public TesseractOcrProvider()
         {
@@ -37,11 +39,15 @@ namespace snapvox.native
 
         public Task<OcrInformation> DoOcrAsync(Image image) => DoOcrAsync(image, CancellationToken.None);
 
-        public Task<OcrInformation> DoOcrAsync(Image image, CancellationToken ct) => _queue.EnqueueAsync(image, ct);
+        public Task<OcrInformation> DoOcrAsync(Image image, CancellationToken ct, bool isAlreadyOwned = false)
+        {
+            if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(TesseractOcrProvider));
+            return _queue.EnqueueAsync(image, ct, isAlreadyOwned);
+        }
 
         public void Dispose()
         {
-            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _ = DisposeAsync().AsTask();
         }
 
         public async ValueTask DisposeAsync()
@@ -52,6 +58,18 @@ namespace snapvox.native
             }
 
             await _queue.DisposeAsync().ConfigureAwait(false);
+            
+            await _engineLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _engine?.Dispose();
+                _engine = null;
+            }
+            finally
+            {
+                _engineLock.Release();
+                _engineLock.Dispose();
+            }
         }
 
         private static async Task EnsureInitializedAsync(CancellationToken cancellationToken)
@@ -114,16 +132,28 @@ namespace snapvox.native
                 return null;
             }
 
-            return await Task.Run(() =>
+            await _engineLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                using var buffer = new MemoryStream();
-                prepared.Image.Save(buffer, new PngEncoder());
-                using var engine = CreateEngine(tessDataPath);
-                using Pix pix = Pix.LoadFromMemory(buffer.ToArray());
-                using Page page = engine.Process(pix, PageSegMode.Auto);
-                return MapPage(page, prepared);
-            }, cancellationToken).ConfigureAwait(false);
+                if (_engine == null)
+                {
+                    _engine = CreateEngine(tessDataPath);
+                }
+
+                return await Task.Run(() =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    using var buffer = new MemoryStream();
+                    prepared.Image.Save(buffer, new PngEncoder());
+                    using Pix pix = Pix.LoadFromMemory(buffer.ToArray());
+                    using Page page = _engine.Process(pix, PageSegMode.Auto);
+                    return MapPage(page, prepared);
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _engineLock.Release();
+            }
         }
 
         private static TesseractEngine CreateEngine(string tessDataPath)

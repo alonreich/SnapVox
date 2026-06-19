@@ -43,13 +43,20 @@ namespace snapvox
                 _desktop = desktop;
                 desktop.MainWindow = null;
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-                Task.Run(() => InitializeApplicationAsync(desktop, _mainAppCts.Token));
+                _ = InitializeApplicationAsync(desktop, _mainAppCts.Token);
             }
+
             base.OnFrameworkInitializationCompleted();
         }
 
         private async Task InitializeApplicationAsync(IClassicDesktopStyleApplicationLifetime desktop, CancellationToken cancellationToken)
         {
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                LogHelper.GetLogger(typeof(App)).Error("Unobserved Task Exception", e.Exception);
+                e.SetObserved();
+            };
+
             var ocrProviders = new List<IOcrProvider>();
             try
             {
@@ -157,6 +164,7 @@ namespace snapvox
             }
             finally
             {
+                ForceRedTrayIcon(false);
                 RetentionHelper.Stop();
                 foreach (var ocrProvider in ocrProviders)
                 {
@@ -190,23 +198,30 @@ namespace snapvox
 
         private async Task InitializeTrayIconAsync()
         {
-            WindowIcon blueIcon = null;
-            WindowIcon redIcon = null;
+            byte[] blueBytes = null;
+            byte[] redBytes = null;
 
-            await Task.Run(() =>
+            try
             {
-                try
+                using (var blueAssetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico")))
                 {
-                    using var blueAssetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
-                    blueIcon = new WindowIcon(blueAssetLoader);
+                    using var ms = new MemoryStream();
+                    blueAssetLoader.CopyTo(ms);
+                    blueBytes = ms.ToArray();
+                }
 
-                    using var assetLoader = AssetLoader.Open(new Uri("avares://SnapVox/SnapVox.ico"));
-                    using var avaloniaBitmap = new Avalonia.Media.Imaging.Bitmap(assetLoader);
-                    using var bridgeMs = new MemoryStream();
+                byte[] pngBytes = null;
+                using (var iconStream = new MemoryStream(blueBytes))
+                using (var avaloniaBitmap = new Avalonia.Media.Imaging.Bitmap(iconStream))
+                using (var bridgeMs = new MemoryStream())
+                {
                     avaloniaBitmap.Save(bridgeMs);
-                    bridgeMs.Position = 0;
+                    pngBytes = bridgeMs.ToArray();
+                }
 
-                    using var image = SixLabors.ImageSharp.Image.Load<Bgra32>(bridgeMs);
+                redBytes = await Task.Run(() =>
+                {
+                    using var image = SixLabors.ImageSharp.Image.Load<Bgra32>(pngBytes);
                     image.Mutate(x => x.ProcessPixelRowsAsVector4(row =>
                     {
                         for (int i = 0; i < row.Length; i++)
@@ -219,31 +234,55 @@ namespace snapvox
                             row[i].Z = b * 0.2f;
                         }
                     }));
+
                     using var ms = new MemoryStream();
                     image.Save(ms, new PngEncoder());
-                    ms.Seek(0, SeekOrigin.Begin);
-                    redIcon = new WindowIcon(ms);
-                }
-                catch (Exception ex)
-                {
-                    LogHelper.GetLogger(typeof(App)).Error("Failed to create tray icons", ex);
-                }
-            });
+                    return ms.ToArray();
+                }).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                LogHelper.GetLogger(typeof(App)).Error("Failed to prepare tray icons", ex);
+            }
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                var icons = TrayIcon.GetIcons(this);
-                if (icons != null && icons.Count > 0)
+                try
                 {
-                    _trayIcon = icons[0];
-                    _blueIcon = blueIcon;
-                    _redIcon = redIcon;
-                    if (_blueIcon != null) _trayIcon.Icon = _blueIcon;
+                    WindowIcon blueIcon = null;
+                    WindowIcon redIcon = null;
+
+                    if (blueBytes != null)
+                    {
+                        using var ms = new MemoryStream(blueBytes);
+                        blueIcon = new WindowIcon(ms);
+                    }
+
+                    if (redBytes != null)
+                    {
+                        using var ms = new MemoryStream(redBytes);
+                        redIcon = new WindowIcon(ms);
+                    }
+
+                    var icons = TrayIcon.GetIcons(this);
+                    if (icons != null && icons.Count > 0)
+                    {
+                        _trayIcon = icons[0];
+                        _blueIcon = blueIcon;
+                        _redIcon = redIcon;
+                        var initialIcon = _currentIconIsRed && _redIcon != null ? _redIcon : _blueIcon;
+                        if (initialIcon != null) _trayIcon.Icon = initialIcon;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.GetLogger(typeof(App)).Error("Failed to create tray icon UI objects", ex);
                 }
             });
         }
+
         private static int _redStateRequestCount = 0;
-        private static bool _currentIconIsRed = false;
+        private static volatile bool _currentIconIsRed = false;
         private static readonly object _iconLock = new object();
 
         public static void ForceRedTrayIcon(bool force)
@@ -272,11 +311,31 @@ namespace snapvox
 
         private static void SetTrayIconStateInternal(bool active)
         {
-            if (_trayIcon == null) return;
-            if (_currentIconIsRed == active && _trayIcon.Icon != null) return;
-
             _currentIconIsRed = active;
-            Dispatcher.UIThread.Post(() => { _trayIcon.Icon = active && _redIcon != null ? _redIcon : _blueIcon; });
+
+            void ApplyIcon()
+            {
+                if (_trayIcon == null) return;
+                bool currentActive;
+                lock (_iconLock)
+                {
+                    currentActive = _currentIconIsRed;
+                }
+
+                var targetIcon = currentActive && _redIcon != null ? _redIcon : _blueIcon;
+                if (targetIcon == null) return;
+                if (ReferenceEquals(_trayIcon.Icon, targetIcon)) return;
+                _trayIcon.Icon = targetIcon;
+            }
+
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                ApplyIcon();
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(ApplyIcon);
+            }
         }
 
         public void OnTrayIconClicked(object sender, EventArgs e) => OnCaptureRegionClick(sender, e);

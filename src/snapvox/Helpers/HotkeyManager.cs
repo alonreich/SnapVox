@@ -244,7 +244,8 @@ namespace snapvox.helpers
             if (!RegisterOne(HOTKEY_REGION, cfg.RegionHotkey)) failures.Add(cfg.RegionHotkey);
             if (!RegisterOne(HOTKEY_WINDOW, cfg.WindowHotkey)) failures.Add(cfg.WindowHotkey);
             if (!RegisterOne(HOTKEY_FULLSCREEN, cfg.FullscreenHotkey)) failures.Add(cfg.FullscreenHotkey);
-
+            if (!RegisterOne(HOTKEY_LASTREGION, cfg.LastregionHotkey)) failures.Add(cfg.LastregionHotkey);
+            if (!RegisterOne(HOTKEY_CLIPBOARD, cfg.ClipboardHotkey)) failures.Add(cfg.ClipboardHotkey);
 
             if (failures.Count > 0)
             {
@@ -336,7 +337,12 @@ namespace snapvox.helpers
                         case HOTKEY_WINDOW:
                             CaptureHelper.CaptureActiveWindow(true);
                             break;
-
+                        case HOTKEY_LASTREGION:
+                            CaptureHelper.CaptureLastRegion(true);
+                            break;
+                        case HOTKEY_CLIPBOARD:
+                            CaptureHelper.CaptureClipboard();
+                            break;
                     }
                 }
                 catch (Exception ex)

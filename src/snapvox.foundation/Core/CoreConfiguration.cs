@@ -77,9 +77,6 @@ namespace snapvox.foundation.core
         [IniProperty("WindowCaptureMode", Description = "The capture mode used to capture a Window (Screen, GDI, Aero, AeroTransparent, Auto).", DefaultValue = "Auto")]
         public WindowCaptureMode WindowCaptureMode { get; set; }
 
-        [IniProperty("WindowCaptureAllChildLocations", Description = "Enable/disable capture all children, very slow but will make it possible to use this information in the editor.", DefaultValue = "False")]
-        public bool WindowCaptureAllChildLocations { get; set; } = false;
-
         [IniProperty("DWMBackgroundColor", Description = "The background color for a DWM window capture.")]
         public Color DWMBackgroundColor { get; set; } = Color.Transparent;
 

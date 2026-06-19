@@ -2,6 +2,8 @@
 set "DOTNET_CLI_FORCE_UTF8_ENCODING=false"
 set "DOTNET_CLI_UI_LANGUAGE=en-US"
 set "VSCONSOLEOUTPUT=1"
+set "SCRIPT_DIR=%~dp0"
+pushd "%SCRIPT_DIR%" >nul || exit /b 1
 rem ---------------------------------------------------------------------------
 
 rem  Build.cmd — dual output: live console + .\build.log (ANSI colors in log).
@@ -12,9 +14,13 @@ rem ---------------------------------------------------------------------------
 
 if /I not "%~1"=="__BUILD_LOGGED__" (
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0developer_tools\BuildLog.ps1" -BatchPath "%~f0" %*
+  powershell -NoProfile -ExecutionPolicy Bypass -File ".\developer_tools\BuildLog.ps1" %*
 
-  exit /b %ERRORLEVEL%
+  set "BUILD_EXIT=%ERRORLEVEL%"
+
+  popd >nul
+
+  exit /b %BUILD_EXIT%
 
 )
 
@@ -24,11 +30,9 @@ shift
 
 setlocal enabledelayedexpansion
 
-cd /d "%~dp0"
+cd /d "."
 
 
-
-if not defined NUGET_PACKAGES set "NUGET_PACKAGES=%USERPROFILE%\.nuget\packages"
 
 set "PROJECT_FILE=src\SnapVox\SnapVox.csproj"
 
@@ -189,7 +193,7 @@ exit /b 0
 :PURGE_COMPILED_EXTRAS
 for %%F in (".\compiled\*") do (
   if /I not "%%~xF"==".exe" if /I not "%%~nxF"=="LICENSE.txt" (
-    echo ERROR: Removing disallowed artifact from compiled: %%~fF
+    echo ERROR: Removing disallowed artifact from compiled: %%~nxF
     rd /s /q "%%~fF" 2>nul
     del /f /q "%%~fF" 2>nul
     exit /b 1
@@ -229,27 +233,35 @@ where link.exe >nul 2>&1
 
 if not errorlevel 1 goto DETECT_NATIVE_AOT_OK
 
-set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+where vswhere.exe >nul 2>&1
 
-if exist "%VSWHERE%" (
+if errorlevel 1 (
 
-  for /f "usebackq delims=" %%I in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul`) do (
+  echo ERROR: Native AOT platform linker ^(link.exe^) not found in PATH.
 
-    if exist "%%I\Common7\Tools\VsDevCmd.bat" (
+  echo ERROR: Open a Developer Command Prompt or add Visual Studio tools to PATH.
 
-      call "%%I\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
+  exit /b 1
 
-      where link.exe >nul 2>&1
+)
 
-      if not errorlevel 1 goto DETECT_NATIVE_AOT_OK
+for /f "usebackq delims=" %%I in (`vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul`) do (
 
-    )
+  if exist "%%I\Common7\Tools\VsDevCmd.bat" (
+
+    call "%%I\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
+
+    where link.exe >nul 2>&1
+
+    if not errorlevel 1 goto DETECT_NATIVE_AOT_OK
 
   )
 
 )
 
-echo ERROR: Native AOT platform linker (link.exe) not found.
+echo ERROR: Native AOT platform linker ^(link.exe^) not found.
+
+echo ERROR: Open a Developer Command Prompt or add Visual Studio tools to PATH.
 
 exit /b 1
 

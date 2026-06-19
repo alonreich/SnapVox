@@ -155,7 +155,7 @@ namespace snapvox.helpers
 #if USE_TESSERACT
             return HasTessData("eng.traineddata") && HasTessData("heb.traineddata");
 #else
-            return native.Win10OcrProvider.IsEnglishLanguageAvailable();
+            return native.Win10OcrProvider.AreRequiredLanguagesAvailable();
 #endif
         }
 

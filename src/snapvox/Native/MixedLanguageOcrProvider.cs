@@ -32,11 +32,11 @@ namespace snapvox.native
 
         public Task<OcrInformation> DoOcrAsync(Image image) => DoOcrAsync(image, CancellationToken.None);
 
-        public Task<OcrInformation> DoOcrAsync(Image image, CancellationToken ct) => _queue.EnqueueAsync(image, ct);
+        public Task<OcrInformation> DoOcrAsync(Image image, CancellationToken ct, bool isAlreadyOwned = false) => _queue.EnqueueAsync(image, ct, isAlreadyOwned);
 
         public void Dispose()
         {
-            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _ = DisposeAsync().AsTask();
         }
 
         public async ValueTask DisposeAsync()
@@ -52,10 +52,10 @@ namespace snapvox.native
         private async Task<OcrInformation> RecognizeCoreAsync(Image image, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using Image windowsImage = image.Clone(x => { });
-            using Image tesseractImage = image.Clone(x => { });
-            Task<OcrInformation> englishTask = Win10OcrProvider.RecognizeEnglishOnlyAsync(windowsImage, cancellationToken);
-            Task<OcrInformation> tesseractTask = _tesseract.DoOcrAsync(tesseractImage, cancellationToken);
+            
+            Task<OcrInformation> englishTask = Win10OcrProvider.RecognizeEnglishOnlyAsync(image, cancellationToken);
+            Task<OcrInformation> tesseractTask = _tesseract.DoOcrAsync(image, cancellationToken, true);
+            
             await Task.WhenAll(englishTask, tesseractTask).ConfigureAwait(false);
             OcrInformation english = await englishTask.ConfigureAwait(false);
             OcrInformation tesseract = await tesseractTask.ConfigureAwait(false);

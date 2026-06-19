@@ -680,7 +680,77 @@ internal static class DeploymentLifecycle
         await logger.LogAsync("FILESYSTEM", "COPY", dest, ct).ConfigureAwait(false);
     }
 
-    private static Task LaunchInstalledApplicationAsync() { try { Process.Start(new ProcessStartInfo { FileName = StartupTaskHelper.InstallPath, UseShellExecute = true }); } catch { } return Task.CompletedTask; }
+    private static async Task LaunchInstalledApplicationAsync()
+    {
+        const int launchAttempts = 3;
+
+        for (int attempt = 1; attempt <= launchAttempts; attempt++)
+        {
+            try
+            {
+                using var process = Process.Start(new ProcessStartInfo
+                {
+                    FileName = StartupTaskHelper.InstallPath,
+                    WorkingDirectory = StartupTaskHelper.InstallFolder,
+                    UseShellExecute = true
+                });
+
+                await Task.Delay(1200).ConfigureAwait(false);
+
+                if (IsInstalledApplicationRunning())
+                {
+                    return;
+                }
+            }
+            catch
+            {
+            }
+
+            await Task.Delay(800).ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsInstalledApplicationRunning()
+    {
+        try
+        {
+            foreach (var process in Process.GetProcessesByName("snapvox"))
+            {
+                try
+                {
+                    string path = process.MainModule?.FileName;
+                    if (string.Equals(path, StartupTaskHelper.InstallPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (var process in Process.GetProcessesByName("SnapVox"))
+            {
+                try
+                {
+                    string path = process.MainModule?.FileName;
+                    if (string.Equals(path, StartupTaskHelper.InstallPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
+    }
+
     private static void StartElevated(string exe, string args) => TryStartElevated(exe, args);
     private static bool TryStartElevated(string exe, string args) { try { Process.Start(new ProcessStartInfo { FileName = exe, Arguments = args, UseShellExecute = true, Verb = "runas" }); return true; } catch { return false; } }
     private static bool AcquireMutex(Mutex m) => m.WaitOne(15000, false);

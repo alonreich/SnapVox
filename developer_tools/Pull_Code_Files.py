@@ -1,6 +1,11 @@
 import os
-import shutil
 from pathlib import Path
+
+def get_downloads_directory():
+    user_profile = os.environ.get('USERPROFILE')
+    if user_profile:
+        return Path(user_profile) / "Downloads"
+    return Path.home() / "Downloads"
 
 def is_binary(file_path):
     try:
@@ -20,11 +25,10 @@ def is_binary(file_path):
 def run_aggregator():
     project_root = Path(__file__).resolve().parent.parent
     src_dir = project_root / "src"
-    download_dir = Path(os.environ['USERPROFILE']) / "Downloads" / "snapvox"
+    download_dir = get_downloads_directory() / "snapvox"
 
-    if download_dir.exists():
-        shutil.rmtree(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
+    initialized_outputs = set()
 
     ignored_dirs = {'.git', 'bin', 'obj', '.vs', '.idea', 'node_modules', 'developer_tools', 'compiled'}
     
@@ -58,15 +62,19 @@ def run_aggregator():
                 
             if is_binary(file_path):
                 formatted_entry = f"\n\n\n{relative_path}:\n`[BINARY FILE: {filename} - SKIPPED]\n`"
-                with open(output_file, 'a', encoding='utf-8') as f_out:
+                mode = 'a' if output_file in initialized_outputs else 'w'
+                initialized_outputs.add(output_file)
+                with open(output_file, mode, encoding='utf-8') as f_out:
                     f_out.write(formatted_entry)
                 continue
 
             try:
                 content = file_path.read_text(encoding='utf-8-sig', errors='ignore')
                 formatted_entry = f"\n\n\n{relative_path}:\n`\n{content}\n`"
-                
-                with open(output_file, 'a', encoding='utf-8') as f_out:
+
+                mode = 'a' if output_file in initialized_outputs else 'w'
+                initialized_outputs.add(output_file)
+                with open(output_file, mode, encoding='utf-8') as f_out:
                     f_out.write(formatted_entry)
             except Exception:
                 continue

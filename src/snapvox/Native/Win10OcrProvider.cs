@@ -35,15 +35,15 @@ namespace snapvox.native
 
         public string DisplayName => "Windows Native OCR Engine";
 
-        public bool HasRequiredLanguages() => IsEnglishLanguageAvailable();
+        public bool HasRequiredLanguages() => AreRequiredLanguagesAvailable();
 
         public Task<OcrInformation> DoOcrAsync(Image image) => DoOcrAsync(image, CancellationToken.None);
 
-        public Task<OcrInformation> DoOcrAsync(Image image, CancellationToken ct) => _queue.EnqueueAsync(image, ct);
+        public Task<OcrInformation> DoOcrAsync(Image image, CancellationToken ct, bool isAlreadyOwned = false) => _queue.EnqueueAsync(image, ct, isAlreadyOwned);
 
         public void Dispose()
         {
-            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _ = DisposeAsync().AsTask();
         }
 
         public async ValueTask DisposeAsync()
@@ -200,7 +200,7 @@ namespace snapvox.native
         private static async Task<SoftwareBitmap> CreateSoftwareBitmapAsync(Image image, CancellationToken cancellationToken)
         {
             using var stream = new MemoryStream();
-            await image.SaveAsync(stream, new PngEncoder(), cancellationToken).ConfigureAwait(false);
+            await image.SaveAsync(stream, new SixLabors.ImageSharp.Formats.Bmp.BmpEncoder(), cancellationToken).ConfigureAwait(false);
             stream.Position = 0;
             using IRandomAccessStream randomAccessStream = stream.AsRandomAccessStream();
             var decoder = await BitmapDecoder.CreateAsync(randomAccessStream).AsTask(cancellationToken).ConfigureAwait(false);

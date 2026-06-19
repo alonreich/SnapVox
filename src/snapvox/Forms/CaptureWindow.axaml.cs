@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -35,7 +36,11 @@ namespace snapvox.forms
         private static readonly log4net.ILog Log = LogHelper.GetLogger(typeof(CaptureWindow));
         private static List<CaptureWindow> _activeWindows = new List<CaptureWindow>();
         private static readonly object SharedOcrLock = new object();
+        private static readonly object CaptureSessionLock = new object();
         private static bool _globalOcrMode;
+        private static bool _captureCompleted;
+        private static bool _captureTrayIconHeld;
+
         private const int MagneticThresholdPixels = 10;
         private Avalonia.Point _startPoint;
         private bool _isDragging;
@@ -74,11 +79,35 @@ namespace snapvox.forms
         {
         }
 
+        public static bool BeginCaptureSession()
+        {
+            lock (CaptureSessionLock)
+            {
+                if (_captureTrayIconHeld) return false;
+                _captureCompleted = false;
+                _captureTrayIconHeld = true;
+            }
+
+            App.ForceRedTrayIcon(true);
+            return true;
+        }
+
+        public static void EndCaptureSession()
+        {
+            lock (CaptureSessionLock)
+            {
+                if (!_captureTrayIconHeld) return;
+                _captureTrayIconHeld = false;
+            }
+
+            App.ForceRedTrayIcon(false);
+        }
+
         public CaptureWindow(PixelRect screenBounds, Avalonia.Media.Imaging.Bitmap background = null)
         {
             _screenBounds = screenBounds;
             InitializeComponent();
-            
+
             double scaling = 1.0;
             try
             {
@@ -104,6 +133,7 @@ namespace snapvox.forms
             _ocrProcessingStatus = this.FindControl<Border>("OcrProcessingStatus");
             _magnifierPanel = this.FindControl<Border>("MagnifierPanel");
             _magnifierImage = this.FindControl<Avalonia.Controls.Image>("MagnifierImage");
+            if (_mainCanvas != null) _mainCanvas.Focusable = true;
             
             if (_backgroundControl != null && background != null)
             {
@@ -120,7 +150,7 @@ namespace snapvox.forms
 
             _isWindowOpen = true;
 
-            KeyDown += OnKeyDown;
+            AddHandler(InputElement.KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
             Closed += OnClosed;
             lock (_activeWindows) { _activeWindows.Add(this); }
             
@@ -136,32 +166,52 @@ namespace snapvox.forms
         {
             base.OnOpened(e);
             
-            this.Activate();
-            this.Focus();
+            FocusForKeyboardCapture();
             
             LayoutInstructionBanner(null);
             LayoutOcrStatus();
-            App.ForceRedTrayIcon(true);
             UiClipboard.Register(text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
             if (_highlightBorder != null) _highlightBorder.IsVisible = false;
             if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
         }
 
+        private void FocusForKeyboardCapture()
+        {
+            Activate();
+            Focus();
+            _mainCanvas?.Focus();
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!_isWindowOpen) return;
+                Activate();
+                Focus();
+                _mainCanvas?.Focus();
+            }, DispatcherPriority.Input);
+        }
+
         private async void OnClosed(object sender, EventArgs e)
         {
             _isWindowOpen = false;
-            CloseAll();
-            CaptureHelper.ClearFrozenSnapshot();
-            App.ForceRedTrayIcon(false);
             await StopLocalOcrAsync().ConfigureAwait(true);
+
+            bool isLastWindow;
             lock (_activeWindows)
             {
-                if (_activeWindows.Count == 0)
-                {
-                    _globalOcrMode = false;
-                    CancelLocalPreemptiveOcr();
-                }
+                _activeWindows.Remove(this);
+                isLastWindow = _activeWindows.Count == 0;
             }
+
+            if (isLastWindow)
+            {
+                if (!_captureCompleted)
+                {
+                    EndCaptureSession();
+                }
+                _globalOcrMode = false;
+                CancelLocalPreemptiveOcr();
+                CaptureHelper.ClearFrozenSnapshot();
+            }
+            
             if (_backgroundControl != null)
             {
                 _backgroundControl.Source = null;
@@ -307,16 +357,29 @@ namespace snapvox.forms
                 return null;
             }
 
-            var nativeRect = RECT.FromXYWH(targetRegion.X, targetRegion.Y, targetRegion.Width, targetRegion.Height);
-            using ImageSharpImage image = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false);
-            if (image == null)
+            ImageSharpImage image = null;
+            try
             {
-                return null;
-            }
+                var nativeRect = RECT.FromXYWH(targetRegion.X, targetRegion.Y, targetRegion.Width, targetRegion.Height);
+                for (int attempt = 0; attempt < 10 && image == null; attempt++)
+                {
+                    image = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false);
+                    if (image == null) await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                }
 
-            OcrInformation result = await ocrProvider.DoOcrAsync(image, cancellationToken).ConfigureAwait(false);
-            result?.Offset(targetRegion.X, targetRegion.Y);
-            return result;
+                if (image == null)
+                {
+                    return null;
+                }
+
+                OcrInformation result = await ocrProvider.DoOcrAsync(image, cancellationToken).ConfigureAwait(false);
+                result?.Offset(targetRegion.X, targetRegion.Y);
+                return result;
+            }
+            finally
+            {
+                image?.Dispose();
+            }
         }
 
         private async Task ObserveLocalPreemptiveOcrAsync(CancellationTokenSource cts)
@@ -330,12 +393,7 @@ namespace snapvox.forms
                     _ocrFailed = result == null;
                     TryPostToUi(() =>
                     {
-                        if (_ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = false;
-                        if (_isPainterMode)
-                        {
-                            var instruction = this.FindControl<TextBlock>("InstructionText");
-                            if (instruction != null) instruction.Text = "Click text to capture";
-                        }
+                        if (_isPainterMode) ShowOcrWaitingState();
                     });
                     return;
                 }
@@ -354,12 +412,7 @@ namespace snapvox.forms
 
                 TryPostToUi(() =>
                 {
-                    if (_ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = false;
-                    if (_isPainterMode)
-                    {
-                        var instruction = this.FindControl<TextBlock>("InstructionText");
-                        if (instruction != null) instruction.Text = "Click text to capture";
-                    }
+                    if (_isPainterMode) ShowOcrWaitingState();
                 });
             }
             catch (OperationCanceledException) { }
@@ -433,13 +486,21 @@ namespace snapvox.forms
         {
             if (_ocrFailed)
             {
+                if (_instructionBorder != null) _instructionBorder.IsVisible = true;
                 var text = this.FindControl<TextBlock>("InstructionText");
                 if (text != null) text.Text = "Text capture unavailable";
                 if (_ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = false;
+                if (_ocrText != null)
+                {
+                    _ocrText.Text = "T = Exit text capture";
+                    _ocrText.Foreground = Brushes.White;
+                }
                 return;
             }
 
+            if (_instructionBorder != null) _instructionBorder.IsVisible = true;
             if (_ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = true;
+            LayoutOcrStatus();
             var instruction = this.FindControl<TextBlock>("InstructionText");
             if (instruction != null) instruction.Text = "Text capture loading...";
         }
@@ -447,8 +508,9 @@ namespace snapvox.forms
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
             Log.Debug($"CaptureWindow KeyDown: {e.Key}");
-            if (e.Key == Key.Escape) { Close(); return; }
-            if (e.Key == Key.C) { CaptureAndCopyCurrentSelection(); return; }
+            FocusForKeyboardCapture();
+            if (e.Key == Key.Escape) { e.Handled = true; Close(); return; }
+            if (e.Key == Key.C) { e.Handled = true; CaptureAndCopyCurrentSelection(); return; }
             if (e.Key == Key.T || e.Key == Key.O)
             {
                 Log.Info("OCR mode toggled via hotkey (scoping to local screens).");
@@ -498,7 +560,15 @@ namespace snapvox.forms
                 }
             }
 
-            if (instructionText != null) instructionText.Text = IsOcrReady() ? "Click text to capture" : "Text capture loading...";
+            if (IsOcrReady())
+            {
+                if (instructionText != null) instructionText.Text = "Click text to capture";
+                if (_ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = false;
+            }
+            else
+            {
+                ShowOcrWaitingState();
+            }
             if (_ocrText != null)
             {
                 _ocrText.Text = "T = Exit text capture";
@@ -969,7 +1039,7 @@ namespace snapvox.forms
 
         private static async Task CaptureAfterOverlaysHiddenAsync(RECT rect)
         {
-            App.ForceRedTrayIcon(true);
+            _captureCompleted = true;
             ImageSharpImage owned = null;
             try
             {
@@ -981,7 +1051,6 @@ namespace snapvox.forms
                 {
                     frozenCaptured?.Dispose();
                     CaptureHelper.ClearFrozenSnapshot();
-                    App.ForceRedTrayIcon(false);
                     return;
                 }
 
@@ -1011,7 +1080,6 @@ namespace snapvox.forms
                 if (owned == null) 
                 {
                     CaptureHelper.ClearFrozenSnapshot();
-                    App.ForceRedTrayIcon(false);
                     return;
                 }
 
@@ -1022,15 +1090,17 @@ namespace snapvox.forms
                     ShowEditorForOwnedImage(owned, rect);
                     owned = null;
                     CaptureHelper.ClearFrozenSnapshot();
-                    App.ForceRedTrayIcon(false);
                 });
             }
             catch (Exception ex)
             {
                 owned?.Dispose();
                 CaptureHelper.ClearFrozenSnapshot();
-                App.ForceRedTrayIcon(false);
                 Log.Fatal("CaptureAfterOverlaysHiddenAsync failed.", ex);
+            }
+            finally
+            {
+                EndCaptureSession();
             }
         }
 

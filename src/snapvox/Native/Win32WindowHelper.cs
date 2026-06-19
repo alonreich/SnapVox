@@ -75,6 +75,69 @@ namespace snapvox.native
             return string.Empty;
         }
 
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass, IntPtr TokenInformation, uint TokenInformationLength, out uint ReturnLength);
+
+        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+        private const uint TOKEN_QUERY = 0x0008;
+        private const int TokenElevation = 20;
+
+        public static bool IsProcessElevated(uint pid)
+        {
+            IntPtr processHandle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            if (processHandle == IntPtr.Zero) return true; // Assume elevated if we can't even open it
+
+            try
+            {
+                if (OpenProcessToken(processHandle, TOKEN_QUERY, out IntPtr tokenHandle))
+                {
+                    try
+                    {
+                        IntPtr elevationPtr = Marshal.AllocHGlobal(sizeof(int));
+                        try
+                        {
+                            if (GetTokenInformation(tokenHandle, TokenElevation, elevationPtr, sizeof(int), out _))
+                            {
+                                return Marshal.ReadInt32(elevationPtr) != 0;
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.FreeHGlobal(elevationPtr);
+                        }
+                    }
+                    finally
+                    {
+                        CloseHandle(tokenHandle);
+                    }
+                }
+            }
+            finally
+            {
+                CloseHandle(processHandle);
+            }
+            return false;
+        }
+
+        public static bool IsWindowElevated(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return false;
+            GetWindowThreadProcessId(hWnd, out uint pid);
+            if (pid == (uint)Environment.ProcessId) return false;
+            return IsProcessElevated(pid);
+        }
+
         public static RECT GetRootWindowRect(POINT point)
         {
             IntPtr hWnd = GetRootWindowHandle(point);

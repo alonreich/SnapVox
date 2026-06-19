@@ -207,7 +207,7 @@ namespace snapvox.helpers
             return string.Join(" ", ordered.Select(word => word.Text.Trim())).Trim();
         }
 
-        private static string SwapParentheses(string text)
+        public static string SwapParentheses(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
             char[] chars = text.ToCharArray();

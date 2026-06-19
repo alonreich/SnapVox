@@ -9,7 +9,7 @@ namespace snapvox.foundation.interfaces.Ocr
         string EngineId { get; }
         string DisplayName { get; }
         bool HasRequiredLanguages();
-        Task<OcrInformation> DoOcrAsync(Image image, CancellationToken cancellationToken);
+        Task<OcrInformation> DoOcrAsync(Image image, CancellationToken cancellationToken, bool isAlreadyOwned = false);
         Task<OcrInformation> DoOcrAsync(Image image);
     }
 }

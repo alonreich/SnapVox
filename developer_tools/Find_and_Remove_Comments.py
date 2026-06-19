@@ -2,12 +2,22 @@ import sys
 import os
 import re
 import ctypes
+from pathlib import Path
 from multiprocessing import Pool, cpu_count
 
 sys.dont_write_bytecode = True
+
+def get_downloads_directory():
+    user_profile = os.environ.get('USERPROFILE')
+    if user_profile:
+        return Path(user_profile) / "Downloads"
+    return Path.home() / "Downloads"
+
+WORKING_DIRECTORY = Path(__file__).resolve().parent.parent
+TOOL_OUTPUT_DIRECTORY = get_downloads_directory() / "snapvox" / "developer_tools"
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
-os.environ['PYTHONPYCACHEPREFIX'] = os.path.join(os.path.expanduser('~'), '.null_cache_dir')
-WORKING_DIRECTORY = r"C:\Full_Control\SnapVox"
+os.environ['PYTHONPYCACHEPREFIX'] = str(TOOL_OUTPUT_DIRECTORY / "pycache")
+sys.pycache_prefix = os.environ['PYTHONPYCACHEPREFIX']
 
 try:
     os.chdir(WORKING_DIRECTORY)
@@ -49,6 +59,12 @@ def get_target_files(root_dir):
             if ext == '.cs':
                 targets.append(os.path.join(root, file))
     return targets
+
+def display_path(filepath):
+    try:
+        return str(Path(filepath).resolve().relative_to(WORKING_DIRECTORY))
+    except Exception:
+        return str(filepath)
 
 def is_line_string_safe(line):
     if 'http:' in line or 'https:' in line: return False
@@ -113,7 +129,7 @@ def analyze_comments(filepath):
 
 def nuke_comments(filepath, items):
     try:
-        print(f"\n{CYAN}Executing Cleanup: {filepath}{RESET}")
+        print(f"\n{CYAN}Executing Cleanup: {display_path(filepath)}{RESET}")
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             lines = f.readlines()
         action_map = {item['line'] - 1: item for item in items}
@@ -189,7 +205,7 @@ def print_table(title, data, headers):
 def main():
     os.system('title C# Advanced Code Cleaner')
     print(f"{CYAN}--- C# ADVANCED CODE CLEANER ---{RESET}")
-    print(f"Target Directory: {WORKING_DIRECTORY}")
+    print("Target Directory: .")
     
     files = get_target_files(WORKING_DIRECTORY)
     print(f"Analyzing {len(files)} files...")
@@ -238,7 +254,7 @@ def main():
     for res in results: all_dupes.extend(res)
     print_table("TABLE 3: SCOPE-AWARE DUPLICATES (REPORT ONLY)", all_dupes, ["File", "Scope", "Type", "Signature", "Lines"])
 
-    input(f"\n{CYAN}Press Enter to exit...{RESET}")
+    print(f"\n{CYAN}Done.{RESET}")
 
 if __name__ == "__main__":
     main()

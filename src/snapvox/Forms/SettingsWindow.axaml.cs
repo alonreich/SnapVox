@@ -39,6 +39,9 @@ namespace snapvox.Forms
             var chkLeavePictureAsIs = this.FindControl<CheckBox>("ChkLeavePictureAsIs");
             if (chkLeavePictureAsIs != null) chkLeavePictureAsIs.IsChecked = _config.LeavePictureAsIsDuringOcr;
 
+            var chkWarnClose = this.FindControl<CheckBox>("ChkWarnClose");
+            if (chkWarnClose != null) chkWarnClose.IsChecked = _config.WarnBeforeClosingEditor;
+
             var ocrPanel = this.FindControl<StackPanel>("OcrEnginePanel");
             var cboOcrEngine = this.FindControl<ComboBox>("CboOcrEngine");
             if (cboOcrEngine != null)
@@ -132,7 +135,7 @@ namespace snapvox.Forms
                     textBox.Text = combined;
                     e.Handled = true;
 
-                    if (textBox.Name == "TxtRegionKey" || textBox.Name == "TxtWindowKey" || textBox.Name == "TxtFullscreenKey")
+                    if (textBox.Name == "TxtRegionKey" || textBox.Name == "TxtWindowKey" || textBox.Name == "TxtFullscreenKey" || textBox.Name == "TxtLastRegionKey" || textBox.Name == "TxtClipboardKey")
                     {
                         ValidateGlobalHotkey(textBox, combined);
                     }
@@ -233,7 +236,7 @@ namespace snapvox.Forms
         {
             try
             {
-                var globalKeys = new[] { "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey" };
+                var globalKeys = new[] { "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey", "TxtLastRegionKey", "TxtClipboardKey" };
                 foreach (var name in globalKeys)
             {
                 var tb = this.FindControl<TextBox>(name);

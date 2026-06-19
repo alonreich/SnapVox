@@ -29,7 +29,7 @@ namespace snapvox.helpers
             _worker = Task.Run(ProcessAsync);
         }
 
-        public Task<snapvox.foundation.interfaces.Ocr.OcrInformation> EnqueueAsync(Image image, CancellationToken cancellationToken)
+        public Task<snapvox.foundation.interfaces.Ocr.OcrInformation> EnqueueAsync(Image image, CancellationToken cancellationToken, bool isAlreadyOwned = false)
         {
             if (image == null)
             {
@@ -41,10 +41,10 @@ namespace snapvox.helpers
                 return Task.FromCanceled<snapvox.foundation.interfaces.Ocr.OcrInformation>(cancellationToken);
             }
 
-            return EnqueueCoreAsync(image, cancellationToken);
+            return EnqueueCoreAsync(image, cancellationToken, isAlreadyOwned);
         }
 
-        private async Task<snapvox.foundation.interfaces.Ocr.OcrInformation> EnqueueCoreAsync(Image image, CancellationToken cancellationToken)
+        private async Task<snapvox.foundation.interfaces.Ocr.OcrInformation> EnqueueCoreAsync(Image image, CancellationToken cancellationToken, bool isAlreadyOwned)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             var completion = new TaskCompletionSource<snapvox.foundation.interfaces.Ocr.OcrInformation>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -53,7 +53,15 @@ namespace snapvox.helpers
 
             try
             {
-                owned = await Task.Run(() => image.Clone(x => { }), linked.Token).ConfigureAwait(false);
+                if (isAlreadyOwned)
+                {
+                    owned = image;
+                }
+                else
+                {
+                    owned = await Task.Run(() => image.Clone(x => { }), linked.Token).ConfigureAwait(false);
+                }
+
                 var item = new WorkItem(owned, completion, cancellationToken);
                 owned = null;
 

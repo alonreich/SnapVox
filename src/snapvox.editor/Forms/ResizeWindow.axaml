@@ -33,8 +33,8 @@
             <StackPanel Grid.Column="1" Margin="20,0,0,0" HorizontalAlignment="Center">
                 <TextBlock Name="PercentText" Text="100%" HorizontalAlignment="Center" Foreground="White" FontWeight="Bold" Margin="0,0,0,6"/>
                 <Slider Name="SizeSlider" Orientation="Vertical" Height="100"
-                        Minimum="33" Maximum="300" Value="100" IsVisible="True" 
-                        ToolTip.Tip="Scale smoothly from 33% to 300%" />
+                        Minimum="5" Maximum="500" Value="100" IsVisible="True" 
+                        ToolTip.Tip="Scale smoothly from 5% to 500%" />
             </StackPanel>
         </Grid>
 

@@ -1,18 +1,24 @@
 # Mirrors Build.cmd console output to .\build.log (live console + ANSI-colored log file).
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$BatchPath,
+    [string]$BatchPath = '.\Build.cmd',
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$BatchArgs
 )
 
 $ErrorActionPreference = 'Continue'
-$root = Split-Path -Parent $BatchPath
-$logPath = Join-Path $root 'build.log'
-$legacyResultPath = Join-Path $root 'build.result.txt'
+$repoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')
+$root = '.'
+$logPath = '.\build.log'
+$legacyResultPath = '.\build.result.txt'
 $esc = [char]0x1B
 $script:ErrorCount = 0
 $script:WarningCount = 0
+
+if ([System.IO.Path]::IsPathRooted($BatchPath)) {
+    throw "BatchPath must be relative to the repository root."
+}
+
+Push-Location $repoRoot
 
 function Format-AnsiLine {
     param([string]$Line, [string]$Level)
@@ -172,7 +178,7 @@ function Write-LogHeader {
         "Machine : $env:COMPUTERNAME",
         "User    : $env:USERNAME",
         "Root    : $root",
-        "Script  : $BatchPath",
+        "Script  : $batchPath",
         "Log file: $logPath",
         '(Quick verdict: first line of this file after build — OK / WARN / FAIL)',
         '(ANSI colors in log: red=error, yellow=warning, green=success)',
@@ -216,9 +222,9 @@ Write-LogHeader
 
 
 
-Push-Location $root
+Push-Location $repoRoot
 try {
-    $cmdArgs = @('/d', '/c', "`"$BatchPath`"", '__BUILD_LOGGED__') + @($BatchArgs)
+    $cmdArgs = @('/d', '/c', $batchPath, '__BUILD_LOGGED__') + @($BatchArgs)
     & cmd.exe @cmdArgs 2>&1 | ForEach-Object {
         $line = Convert-PipelineLine $_
         if (-not [string]::IsNullOrEmpty($line)) {
@@ -239,5 +245,7 @@ $topBanner = New-VerdictBannerLines -VerdictLabel $verdict.Label -ExitCode $exit
 Prepend-BuildLogSummary -OneLiner $oneLiner -BannerLines $topBanner -Level $verdict.Level
 Write-VerdictToConsole -OneLiner $oneLiner -Lines $topBanner -Level $verdict.Level
 Write-LogFooter -ExitCode $exitCode -Duration $duration -Verdict $verdict
+
+Pop-Location
 
 exit $exitCode

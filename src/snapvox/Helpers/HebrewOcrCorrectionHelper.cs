@@ -10,6 +10,14 @@ namespace snapvox.helpers
         {
             if (ocrInfo?.Words == null || !ocrInfo.Words.Any()) return;
 
+            foreach (var word in ocrInfo.Words)
+            {
+                if (OcrTextLayout.ContainsHebrew(word.Text))
+                {
+                    word.Text = OcrTextLayout.SwapParentheses(word.Text);
+                }
+            }
+
             OcrTextLayout.NormalizeTextFromWordsWhenEmpty(ocrInfo);
         }
 

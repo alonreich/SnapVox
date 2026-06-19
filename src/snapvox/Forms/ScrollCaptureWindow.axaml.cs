@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -26,17 +27,20 @@ namespace snapvox.forms
         private static readonly List<ScrollCaptureWindow> ActiveWindows = new List<ScrollCaptureWindow>();
         private static RECT SelectedRect = RECT.Empty;
         private static IntPtr SelectedWindowHandle = IntPtr.Zero;
+        private static bool IsSelectedWindowElevated;
         private static ScrollCaptureRecorder Recorder;
         private static Window OwnerWindow;
         private static bool OwnerWasVisible;
         private static bool IsRecording;
         private static bool IsClosingAll;
         private static bool IsFinishing;
+        private static readonly bool IsSnapVoxElevated = Win32WindowHelper.IsProcessElevated((uint)Environment.ProcessId);
 
         private PixelRect _screenBounds;
         private Canvas _mainCanvas;
         private Border _highlightBorder;
         private Border _instructionBorder;
+        private Ellipse _recordingDot;
         private TextBlock _instructionText;
         private TextBlock _statusText;
         private Button _exitButton;
@@ -81,7 +85,14 @@ namespace snapvox.forms
             _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
             _pollTimer.Tick += (s, e) =>
             {
-                if (!IsRecording)
+                if (IsRecording)
+                {
+                    if (Recorder != null)
+                    {
+                        BroadcastStatus("SCROLLING ACTIVE", $"Space/Left-click finishes | {Recorder.AcceptedFrames} frames");
+                    }
+                }
+                else
                 {
                     StopInputPolling();
                     return;
@@ -131,6 +142,7 @@ namespace snapvox.forms
         {
             _screenBounds = screenBounds;
             InitializeComponent();
+            App.ForceRedTrayIcon(true);
 
             double scaling = 1.0;
             try
@@ -153,6 +165,7 @@ namespace snapvox.forms
             _mainCanvas = this.FindControl<Canvas>("MainCanvas");
             _highlightBorder = this.FindControl<Border>("HighlightBorder");
             _instructionBorder = this.FindControl<Border>("InstructionBorder");
+            _recordingDot = this.FindControl<Ellipse>("RecordingDot");
             _instructionText = this.FindControl<TextBlock>("InstructionText");
             _statusText = this.FindControl<TextBlock>("StatusText");
             _exitButton = this.FindControl<Button>("ExitButton");
@@ -192,7 +205,6 @@ namespace snapvox.forms
                 IsFinishing = false;
                 IsClosingAll = false;
                 SelectedRect = RECT.Empty;
-                App.ForceRedTrayIcon(true);
 
                 IReadOnlyList<PixelRect> screens = GetScreens(ownerWindow);
                 if (screens == null || screens.Count == 0)
@@ -355,12 +367,20 @@ namespace snapvox.forms
                 return;
             }
 
+            if (IsSelectedWindowElevated && !IsSnapVoxElevated)
+            {
+                BroadcastStatus("ACCESS DENIED", "Run SnapVox as Admin to capture");
+                return;
+            }
+
             try
             {
                 if (SelectedWindowHandle != IntPtr.Zero)
                 {
                     Win32WindowHelper.SetForegroundWindow(SelectedWindowHandle);
-                    await Task.Delay(150); // Small delay to ensure focus is processed
+                    var config = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>();
+                    int delay = Math.Max(150, config.CaptureDelay);
+                    await Task.Delay(delay); // Honor CaptureDelay while maintaining safety margin
                 }
 
                 Recorder = new ScrollCaptureRecorder(rect);
@@ -371,6 +391,7 @@ namespace snapvox.forms
                     win.Cursor = new Avalonia.Input.Cursor(StandardCursorType.Arrow); 
                     win.SetClickThrough(true);
                     if (win._highlightBorder != null) win._highlightBorder.IsVisible = false;
+                    if (win._recordingDot != null) { win._recordingDot.IsVisible = true; win._recordingDot.Classes.Add("pulse"); }
                 }
                 StartInputPolling();
                 BroadcastStatus("SCROLLING ACTIVE", "Space/Left-click finishes");
@@ -393,8 +414,12 @@ namespace snapvox.forms
 
             IsFinishing = true;
             StopInputPolling();
-            foreach (var win in ActiveWindows) win.SetClickThrough(false);
-            BroadcastStatus("Building image", "Please wait");
+            foreach (var win in ActiveWindows) 
+            { 
+                win.SetClickThrough(false); 
+                if (win._recordingDot != null) { win._recordingDot.IsVisible = false; win._recordingDot.Classes.Remove("pulse"); }
+            }
+            BroadcastStatus("Building image", "Preparing pixels...");
             ScrollCaptureRecorder recorder = Recorder;
             Recorder = null;
             IsRecording = false;
@@ -404,7 +429,11 @@ namespace snapvox.forms
             {
                 if (recorder != null)
                 {
-                    result = await recorder.FinishAsync().ConfigureAwait(false);
+                    var progress = new Progress<double>(p => 
+                    {
+                        BroadcastStatus("Building image", $"Stitching: {(int)(p * 100)}%");
+                    });
+                    result = await recorder.FinishAsync(progress).ConfigureAwait(false);
                     await recorder.DisposeAsync().ConfigureAwait(false);
                 }
 
@@ -460,6 +489,10 @@ namespace snapvox.forms
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                foreach (var win in ActiveWindows)
+                {
+                    if (win._recordingDot != null) { win._recordingDot.IsVisible = false; win._recordingDot.Classes.Remove("pulse"); }
+                }
                 SelectedRect = RECT.Empty;
                 BroadcastStatus("Point at a window", "Space = start");
             });
@@ -487,14 +520,35 @@ namespace snapvox.forms
         private void UpdateSelectionFromCursor()
         {
             POINT cursor = Win32WindowHelper.GetCursorPosition();
+
+            if (_instructionBorder != null)
+            {
+                double scaling = RenderScaling;
+                double x = (cursor.X - _screenBounds.X) / scaling + 25;
+                double y = (cursor.Y - _screenBounds.Y) / scaling + 25;
+                Canvas.SetLeft(_instructionBorder, x);
+                Canvas.SetTop(_instructionBorder, y);
+            }
+
             IntPtr hwnd = Win32WindowHelper.GetRootWindowHandle(cursor);
             RECT rect = hwnd == IntPtr.Zero || !Win32WindowHelper.GetWindowRectActual(hwnd, out RECT windowRect) ? RECT.Empty : windowRect;
-            SelectedWindowHandle = hwnd;
+            
+            if (hwnd != SelectedWindowHandle)
+            {
+                SelectedWindowHandle = hwnd;
+                IsSelectedWindowElevated = Win32WindowHelper.IsWindowElevated(hwnd);
+            }
+
             SelectedRect = rect;
             BroadcastSelection(rect);
+
             if (rect.IsEmpty)
             {
                 BroadcastStatus("Point at a window", "Space = start");
+            }
+            else if (IsSelectedWindowElevated)
+            {
+                BroadcastStatus("ELEVATED WINDOW DETECTED", "Run SnapVox as Admin to capture");
             }
             else
             {
@@ -538,6 +592,8 @@ namespace snapvox.forms
                 return;
             }
 
+            _highlightBorder.BorderBrush = IsSelectedWindowElevated ? Brushes.Red : Brushes.Lime;
+
             double scaling = RenderScaling;
             double left = (rect.Left - _screenBounds.X) / scaling;
             double top = (rect.Top - _screenBounds.Y) / scaling;
@@ -561,6 +617,10 @@ namespace snapvox.forms
             if (_instructionText != null)
             {
                 _instructionText.Text = instruction;
+                if (instruction == "ELEVATED WINDOW DETECTED" || instruction == "SCROLLING ACTIVE" || instruction == "ACCESS DENIED")
+                    _instructionText.Foreground = new SolidColorBrush(Color.Parse("#FF7F50"));
+                else
+                    _instructionText.Foreground = Brushes.White;
             }
 
             if (_statusText != null)
@@ -571,12 +631,6 @@ namespace snapvox.forms
 
         private void LayoutFixedChrome()
         {
-            if (_instructionBorder != null)
-            {
-                Canvas.SetLeft(_instructionBorder, 20);
-                Canvas.SetTop(_instructionBorder, 20);
-            }
-
             if (_exitButton != null)
             {
                 Canvas.SetRight(_exitButton, 20);
