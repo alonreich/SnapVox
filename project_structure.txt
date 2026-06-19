@@ -117,11 +117,16 @@ V3.0 FINAL UI/UX ENHANCEMENTS (COMPLETED)
 20. **Duplicate Collision Handling:** Quadrant-aware boundary checks prevent duplicated objects from walking off-canvas.
 21. **Persistent Tool State:** Independent tracking of color and thickness for each tool is saved across application restarts.
 22. **Quadrant-Aware Toasts:** Notification overlays actively evade the user's cursor by spawning in the opposite screen quadrant.
-L120- 23. **Dark Navy Frame Enforcement:** Fixed frame rendering to consistently apply a `#000080` border across all output types.
+23. **Dark Navy Frame Enforcement:** Fixed frame rendering to consistently apply a `#000080` border across all output types.
 24. **Vector Rotation Integrity:** Fixed critical defect where Arrows and Polylines lost orientation/metadata during image rotation.
 25. **Hebrew OCR UX:** Implemented automatic parentheses and bracket mirroring for RTL-dominant text extraction.
 26. **Counter Synchronization:** Vertical tick buttons now correctly update the global counter sequence for subsequent placements.
 27. **Resize Snapping:** Added a 100% "Magnetic Snap" to the vertical resize slider for rapid return to original dimensions.
+28. **Universal Magnetic Toggle:** Added a global toggle button with an SVG magnet icon in the bottom toolbar to control magnetic snapping. State is persisted to `CoreConfiguration`.
+29. **Vector "Ghost" Snapping Points:** When a line or arrow is selected/drawn, 8 ghost dots appear around nearby rectangular and circular objects. The dots are faint gray and light up bright blue when the vector endpoint snaps exactly to them.
+30. **Counter Duplication Fix:** Hand cursor correctly displays when hovering over duplicated Counters by ensuring the internal TextBlock correctly ignores pointer hit tests.
+31. **Vector Bounding Constraints:** Snapping points calculate mathematically correct circular perimeter intersections for Emojis, Counters, and Ellipses at 45-degree intervals.
+
 
 ROLES & PURPOSES MAP
 --------------------
@@ -896,3 +901,12 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |           snapvox.tests.csproj
 |           UnitTest1.cs
 |           
+
+TASK IMPLEMENTATION LOG (BUGFIXES & FEATURES)
+---------------------------------------------
+1. Toolbar State Persistence: Added SnapToggleBtn in BottomToolbarBorder in ImageEditorWindow.axaml. Wired up OnSnapToggleClick and bound to CoreConfiguration.MagneticSnappingEnabled in ImageEditorWindow.axaml.cs.
+2. Magnetic Snapping Extension: Updated ApplyMagneticSnap and GetMagneticSnapTargets in ImageEditorWindow.axaml.cs to support all shapes.
+3. Diagram Snapping: Replaced PasteSnap logic with SnapAxisEdge for vector points in ImageEditorWindow.axaml.cs.
+4. Alternating Snap Suppression: Handled _disableSnappingForCurrentDrag state machine across clicks in OnCanvasPointerPressed and Resize Handle pointer events in ImageEditorWindow.axaml.cs.
+5. Duplication Cursor Fix: Updated OnDuplicateClick to reset _currentTool and set Cursor to null on cloned shape in ImageEditorWindow.axaml.cs.
+6. Scaling Decoupling: Refactored ResizeSelectedControl to decouple Left/Top translation from sizing constraints for proportional scaling in ImageEditorWindow.axaml.cs.

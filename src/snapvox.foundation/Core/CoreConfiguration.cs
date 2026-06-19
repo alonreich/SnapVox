@@ -119,6 +119,9 @@ namespace snapvox.foundation.core
         [IniProperty("KeepBackup", Description = "Keep 24 Hours Backup of Snips/Text.", DefaultValue = "true")]
         public bool KeepBackup { get; set; } = true;
 
+        [IniProperty("MagneticSnappingEnabled", Description = "Enable magnetic snapping in the editor.", DefaultValue = "true")]
+        public bool MagneticSnappingEnabled { get; set; } = true;
+
         [IniProperty("CloseEditorOnAction", Description = "Close Image Editor on Copy/Download/OCR.", DefaultValue = "true")]
         public bool CloseEditorOnAction { get; set; } = true;
 
