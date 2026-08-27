@@ -29,6 +29,25 @@ namespace snapvox.editor.forms
             AvaloniaXamlLoader.Load(this);
         }
 
+        /// <summary>
+        /// Single source of truth for the blink overlay duration (ms). Reads the user's
+        /// CoreConfiguration.NotificationOverlayDurationMs and clamps it to [250, 10000];
+        /// falls back to the historical 1000ms when the INI layer is unavailable so
+        /// callers can never get 0/negative delays. The editor's final-action close
+        /// delay derives from this value, keeping the overlay and the window in sync.
+        /// </summary>
+        public static int GetOverlayDurationMs()
+        {
+            int blinkTotalMs = 1000;
+            try
+            {
+                var blinkConfig = snapvox.foundation.IniFile.IniConfig.GetIniSection<snapvox.foundation.core.CoreConfiguration>();
+                if (blinkConfig != null) blinkTotalMs = Math.Clamp(blinkConfig.NotificationOverlayDurationMs, 250, 10000);
+            }
+            catch { }
+            return blinkTotalMs;
+        }
+
         public static void ShowNotification(string message, Window owner)
         {
             var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
@@ -91,37 +110,44 @@ namespace snapvox.editor.forms
 
                     window.Show();
 
-                    // Center manually after Show() so actual bounds are known
-                    window.Position = new PixelPoint(
-                        work.X + (work.Width - (int)window.Bounds.Width) / 2,
-                        work.Y + (work.Height - (int)window.Bounds.Height) / 2);
-
-                    var whiteBrush = Brushes.White;
-                    var redBrush = new SolidColorBrush(Color.Parse("#E00000"));
-                    var blueBrush = new SolidColorBrush(Color.Parse("#007ACC"));
-                    IBrush[] colors = { whiteBrush, redBrush, blueBrush };
-
-                    // FEATURE (blink duration setting): the blink cycle length is user
-                    // configurable via CoreConfiguration.NotificationOverlayDurationMs
-                    // (INI backed, Settings > General). Default 1000ms keeps the original
-                    // 4 x 250ms cadence; the total is spread evenly over the 4 colour
-                    // changes so the blink rhythm stays constant at any duration.
-                    int blinkTotalMs = 1000;
+                    // BUGFIX (overlay lifetime): any exception between Show() and the end
+                    // of the blink used to strand a visible topless overlay window for the
+                    // rest of the session. Everything after Show() now runs in try/finally
+                    // so Close() is guaranteed exactly once on every path.
                     try
                     {
-                        var blinkConfig = snapvox.foundation.IniFile.IniConfig.GetIniSection<snapvox.foundation.core.CoreConfiguration>();
-                        if (blinkConfig != null) blinkTotalMs = Math.Clamp(blinkConfig.NotificationOverlayDurationMs, 250, 10000);
+                        // Center manually after Show() so actual bounds are known
+                        window.Position = new PixelPoint(
+                            work.X + (work.Width - (int)window.Bounds.Width) / 2,
+                            work.Y + (work.Height - (int)window.Bounds.Height) / 2);
+
+                        var whiteBrush = Brushes.White;
+                        var redBrush = new SolidColorBrush(Color.Parse("#E00000"));
+                        var blueBrush = new SolidColorBrush(Color.Parse("#007ACC"));
+                        IBrush[] colors = { whiteBrush, redBrush, blueBrush };
+
+                        // FEATURE (blink duration setting): the blink cycle length is user
+                        // configurable via CoreConfiguration.NotificationOverlayDurationMs
+                        // (INI backed, Settings > General). Default 1000ms keeps the original
+                        // 4 x 250ms cadence; the total is spread evenly over the 4 colour
+                        // changes so the blink rhythm stays constant at any duration.
+                        // GetOverlayDurationMs() is the SINGLE source of truth - the editor's
+                        // final-action close delay reads the same clamped value, so the
+                        // window never outlives (or under-lives) the blink it waits for.
+                        int blinkTotalMs = GetOverlayDurationMs();
+                        int blinkStepDelay = Math.Max(50, blinkTotalMs / 4);
+                        for (int i = 0; i < 4; i++)
+                        {
+                            IBrush foreground = colors[i % 3];
+                            if (textBlock != null) textBlock.Foreground = foreground;
+                            if (icon != null) icon.Foreground = foreground;
+                            await Task.Delay(blinkStepDelay);
+                        }
                     }
-                    catch { }
-                    int blinkStepDelay = Math.Max(50, blinkTotalMs / 4);
-                    for (int i = 0; i < 4; i++)
+                    finally
                     {
-                        IBrush foreground = colors[i % 3];
-                        if (textBlock != null) textBlock.Foreground = foreground;
-                        if (icon != null) icon.Foreground = foreground;
-                        await Task.Delay(blinkStepDelay);
+                        window.Close();
                     }
-                    window.Close();
                 }
                 catch (Exception ex)
                 {
@@ -158,7 +184,8 @@ namespace snapvox.editor.forms
                     var ownerPos = contextWindow.Position;
 
                     int offset;
-                    lock(_toastLock) { offset = _activeToasts++; }
+                    bool counted = false;
+                    lock(_toastLock) { offset = _activeToasts++; counted = true; }
 
                     var window = new NotificationOverlayWindow();
                     var chrome = window.FindControl<Border>("NotificationChrome");
@@ -207,16 +234,27 @@ namespace snapvox.editor.forms
 
                     window.Position = new PixelPoint((int)targetX, (int)targetY);
 
-                    // Fade in (200ms)
-                    for (int i = 0; i < 5; i++) { window.Opacity += 0.2; await Task.Delay(40); }
-                    window.Opacity = 1.0;
-                    
-                    await Task.Delay(800); // Display (800ms)
-                    
-                    // Fade out (200ms)
-                    for (int i = 0; i < 5; i++) { window.Opacity -= 0.2; await Task.Delay(40); }
-                    window.Close();
-                    lock(_toastLock) { _activeToasts--; if (_activeToasts < 0) _activeToasts = 0; }
+                    // BUGFIX (toast counter leak): _activeToasts was decremented only on
+                    // the success path - any exception during fade/display leaked the slot
+                    // forever (permanently offsetting every later toast), and a throw after
+                    // Show() stranded the window. Close + decrement now run in a finally so
+                    // the counter and the window lifetime always converge.
+                    try
+                    {
+                        // Fade in (200ms)
+                        for (int i = 0; i < 5; i++) { window.Opacity += 0.2; await Task.Delay(40); }
+                        window.Opacity = 1.0;
+                        
+                        await Task.Delay(800); // Display (800ms)
+                        
+                        // Fade out (200ms)
+                        for (int i = 0; i < 5; i++) { window.Opacity -= 0.2; await Task.Delay(40); }
+                    }
+                    finally
+                    {
+                        window.Close();
+                        if (counted) lock (_toastLock) { _activeToasts--; if (_activeToasts < 0) _activeToasts = 0; }
+                    }
                 }
                 catch (Exception ex)
                 {

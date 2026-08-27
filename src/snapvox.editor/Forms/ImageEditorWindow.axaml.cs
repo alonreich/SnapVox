@@ -3866,6 +3866,23 @@ namespace snapvox.editor.forms
             _isBusy = false;
         }
 
+        // ISSUE (sluggish final action): Download/Copy/OCR waited a HARDCODED 1000ms
+        // before closing the editor while the blink overlay honoured the user's
+        // NotificationOverlayDurationMs setting. With a 500ms blink the editor idled
+        // another 500ms with no overlay on screen; with a long blink the overlay
+        // outlived the editor by seconds. The close wait now derives from the SAME
+        // GetOverlayDurationMs() value the overlay uses, clamped to [250, 1000]:
+        // a 250ms floor keeps the "blink first, then close" sequential finality
+        // visible, and the 1000ms ceiling means the editor never closes slower
+        // than the old fixed wait. The overlay finishes its full configured cycle
+        // on its own (it owns its lifetime), so longer blink settings still
+        // confirm the action after the editor is gone. Everything stays on the
+        // async/await pipeline - no blocking waits, no fire-and-forget closes.
+        private static int GetFinalActionCloseDelayMs()
+        {
+            return Math.Clamp(NotificationOverlayWindow.GetOverlayDurationMs(), 250, 1000);
+        }
+
         private async void OnResizeClick(object sender, RoutedEventArgs e)
         {
             if (_image == null || !TryBeginEditorOperation()) return;
@@ -3942,8 +3959,8 @@ namespace snapvox.editor.forms
                     OverlayHelper.ShowNotification("IMAGE SAVED TO DOWNLOADS", this);
                 });
                 
-                await Task.Delay(1000).ConfigureAwait(true);
-                
+                await Task.Delay(GetFinalActionCloseDelayMs()).ConfigureAwait(true);
+
                 Dispatcher.UIThread.Post(() => {
                     _forceClose = true;
                     Close();
@@ -3979,8 +3996,8 @@ namespace snapvox.editor.forms
                     OverlayHelper.ShowNotification("IMAGE SAVED TO CLIPBOARD", this);
                 });
                 
-                await Task.Delay(1000).ConfigureAwait(true);
-                
+                await Task.Delay(GetFinalActionCloseDelayMs()).ConfigureAwait(true);
+
                 Dispatcher.UIThread.Post(() => {
                     _forceClose = true;
                     Close();
@@ -4113,7 +4130,7 @@ namespace snapvox.editor.forms
                     
                     if (config.CloseEditorOnAction)
                     {
-                        await Task.Delay(1000).ConfigureAwait(true);
+                        await Task.Delay(GetFinalActionCloseDelayMs()).ConfigureAwait(true);
                         Dispatcher.UIThread.Post(() => {
                             _forceClose = true;
                             Close();
