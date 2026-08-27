@@ -159,6 +159,10 @@ namespace snapvox.editor.forms
         private const int PixelateStrengthDefault = 25;
         private const double VectorHitTolerance = 12.0;
         private const double VectorSnapThreshold = 12.0;
+        // FEATURE (magnet escape): resize handles use a tighter capture zone than shape moves -
+        // while enlarging, the dragged edge sweeps across many other shapes' edge targets, and a
+        // wide zone there chains from one capture straight into the next, feeling unreleasable.
+        private const double ResizeSnapThreshold = 6.0;
         private const double VectorSnapGap = 12.0;
         private const double PastedSnapThreshold = 3.0;
         private const int SnapVoxFrameThickness = 3;
@@ -1910,10 +1914,12 @@ namespace snapvox.editor.forms
             }
         }
 
-        private AvaloniaPoint ApplyMagneticSnap(AvaloniaControl control, double left, double top)
+        private AvaloniaPoint ApplyMagneticSnap(AvaloniaControl control, double left, double top, bool altSnapBypass = false)
         {
             var config = IniConfig.GetIniSection<CoreConfiguration>();
-            if (!config.MagneticSnappingEnabled || _disableSnappingForCurrentDrag || !TryGetControlBounds(control, out var bounds))
+            // FEATURE (magnet escape): holding ALT is a live override - the shape follows the raw
+            // un-snapped drag position for as long as it is held and snapping re-engages on release.
+            if (altSnapBypass || !config.MagneticSnappingEnabled || _disableSnappingForCurrentDrag || !TryGetControlBounds(control, out var bounds))
             {
                 HideSnapGuides();
                 return new AvaloniaPoint(left, top);
@@ -1961,15 +1967,15 @@ namespace snapvox.editor.forms
             }
         }
 
-        private static double SnapAxisEdge(double position, IEnumerable<double> targets)
+        private static double SnapAxisEdge(double position, IEnumerable<double> targets, double threshold)
         {
             double best = position;
-            double bestDistance = VectorSnapThreshold + 0.001;
+            double bestDistance = threshold + 0.001;
 
             foreach (double target in targets)
             {
                 double distance = Math.Abs(position - target);
-                if (distance <= VectorSnapThreshold && distance < bestDistance)
+                if (distance <= threshold && distance < bestDistance)
                 {
                     bestDistance = distance;
                     best = target;
@@ -2139,10 +2145,10 @@ namespace snapvox.editor.forms
             return true;
         }
 
-        private void ApplyPreviewShapeSnap(AvaloniaPoint rawEnd)
+        private void ApplyPreviewShapeSnap(AvaloniaPoint rawEnd, bool altSnapBypass = false)
         {
             var config = IniConfig.GetIniSection<CoreConfiguration>();
-            if (!config.MagneticSnappingEnabled || _disableSnappingForCurrentDrag || _previewControl == null)
+            if (altSnapBypass || !config.MagneticSnappingEnabled || _disableSnappingForCurrentDrag || _previewControl == null)
             {
                 _previewSnapDelta = default;
                 HideSnapGuides();
@@ -2346,6 +2352,10 @@ namespace snapvox.editor.forms
             {
                 return SnapToEightDirectionsStrict(proposed, anchor);
             }
+
+            // FEATURE (magnet escape): holding ALT is a live override - the endpoint follows the
+            // pointer raw, with neither target magnets nor angle assistance.
+            if (modifiers.HasFlag(KeyModifiers.Alt)) return proposed;
 
             AvaloniaPoint snapped = SnapToNearbyTarget(proposed, anchor);
             if (snapped != proposed) 
@@ -3335,12 +3345,15 @@ namespace snapvox.editor.forms
                 
                 RefreshSnapTargetsList();
                 AvaloniaPoint? snappedPoint = null;
-                var t = SnapToNearbyTarget(pos, pos);
-                if (t != pos) snappedPoint = t;
+                if (!e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+                {
+                    var t = SnapToNearbyTarget(pos, pos);
+                    if (t != pos) snappedPoint = t;
+                }
                 HighlightSnapDot(snappedPoint);
                 return;
             }
-            if (_isResizing && _selectedControl != null) { double dx = pos.X - _dragLastPoint.X; double dy = pos.Y - _dragLastPoint.Y; if ((Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01) && !_resizeUndoCaptured) { SaveUndoState(true); _resizeUndoCaptured = true; } ResizeSelectedControl(dx, dy); if (IsPixelateControl(_selectedControl)) RefreshPixelateAnnotation(_selectedControl); if (IsHighlightControl(_selectedControl)) RefreshHighlightAnnotation(_selectedControl); _dragLastPoint = pos; UpdateSelectionIndicator(); return; }
+            if (_isResizing && _selectedControl != null) { double dx = pos.X - _dragLastPoint.X; double dy = pos.Y - _dragLastPoint.Y; if ((Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01) && !_resizeUndoCaptured) { SaveUndoState(true); _resizeUndoCaptured = true; } ResizeSelectedControl(dx, dy, e.KeyModifiers.HasFlag(KeyModifiers.Alt)); if (IsPixelateControl(_selectedControl)) RefreshPixelateAnnotation(_selectedControl); if (IsHighlightControl(_selectedControl)) RefreshHighlightAnnotation(_selectedControl); _dragLastPoint = pos; UpdateSelectionIndicator(); return; }
             if (_isDraggingSelected && _selectedControl != null)
             {
                 double dx = pos.X - _dragLastPoint.X;
@@ -3359,7 +3372,7 @@ namespace snapvox.editor.forms
                 _dragUnsnappedLeft += dx;
                 _dragUnsnappedTop += dy;
 
-                var snapped = ApplyMagneticSnap(_selectedControl, _dragUnsnappedLeft, _dragUnsnappedTop);
+                var snapped = ApplyMagneticSnap(_selectedControl, _dragUnsnappedLeft, _dragUnsnappedTop, e.KeyModifiers.HasFlag(KeyModifiers.Alt));
                 double appliedDx = snapped.X - curL;
                 double appliedDy = snapped.Y - curT;
                 Canvas.SetLeft(_selectedControl, snapped.X);
@@ -3390,13 +3403,13 @@ namespace snapvox.editor.forms
                 UpdatePreviewShape(previewEnd);
                 // FEATURE (shape snap guides): while stretching a new shape, magnetically align its
                 // edges/center with the other shapes and stretch gentle guide lines between them.
-                if (IsRectSnappableTool(_currentTool)) ApplyPreviewShapeSnap(previewEnd);
+                if (IsRectSnappableTool(_currentTool)) ApplyPreviewShapeSnap(previewEnd, e.KeyModifiers.HasFlag(KeyModifiers.Alt));
                 else { _previewSnapDelta = default; HideSnapGuides(); }
                 if (IsVectorTool(_currentTool)) UpdateVectorInfo(_startPoint, previewEnd);
                 
                 RefreshSnapTargetsList();
                 AvaloniaPoint? snappedPoint = null;
-                if (IsVectorTool(_currentTool))
+                if (IsVectorTool(_currentTool) && !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
                 {
                     var t = SnapToNearbyTarget(pos, pos);
                     if (t != pos) snappedPoint = t;
@@ -3425,7 +3438,7 @@ namespace snapvox.editor.forms
             UpdateSelectionIndicator();
         }
 
-        private void ResizeSelectedControl(double dx, double dy)
+        private void ResizeSelectedControl(double dx, double dy, bool altSnapBypass = false)
         {
             double oldW = double.IsNaN(_selectedControl.Width) ? _selectedControl.Bounds.Width : _selectedControl.Width;
             double oldH = double.IsNaN(_selectedControl.Height) ? _selectedControl.Bounds.Height : _selectedControl.Height;
@@ -3443,28 +3456,33 @@ namespace snapvox.editor.forms
                 case 3: wDelta = -dx; hDelta = dy; break;
             }
 
+            // FEATURE (magnet escape): holding ALT while dragging a handle is a live magnetic-snap
+            // override - the edge follows the pointer raw. Resizing also uses a tighter capture
+            // zone (ResizeSnapThreshold) than shape moves: while enlarging, the dragged edge
+            // sweeps across many other shapes' edge targets, and a wide zone chained from one
+            // capture straight into the next, which felt unreleasable.
             var config = IniConfig.GetIniSection<CoreConfiguration>();
-            if (config.MagneticSnappingEnabled && !_disableSnappingForCurrentDrag && !keepRatio)
+            if (!altSnapBypass && config.MagneticSnappingEnabled && !_disableSnappingForCurrentDrag && !keepRatio)
             {
                 if (_resizeHandleIndex == 0 || _resizeHandleIndex == 3)
                 {
-                    double snappedLeft = SnapAxisEdge(left - wDelta, GetMagneticSnapTargets(_selectedControl, true));
+                    double snappedLeft = SnapAxisEdge(left - wDelta, GetMagneticSnapTargets(_selectedControl, true), ResizeSnapThreshold);
                     wDelta = left - snappedLeft;
                 }
                 else
                 {
-                    double snappedRight = SnapAxisEdge(left + oldW + wDelta, GetMagneticSnapTargets(_selectedControl, true));
+                    double snappedRight = SnapAxisEdge(left + oldW + wDelta, GetMagneticSnapTargets(_selectedControl, true), ResizeSnapThreshold);
                     wDelta = snappedRight - (left + oldW);
                 }
 
                 if (_resizeHandleIndex == 0 || _resizeHandleIndex == 1)
                 {
-                    double snappedTop = SnapAxisEdge(top - hDelta, GetMagneticSnapTargets(_selectedControl, false));
+                    double snappedTop = SnapAxisEdge(top - hDelta, GetMagneticSnapTargets(_selectedControl, false), ResizeSnapThreshold);
                     hDelta = top - snappedTop;
                 }
                 else
                 {
-                    double snappedBottom = SnapAxisEdge(top + oldH + hDelta, GetMagneticSnapTargets(_selectedControl, false));
+                    double snappedBottom = SnapAxisEdge(top + oldH + hDelta, GetMagneticSnapTargets(_selectedControl, false), ResizeSnapThreshold);
                     hDelta = snappedBottom - (top + oldH);
                 }
             }
