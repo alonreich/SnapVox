@@ -239,6 +239,7 @@ namespace snapvox.editor.forms
             UpdateModeStatus();
             UpdateContextToolbarHotkeyTooltips();
             RefreshColorPresetsPanel();
+            InitializeCustomColorFlyout();
             UpdateSnapToggleVisual();
             PopulateEmojiGrid();
 
@@ -830,14 +831,27 @@ namespace snapvox.editor.forms
                 return;
             }
 
-            var anchor = anchorViewportPos ?? new AvaloniaPoint(scrollViewer.Viewport.Width / 2, scrollViewer.Viewport.Height / 2);
+            // BUGFIX (zoom anchor flip): when zooming from the toolbar there is no meaningful
+            // cursor anchor - the previous default (viewport centre) made the picture visibly
+            // "flip" sideways on every step, especially when zooming out of a fitted view.
+            // A null anchor now pins the TOP-LEFT corner, the stable behaviour expected from
+            // +/- buttons, while wheel zoom still pins the exact point under the cursor.
+            var anchor = anchorViewportPos ?? new AvaloniaPoint(0, 0);
             var oldOffset = scrollViewer.Offset;
             ApplyZoom();
 
             double ratio = _zoomFactor / oldZoom;
             double newOffsetX = (oldOffset.X + anchor.X) * ratio - anchor.X;
             double newOffsetY = (oldOffset.Y + anchor.Y) * ratio - anchor.Y;
-            scrollViewer.Offset = new Avalonia.Vector(Math.Max(0, newOffsetX), Math.Max(0, newOffsetY));
+
+            // BUGFIX (zoom anchor flip): once the zoomed content fits inside the viewport on
+            // an axis there is nothing left to scroll to - force that offset to 0 so the
+            // picture never drifts off the top-left corner when the scroll range collapses.
+            double contentWidth = (_image?.Width ?? 0) * _zoomFactor;
+            double contentHeight = (_image?.Height ?? 0) * _zoomFactor;
+            double maxX = Math.Max(0, contentWidth - scrollViewer.Viewport.Width);
+            double maxY = Math.Max(0, contentHeight - scrollViewer.Viewport.Height);
+            scrollViewer.Offset = new Avalonia.Vector(Math.Clamp(newOffsetX, 0, maxX), Math.Clamp(newOffsetY, 0, maxY));
         }
 
         private bool _forceClose = false;
@@ -890,7 +904,19 @@ namespace snapvox.editor.forms
             if (prompt != null) prompt.IsVisible = false;
         }
 
-        private void OnWindowOpened(object sender, EventArgs e) { UiClipboard.Register(this, text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask); }
+        private void OnWindowOpened(object sender, EventArgs e)
+        {
+            UiClipboard.Register(this, text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
+
+            // BUGFIX (oversized editor): PositionWindow() estimates the chrome before the
+            // first layout pass. Once the window is open, measure the REAL viewport and
+            // shrink the window to snip + actual chrome so small snips no longer open
+            // inside the old oversized 850x650 shell.
+            if (_autoFitPending)
+            {
+                Dispatcher.UIThread.Post(AutoFitWindowToContent, DispatcherPriority.Loaded);
+            }
+        }
         private void OnWindowClosed(object sender, EventArgs e) { UiClipboard.Unregister(this); ReleaseImageResources(); }
 
         public async void SetImage(ImageSharpImage image, RECT captureRect)
@@ -1520,6 +1546,19 @@ namespace snapvox.editor.forms
             return tag;
         }
 
+        // BUGFIX (oversized editor): the real minimum usable shell - the left tool rail plus
+        // a compact snip still fit, but a tiny snip no longer inflates the window to the
+        // old 850x650 frame (spec item 13 updated accordingly).
+        private const double MinEditorWindowWidth = 620;
+        private const double MinEditorWindowHeight = 400;
+
+        private bool _autoFitPending;
+        private int _autoFitRetries;
+        private PixelRect _autoFitWorkingArea;
+        private double _autoFitScaling = 1.0;
+        private double _autoFitMaxWidth;
+        private double _autoFitMaxHeight;
+
         private void PositionWindow(RECT captureRect)
         {
             var screens = Screens.All.ToList();
@@ -1550,8 +1589,8 @@ namespace snapvox.editor.forms
             double targetWidth = _image.Width * _zoomFactor + ChromeLeft + ChromeRight;
             double targetHeight = _image.Height * _zoomFactor + ChromeTop + ChromeBottom;
 
-            if (targetWidth < 850) targetWidth = 850;
-            if (targetHeight < 650) targetHeight = 650;
+            if (targetWidth < MinEditorWindowWidth) targetWidth = MinEditorWindowWidth;
+            if (targetHeight < MinEditorWindowHeight) targetHeight = MinEditorWindowHeight;
             
             if (targetWidth > maxAllowedWidth) targetWidth = maxAllowedWidth;
             if (targetHeight > maxAllowedHeight) targetHeight = maxAllowedHeight;
@@ -1563,6 +1602,40 @@ namespace snapvox.editor.forms
             
             int cascade = (_cascadeOffset++ % 5) * 20;
             Position = new PixelPoint((int)(centerPhysicalX + cascade), (int)(centerPhysicalY + cascade));
+
+            // BUGFIX (oversized editor): remember the budget so AutoFitWindowToContent can
+            // correct the estimated chrome with the real viewport after the first layout.
+            _autoFitPending = true;
+            _autoFitRetries = 0;
+            _autoFitWorkingArea = targetScreen.WorkingArea;
+            _autoFitScaling = scaling;
+            _autoFitMaxWidth = maxAllowedWidth;
+            _autoFitMaxHeight = maxAllowedHeight;
+        }
+
+        private void AutoFitWindowToContent()
+        {
+            var scroller = this.FindControl<ScrollViewer>("EditorScrollViewer");
+            if (_image == null || scroller == null || scroller.Viewport.Width <= 1 || scroller.Viewport.Height <= 1)
+            {
+                // Layout not measured yet - retry briefly on subsequent passes, then give up.
+                if (++_autoFitRetries < 10) Dispatcher.UIThread.Post(AutoFitWindowToContent, DispatcherPriority.Loaded);
+                return;
+            }
+
+            double chromeWidth = Width - scroller.Viewport.Width;
+            double chromeHeight = Height - scroller.Viewport.Height;
+            double desiredWidth = Math.Clamp(chromeWidth + _image.Width * _zoomFactor, MinEditorWindowWidth, _autoFitMaxWidth);
+            double desiredHeight = Math.Clamp(chromeHeight + _image.Height * _zoomFactor, MinEditorWindowHeight, _autoFitMaxHeight);
+            if (Math.Abs(desiredWidth - Width) <= 2 && Math.Abs(desiredHeight - Height) <= 2) return;
+
+            Width = desiredWidth;
+            Height = desiredHeight;
+
+            // Keep the corrected window centred on the screen that owns the snip.
+            double centerX = _autoFitWorkingArea.X + (_autoFitWorkingArea.Width - Width * _autoFitScaling) / 2;
+            double centerY = _autoFitWorkingArea.Y + (_autoFitWorkingArea.Height - Height * _autoFitScaling) / 2;
+            Position = new PixelPoint((int)centerX, (int)centerY);
         }
 
         private void ReleaseImageResources()
@@ -1577,9 +1650,12 @@ namespace snapvox.editor.forms
             ClearSnapshotStack(_redoStack);
         }
         private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }
-        private void OnZoomInClick(object sender, RoutedEventArgs e) { ZoomTowards(_lastPointerInScroller, _zoomFactor + 0.1); ShowZoomHintDebounced(); }
-        private void OnZoomOutClick(object sender, RoutedEventArgs e) { ZoomTowards(_lastPointerInScroller, _zoomFactor - 0.1); ShowZoomHintDebounced(); }
-        private void OnZoomResetButtonClick(object sender, RoutedEventArgs e) { ZoomTowards(_lastPointerInScroller, 1.0); ShowZoomHintDebounced(); }
+        // BUGFIX (zoom anchor flip): toolbar buttons have no cursor anchor - passing the stale
+        // _lastPointerInScroller (which can sit anywhere on screen) made consecutive steps
+        // jitter sideways. ZoomTowards(null) now pins the stable top-left corner instead.
+        private void OnZoomInClick(object sender, RoutedEventArgs e) { ZoomTowards(null, _zoomFactor + 0.1); ShowZoomHintDebounced(); }
+        private void OnZoomOutClick(object sender, RoutedEventArgs e) { ZoomTowards(null, _zoomFactor - 0.1); ShowZoomHintDebounced(); }
+        private void OnZoomResetButtonClick(object sender, RoutedEventArgs e) { ZoomTowards(null, 1.0); ShowZoomHintDebounced(); }
         private void OnCounterDoubleTapped(object sender, TappedEventArgs e) { _counterValue = 1; }
         private void OnCounterResetClick(object sender, RoutedEventArgs e) { _counterValue = 1; OverlayHelper.ShowLightToast("COUNTER RESET TO 1", this); }
         private void OnCounterUpClick(object sender, RoutedEventArgs e)
@@ -4303,11 +4379,16 @@ namespace snapvox.editor.forms
 
             _currentThickness = _toolThicknesses.TryGetValue(_currentTool, out var thickness) ? thickness : 3.0;
             _isFillMode = _toolFillModes.TryGetValue(_currentTool, out var fillMode) && fillMode;
-            if (_currentTool != EditorTool.None && IsPastedImageControl(_selectedControl))
+            // BUGFIX (stale marching ants): activating any tool moves the editing focus away
+            // from the currently selected object, so the selection - and its marching-ants
+            // frame, handles and context toolbar - must be released here. Previously the ants
+            // stayed glued to the old object while the new tool was already in use.
+            if (_currentTool != EditorTool.None && _selectedControl != null)
             {
-                FinalizeSelectedPasteObject();
+                if (IsPastedImageControl(_selectedControl)) FinalizeSelectedPasteObject();
                 _selectedControl = null;
                 UpdateSelectionIndicator();
+                UpdateHoverIndicator(null);
             }
 
             UpdateHoverIndicator(null);
@@ -4342,6 +4423,90 @@ namespace snapvox.editor.forms
         private void OnColorCancelClick(object sender, RoutedEventArgs e)
         {
             this.FindControl<Button>("CustomColorBtn")?.Flyout?.Hide();
+        }
+
+        private bool _syncingHexInput;
+
+        // FEATURE (pro color picker): two-way hex entry - typing #RRGGBB (or RRGGBB / #AARRGGBB)
+        // moves the spectrum view to that color, and every picker change writes the hex back.
+        // A copy button exports the current hex to the clipboard as plain text.
+        private void InitializeCustomColorFlyout()
+        {
+            var picker = this.FindControl<ColorView>("ColorPickerView");
+            var hexInput = this.FindControl<TextBox>("HexInput");
+            if (picker == null || hexInput == null) return;
+
+            hexInput.Text = ToRgbHex(picker.Color);
+            SyncHexPreview(picker.Color);
+
+            picker.ColorChanged += (s, e) =>
+            {
+                _syncingHexInput = true;
+                try
+                {
+                    hexInput.Text = ToRgbHex(e.NewColor);
+                    SyncHexPreview(e.NewColor);
+                }
+                finally { _syncingHexInput = false; }
+            };
+
+            hexInput.TextChanged += (s, e) =>
+            {
+                if (_syncingHexInput) return;
+                if (TryParseHexColor(hexInput.Text, out var parsed))
+                {
+                    picker.Color = parsed; // raises ColorChanged, which refreshes the preview chip
+                }
+            };
+        }
+
+        private void SyncHexPreview(AvaloniaColor color)
+        {
+            var chip = this.FindControl<Border>("HexPreviewChip");
+            if (chip != null) chip.Background = new SolidColorBrush(color);
+        }
+
+        private static bool TryParseHexColor(string text, out AvaloniaColor color)
+        {
+            color = default;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            string trimmed = text.Trim().TrimStart('#');
+            if (trimmed.Length != 6 && trimmed.Length != 8) return false;
+            foreach (char c in trimmed)
+            {
+                if (!Uri.IsHexDigit(c)) return false;
+            }
+            try { color = AvaloniaColor.Parse("#" + trimmed); return true; }
+            catch { return false; }
+        }
+
+        private async void OnCopyHexClick(object sender, RoutedEventArgs e)
+        {
+            var picker = this.FindControl<ColorView>("ColorPickerView");
+            string hex = picker != null ? ToRgbHex(picker.Color) : "#000000";
+            try
+            {
+                if (Clipboard != null) await Clipboard.SetTextAsync(hex).ConfigureAwait(true);
+                OverlayHelper.ShowLightToast($"COPIED {hex}", this);
+            }
+            catch (Exception ex)
+            {
+                OverlayHelper.ShowLightToast($"COPY FAILED: {ex.Message}", this);
+            }
+        }
+
+        private void OnHexInputKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            var picker = this.FindControl<ColorView>("ColorPickerView");
+            if (picker != null)
+            {
+                UpdateCurrentColorDisplay(picker.Color);
+                ApplyColor(picker.Color);
+                PushColorToHistory(picker.Color);
+            }
+            this.FindControl<Button>("CustomColorBtn")?.Flyout?.Hide();
+            e.Handled = true;
         }
 
         private async void OnSamplerClick(object sender, RoutedEventArgs e)
@@ -4549,6 +4714,11 @@ namespace snapvox.editor.forms
             emojiBtn?.Classes.Add("selected");
             UpdateThicknessPanelVisibility();
             UpdateModeStatus();
+
+            // BUGFIX (emoji popup): picking an emoji commits the choice - fold the flyout
+            // immediately instead of leaving it dangling over the canvas while the ghost
+            // floats the selection.
+            emojiBtn?.Flyout?.Hide();
         }
 
         private void SyncThicknessUI(double val) 

@@ -7,7 +7,7 @@
         ShowInTaskbar="True"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="-1"
-        MinWidth="850" MinHeight="650"
+        MinWidth="620" MinHeight="400"
         WindowStartupLocation="Manual">
     <Window.Resources>
         <VisualBrush x:Key="CheckerboardBrush" TileMode="Tile" SourceRect="0,0,20,20" DestinationRect="0,0,20,20">
@@ -141,11 +141,18 @@
         </Style>
         <!-- ISSUE: the editor scrollbars must stay fully visible whenever there is something to
              scroll to. Avalonia's Fluent scrollbars auto-collapse (fade to a hairline overlay)
-             by default, which reads as if scrolling is impossible. AllowAutoHide=False keeps
-             them painted at full width for as long as the content overflows, and Auto visibility
-             still hides them completely when the whole picture already fits. -->
+             by default, which reads as if scrolling is impossible, and their thumb/arrow chrome
+             had near-zero contrast on the gray canvas. AllowAutoHide=False keeps them painted
+             at full width, and the SnapVoxScrollBar* ControlThemes (DesignSystem.axaml) draw a
+             solid rounded thumb plus explicit chevron arrows that stay readable on #1E1E1E. -->
         <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar">
             <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+        <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar[Orientation=Vertical]">
+            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarVertical}" />
+        </Style>
+        <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar[Orientation=Horizontal]">
+            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarHorizontal}" />
         </Style>
         <Style Selector="Button.color-preset">
             <Setter Property="Width" Value="28" />
@@ -393,19 +400,35 @@
                     <Button Name="CustomColorBtn" Width="118" Height="40" VerticalAlignment="Center" Cursor="Hand" Padding="8,0" ToolTip.Tip="Current color">
                         <Button.Flyout>
                             <Flyout Placement="Top">
-                                <StackPanel Spacing="10" Width="300">
-                                    <ColorView Name="ColorPickerView" />
-                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="8" Click="OnSamplerClick">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/custom-color.svg" />
-                                            <TextBlock Text="Sample From Screen" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Grid ColumnDefinitions="*,*">
-                                        <Button Grid.Column="0" Content="OK" Click="OnColorConfirmClick" Margin="0,0,5,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
-                                        <Button Grid.Column="1" Content="Cancel" Click="OnColorCancelClick" Margin="5,0,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
-                                    </Grid>
-                                </StackPanel>
+                                <!-- FEATURE (pro color picker): dark panel with live hex entry
+                                     (#RRGGBB), copy-to-clipboard as plain text, a preview chip,
+                                     the full ColorView spectrum/shades, and the screen sampler. -->
+                                <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="14" Width="316">
+                                    <StackPanel Spacing="10">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Text="CUSTOM COLOR" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" />
+                                            <Border Grid.Column="1" Name="HexPreviewChip" Width="26" Height="26" CornerRadius="4" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" ToolTip.Tip="Current picker color" />
+                                        </Grid>
+                                        <ColorView Name="ColorPickerView" />
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <TextBlock Text="HEX" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <TextBox Grid.Column="1" Name="HexInput" Watermark="#RRGGBB" MaxLength="9" FontFamily="Consolas, Courier New" FontSize="13" Padding="6,4" Background="{DynamicResource SnapVoxCanvasBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" KeyDown="OnHexInputKeyDown" ToolTip.Tip="Type a hex color; Enter applies it to the tool" />
+                                            <Button Grid.Column="2" Name="CopyHexButton" Classes="toolbar" Width="34" Height="34" Margin="6,0,0,0" Click="OnCopyHexClick" ToolTip.Tip="Copy hex code to clipboard">
+                                                <TextBlock Text="⧉" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Button>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0">
+                                            <Button Grid.Column="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,6" Click="OnSamplerClick" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" ToolTip.Tip="Pick any color from the screen (Esc cancels)">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/custom-color.svg" />
+                                                    <TextBlock Text="Sample From Screen" VerticalAlignment="Center" FontSize="12" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Grid.Column="1" Content="Cancel" Click="OnColorCancelClick" Margin="6,0,0,0" MinWidth="72" Padding="8,6" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" />
+                                            <Button Grid.Column="2" Content="OK" Click="OnColorConfirmClick" Margin="6,0,0,0" MinWidth="72" Padding="8,6" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" FontWeight="SemiBold" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
                             </Flyout>
                         </Button.Flyout>
                         <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">

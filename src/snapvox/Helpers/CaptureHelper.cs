@@ -111,54 +111,54 @@ namespace snapvox.helpers
                     return;
                 }
 
-                var screenData = new List<(PixelRect Bounds, byte[] PngData)>();
-                foreach (var screen in screensInfo)
+                // BUGFIX (cross-monitor rubberband): the overlay used to be split into one
+                // CaptureWindow per monitor, so the rubberband, magnifier and window snapping
+                // all stopped hard at every monitor border - a drag that crossed screens had
+                // to be released and restarted, and the frozen backdrop was stitched from
+                // separate PNG crops. One borderless window that spans the entire virtual
+                // desktop now keeps a single continuous coordinate space for the whole
+                // selection, and CaptureWindow maps it back to absolute device pixels with
+                // PointToScreen when the selection is released.
+                using var unifiedBackdrop = (Image<Rgba32>)snapshotForCropping.Clone();
+                if (Config.AddFrameBorders)
                 {
-                    var cropRect = ClampCropRectangle(new Rectangle(screen.Bounds.X - virtualBounds.Left, screen.Bounds.Y - virtualBounds.Top, screen.Bounds.Width, screen.Bounds.Height), snapshotForCropping.Width, snapshotForCropping.Height);
-                    if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
-
-                    using var cropped = snapshotForCropping.Clone(x => x.Crop(cropRect));
-                    if (Config.AddFrameBorders)
+                    // Preserve the mandated 3px navy (#000080) outline around every monitor
+                    // on the unified frozen backdrop (visual only - output images are framed
+                    // separately at save time).
+                    foreach (var screen in screensInfo)
                     {
-                        // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
-                        // to the already-shrunk size (a no-op) and the border is silently lost.
-                        int frameW = cropped.Width; int frameH = cropped.Height; int t = 3;
-                        if (frameW > t * 2 && frameH > t * 2) cropped.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                        DrawMonitorFrame(unifiedBackdrop, screen.Bounds, virtualBounds);
                     }
-                    using var ms = new MemoryStream();
-                    cropped.Save(ms, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
-                    screenData.Add((screen.Bounds, ms.ToArray()));
                 }
 
-                if (screenData.Count == 0)
+                Avalonia.Media.Imaging.Bitmap backdrop = null;
+                try
                 {
-                    forms.CaptureWindow.EndCaptureSession();
-                    ClearFrozenSnapshot();
-                    return;
-                }
+                    // BMP round-trip keeps the encode/decode off the UI thread; the old
+                    // per-screen PNG pipeline paid a compression pass per monitor.
+                    backdrop = await Task.Run(() => snapvox.editor.helpers.ImageSharpAvaloniaHelper.ToAvaloniaBitmap(unifiedBackdrop)).ConfigureAwait(false);
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    foreach (var data in screenData)
+                    await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        Avalonia.Media.Imaging.Bitmap bitmap = null;
                         forms.CaptureWindow window = null;
-                        using (var ms = new MemoryStream(data.PngData)) bitmap = new Avalonia.Media.Imaging.Bitmap(ms);
                         try
                         {
-                            window = new forms.CaptureWindow(data.Bounds, bitmap);
-                            bitmap = null;
+                            window = new forms.CaptureWindow(new PixelRect(virtualBounds.Left, virtualBounds.Top, virtualBounds.Width, virtualBounds.Height), backdrop);
+                            backdrop = null;
                             window.Show();
                         }
                         catch
                         {
-                            bitmap?.Dispose();
                             window?.Close();
                             throw;
                         }
-                    }
+                    });
                     overlaysShown = true;
-                });
+                }
+                finally
+                {
+                    backdrop?.Dispose();
+                }
             }
             catch (Exception ex) 
             { 
@@ -166,6 +166,38 @@ namespace snapvox.helpers
                 if (!overlaysShown) forms.CaptureWindow.EndCaptureSession();
                 ClearFrozenSnapshot();
             }
+        }
+
+        // NOTE: snapvox pins ImageSharp 2.1.13 (Rgba32), while snapvox.editor compiles against
+        // 3.x (Rgba24) - keep these helpers on the 2.x-safe pixel type and indexer API.
+        private static void DrawMonitorFrame(Image<Rgba32> image, PixelRect bounds, RECT virtualBounds)
+        {
+            int x0 = Math.Clamp(bounds.X - virtualBounds.Left, 0, Math.Max(0, image.Width - 1));
+            int y0 = Math.Clamp(bounds.Y - virtualBounds.Top, 0, Math.Max(0, image.Height - 1));
+            int x1 = Math.Clamp(bounds.Right - virtualBounds.Left, 0, image.Width);
+            int y1 = Math.Clamp(bounds.Bottom - virtualBounds.Top, 0, image.Height);
+            if (x1 - x0 < 2 || y1 - y0 < 2) return;
+
+            var navy = new Rgba32(0, 0, 128, 255);
+            for (int t = 0; t < 3; t++)
+            {
+                FillRow(image, y0 + t, x0, x1, navy);
+                FillRow(image, y1 - 1 - t, x0, x1, navy);
+                FillColumn(image, x0 + t, y0, y1, navy);
+                FillColumn(image, x1 - 1 - t, y0, y1, navy);
+            }
+        }
+
+        private static void FillRow(Image<Rgba32> image, int y, int xStart, int xEnd, Rgba32 color)
+        {
+            if (y < 0 || y >= image.Height || xEnd <= xStart) return;
+            for (int x = Math.Max(0, xStart); x < Math.Min(image.Width, xEnd); x++) image[x, y] = color;
+        }
+
+        private static void FillColumn(Image<Rgba32> image, int x, int yStart, int yEnd, Rgba32 color)
+        {
+            if (x < 0 || x >= image.Width || yEnd <= yStart) return;
+            for (int y = Math.Max(0, yStart); y < Math.Min(image.Height, yEnd); y++) image[x, y] = color;
         }
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]

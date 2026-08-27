@@ -86,20 +86,22 @@ namespace snapvox.forms
         // device-pixel conversion, rounding to the nearest device pixel. Mixing truncated
         // (int) casts made the captured rect drift away from what the magnifier crosshair
         // showed at the moment of release.
+        // BUGFIX (cross-monitor rubberband): the overlay is now a single window that spans
+        // the whole virtual desktop, where every monitor may carry a different DPI scale.
+        // PointToScreen honours the platform's per-monitor DPI mapping, so the released
+        // selection still lands on the exact device pixels the magnifier crosshair showed,
+        // even when the drag crossed monitors with mixed scaling.
         private POINT ToScreenPixels(Avalonia.Point pos)
         {
-            double scaling = Scaling;
-            return new POINT((int)Math.Round(pos.X * scaling) + Position.X, (int)Math.Round(pos.Y * scaling) + Position.Y);
+            PixelPoint p = this.PointToScreen(pos);
+            return new POINT(p.X, p.Y);
         }
 
         private RECT ToScreenRect(double leftDip, double topDip, double widthDip, double heightDip)
         {
-            double scaling = Scaling;
-            int left = (int)Math.Round(leftDip * scaling) + Position.X;
-            int top = (int)Math.Round(topDip * scaling) + Position.Y;
-            int right = (int)Math.Round((leftDip + widthDip) * scaling) + Position.X;
-            int bottom = (int)Math.Round((topDip + heightDip) * scaling) + Position.Y;
-            return RECT.FromXYWH(left, top, right - left, bottom - top);
+            PixelPoint topLeft = this.PointToScreen(new Avalonia.Point(leftDip, topDip));
+            PixelPoint bottomRight = this.PointToScreen(new Avalonia.Point(leftDip + widthDip, topDip + heightDip));
+            return RECT.FromXYWH(topLeft.X, topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y);
         }
 
         public CaptureWindow() : this(new PixelRect(0, 0, 1920, 1080), null)
