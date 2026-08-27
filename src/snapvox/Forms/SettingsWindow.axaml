@@ -3,14 +3,15 @@
         x:Class="snapvox.Forms.SettingsWindow"
         Title="SnapVox Settings"
         Width="850" Height="650"
-        Background="#1E1E1E"
-        RequestedThemeVariant="Dark"
+        Background="{DynamicResource SnapVoxCanvasBrush}"
         WindowStartupLocation="CenterScreen">
+    <!-- ISSUE_012: RequestedThemeVariant is set once at the Application level (App.axaml). -->
     <Window.Styles>
         <Style Selector="TextBlock.header">
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontSize" Value="{DynamicResource SnapVoxHeaderFontSize}"/>
             <Setter Property="Margin" Value="0,10,0,5"/>
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
         </Style>
         <Style Selector="CheckBox">
             <Setter Property="Margin" Value="0,5"/>
@@ -19,9 +20,15 @@
             <Setter Property="Margin" Value="0,5"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
+        <!-- ISSUE_007: conflicting hotkey box highlight style -->
+        <Style Selector="TextBox.hotkey-conflict">
+            <Setter Property="Background" Value="#55FF0000"/>
+            <Setter Property="BorderBrush" Value="#FF5555"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
-        <TextBlock Text="SnapVox Configuration" FontSize="18" FontWeight="Bold" Margin="0,0,0,10" Grid.Row="0"/>
+        <TextBlock Text="SnapVox Configuration" FontSize="{DynamicResource SnapVoxDialogTitleFontSize}" FontWeight="Bold" Margin="0,0,0,10" Grid.Row="0" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
         
         <TabControl Grid.Row="1">
             <TabItem Header="General Settings">
@@ -34,16 +41,31 @@
                         <CheckBox Name="ChkAddBorder" Content="Add Frame Borders to Snips" />
                         <CheckBox Name="ChkLeavePictureAsIs" Content="Leave Picture As Is While Text Extracting (OCR)" />
                         
+                        <TextBlock Text="Notification Overlay" Classes="header"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,5,0,0"
+                                    ToolTip.Tip="How long the notification overlay keeps blinking when an action completes (copy, download, OCR...).">
+                            <TextBlock Text="Blink cycle duration:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}"/>
+                            <ComboBox Name="CboOverlayDuration" Width="170"/>
+                        </StackPanel>
+                        
                         <StackPanel Name="OcrEnginePanel">
                             <TextBlock Text="English OCR Engine Selection" Classes="header"/>
                             <ComboBox Name="CboOcrEngine"/>
                         </StackPanel>
                         
                         <TextBlock Text="System Integration" Classes="header"/>
-                        <Button Name="BtnToggleAdmin" 
-                                Content="Run This App As an Administrator (Highest Privileges)" 
-                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" 
-                                Click="OnToggleAdminClick" Margin="0,10,0,0" Padding="10"/>
+                        <!-- ISSUE_017: warning icon + tooltip explaining the security risk -->
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0"
+                                    ToolTip.Tip="⚠ Running as Administrator grants elevated privileges to every capture and OCR action. Enable only if you fully trust the environment.">
+                            <TextBlock Text="⚠" Foreground="#FFB400" FontSize="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="Requires elevated privileges — use with care." Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Button Name="BtnToggleAdmin"
+                                Content="Run This App As an Administrator (Highest Privileges)"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Click="OnToggleAdminClick" Margin="0,5,0,0" Padding="10"/>
+                        <!-- ISSUE_017: explicit current on/off state -->
+                        <TextBlock Name="AdminStateLabel" Text="Status: Not configured" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" Margin="0,5,0,0"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -52,10 +74,23 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="15" Spacing="10">
                         <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
-                            <TextBlock Text="Click a text box and press a key combination to rebind." Foreground="#AAAAAA" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="Reset All Hotkeys to Default" Click="OnResetHotkeysClick" Background="#88FF3333" Foreground="White" FontWeight="Bold" Padding="15,10" Cursor="Hand" />
+                            <TextBlock Text="Click a text box and press a key combination to rebind." Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="Reset All Hotkeys to Default" Click="OnResetHotkeysClick" Background="#88FF3333" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" FontWeight="Bold" Padding="15,10" Cursor="Hand" />
                         </Grid>
+                        <!-- ISSUE_007: a general banner is still kept, but precise per-box highlighting drives the user to the exact clash. -->
                         <TextBlock Name="TxtHotkeyWarning" Foreground="#FF5555" FontWeight="Bold" IsVisible="False" TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                        <!-- PrintScreen conflict: bright red and impossible to miss when Windows or another app steals the Print Screen key. -->
+                        <Border Name="PrintScreenConflictPanel" IsVisible="False"
+                                Background="#2EFF0000" BorderBrush="#FFFF3B3B" BorderThickness="2"
+                                CornerRadius="6" Padding="12,10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="&#9888; PROBLEM: WINDOWS IS TAKING THE PRINT SCREEN KEY"
+                                           Foreground="#FFFF5252" FontWeight="Bold" FontSize="14" TextWrapping="Wrap"/>
+                                <TextBlock Name="TxtPrintScreenConflictDetail"
+                                           Foreground="#FFFF9E9E" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Border>
                         
                         <Grid ColumnDefinitions="300,*" RowDefinitions="Auto">
                             <StackPanel Grid.Column="0" Spacing="15">
@@ -184,8 +219,10 @@
             </TabItem>
         </TabControl>
         
+        <!-- ISSUE_006: Cancel button sits next to Save so users can discard changes confidently. -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0" Spacing="10">
-            <Button Content="Save and Close" Click="OnSaveClick" Background="#007ACC" Foreground="White" Padding="15,7" Cursor="Hand" />
+            <Button Content="Cancel" Click="OnCancelClick" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Padding="15,7" Cursor="Hand" />
+            <Button Content="Save and Close" Click="OnSaveClick" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Padding="15,7" Cursor="Hand" />
         </StackPanel>
     </Grid>
 </Window>

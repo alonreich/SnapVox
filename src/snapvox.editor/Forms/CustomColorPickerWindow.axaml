@@ -3,14 +3,16 @@
         x:Class="snapvox.editor.forms.CustomColorPickerWindow"
         Title="Custom Color"
         Width="350" Height="480"
-        Background="#2D2D30"
+        MinWidth="320" MinHeight="440"
+        Background="{DynamicResource SnapVoxPanelDarkBrush}"
         WindowStartupLocation="CenterOwner"
-        CanResize="False"
-        RequestedThemeVariant="Dark">
+        CanResize="True">
+    <!-- ISSUE_012: theme is set once at the Application level (App.axaml). -->
     <StackPanel Margin="20" Spacing="15">
-        <TextBlock Text="Select Custom Color" FontSize="18" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+        <TextBlock Text="Select Custom Color" FontSize="{DynamicResource SnapVoxDialogTitleFontSize}" FontWeight="Bold" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" HorizontalAlignment="Center"/>
         
-        <ColorPicker Name="Picker" HorizontalAlignment="Center" />
+        <!-- ISSUE_016: ColorPicker is two-way bound to SelectedColor so the screen and data stay in sync. -->
+        <ColorPicker Name="Picker" HorizontalAlignment="Center" Color="{Binding SelectedColor, Mode=TwoWay}" />
         
         <Button Name="SamplerBtn" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10" Click="OnSamplerClick">
             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -21,7 +23,7 @@
         
         <Grid ColumnDefinitions="*,*" Margin="0,10,0,0">
             <Button Grid.Column="0" Content="OK" Click="OnOkClick" Margin="0,0,5,0" 
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#007ACC" Foreground="White"/>
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
             <Button Grid.Column="1" Content="Cancel" Click="OnCancelClick" Margin="5,0,0,0"
                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
         </Grid>

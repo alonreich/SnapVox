@@ -176,11 +176,6 @@ namespace snapvox.native
                 return null;
             }
 
-            if (page.GetMeanConfidence() < 0.15f)
-            {
-                return new OcrInformation { Text = string.Empty, Words = new List<OcrWord>() };
-            }
-
             var information = new OcrInformation
             {
                 Text = page.GetText() ?? string.Empty,

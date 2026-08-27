@@ -80,6 +80,7 @@ namespace snapvox.helpers
                 {
                     _frozenSnapshot?.Dispose();
                     _frozenSnapshot = fullSnapshot;
+                    fullSnapshot = null;
                     _frozenVirtualBounds = virtualBounds;
                 }
 
@@ -102,14 +103,28 @@ namespace snapvox.helpers
                     return;
                 }
 
+                ImageSharpImage snapshotForCropping;
+                lock (LastRegionSync) snapshotForCropping = _frozenSnapshot;
+                if (snapshotForCropping == null)
+                {
+                    forms.CaptureWindow.EndCaptureSession();
+                    return;
+                }
+
                 var screenData = new List<(PixelRect Bounds, byte[] PngData)>();
                 foreach (var screen in screensInfo)
                 {
-                    var cropRect = ClampCropRectangle(new Rectangle(screen.Bounds.X - virtualBounds.Left, screen.Bounds.Y - virtualBounds.Top, screen.Bounds.Width, screen.Bounds.Height), fullSnapshot.Width, fullSnapshot.Height);
+                    var cropRect = ClampCropRectangle(new Rectangle(screen.Bounds.X - virtualBounds.Left, screen.Bounds.Y - virtualBounds.Top, screen.Bounds.Width, screen.Bounds.Height), snapshotForCropping.Width, snapshotForCropping.Height);
                     if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
 
-                    using var cropped = fullSnapshot.Clone(x => x.Crop(cropRect));
-                    if (Config.AddFrameBorders) cropped.Mutate(x => { int t = 3; if (cropped.Width > t * 2 && cropped.Height > t * 2) x.Crop(new Rectangle(t, t, cropped.Width - t * 2, cropped.Height - t * 2)).Pad(cropped.Width, cropped.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
+                    using var cropped = snapshotForCropping.Clone(x => x.Crop(cropRect));
+                    if (Config.AddFrameBorders)
+                    {
+                        // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
+                        // to the already-shrunk size (a no-op) and the border is silently lost.
+                        int frameW = cropped.Width; int frameH = cropped.Height; int t = 3;
+                        if (frameW > t * 2 && frameH > t * 2) cropped.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                    }
                     using var ms = new MemoryStream();
                     cropped.Save(ms, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
                     screenData.Add((screen.Bounds, ms.ToArray()));
@@ -248,7 +263,13 @@ namespace snapvox.helpers
                                     }
                                 }
 
-                                if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
+                                if (Config.AddFrameBorders)
+                                {
+                                    // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
+                                    // to the already-shrunk size (a no-op) and the border is silently lost.
+                                    int frameW = owned.Width; int frameH = owned.Height; int t = 3;
+                                    if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                                }
 
                                 RememberRegion(rawRect);
                                 await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
@@ -302,7 +323,13 @@ namespace snapvox.helpers
                             }
                         }
 
-                        if (Config.AddFrameBorders) owned.Mutate(x => { int t = 3; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
+                        if (Config.AddFrameBorders)
+                        {
+                            // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
+                            // to the already-shrunk size (a no-op) and the border is silently lost.
+                            int frameW = owned.Width; int frameH = owned.Height; int t = 3;
+                            if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                        }
 
                         await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
                         ImageSharpImage imageForEditor = owned;
@@ -415,7 +442,13 @@ namespace snapvox.helpers
                             }
                         }
 
-                        if (Config.AddFrameBorders) owned.Mutate(x => { int t = 2; if (owned.Width > t * 2 && owned.Height > t * 2) x.Crop(new Rectangle(t, t, owned.Width - t * 2, owned.Height - t * 2)).Pad(owned.Width, owned.Height, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)); });
+                        if (Config.AddFrameBorders)
+                        {
+                            // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
+                            // to the already-shrunk size (a no-op) and the border is silently lost.
+                            int frameW = owned.Width; int frameH = owned.Height; int t = 2;
+                            if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                        }
                     }
 
                     if (owned == null)

@@ -32,6 +32,8 @@ namespace snapvox.forms
         private static readonly Avalonia.Input.Cursor HandCursor = new Avalonia.Input.Cursor(StandardCursorType.Hand);
         private static readonly Avalonia.Input.Cursor CrossCursor = new Avalonia.Input.Cursor(StandardCursorType.Cross);
         private static readonly IBrush OcrHighlightBrush = new SolidColorBrush(AvaloniaColor.FromArgb(102, 255, 255, 0));
+        private static readonly ScaleTransform MagnifierScaleTransform = new ScaleTransform(2, 2);
+        private static readonly RelativePoint MagnifierTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative);
 
         private static readonly log4net.ILog Log = LogHelper.GetLogger(typeof(CaptureWindow));
         private static List<CaptureWindow> _activeWindows = new List<CaptureWindow>();
@@ -49,6 +51,7 @@ namespace snapvox.forms
         private Border _highlightBorder;
         private bool _isPainterMode;
         private RECT _snappedRect = RECT.Empty;
+        private IntPtr _snappedWindowHandle = IntPtr.Zero;
         private OcrInformation _ocrScanResult;
         private OcrWordSpatialIndex _ocrWordIndex;
         private readonly object _ocrStateLock = new object();
@@ -60,6 +63,9 @@ namespace snapvox.forms
         private Avalonia.Controls.Image _backgroundControl;
         private Border _dimensionBadge;
         private Border _windowSnapBadge;
+        private Avalonia.Controls.Shapes.Rectangle _guideLineVertical;
+        private Avalonia.Controls.Shapes.Rectangle _guideLineHorizontal;
+        private static readonly IBrush GuideLineBrush = new SolidColorBrush(AvaloniaColor.FromArgb(96, 0, 162, 237));
         private TextBlock _dimensionText;
         private TextBlock _ocrText;
         private Border _ocrProcessingStatus;
@@ -74,6 +80,27 @@ namespace snapvox.forms
         private Avalonia.Controls.Image _magnifierImage;
 
         private double Scaling => this.RenderScaling;
+
+        // BUGFIX (magnifier drift): every pointer position that leaves the UI layer (window
+        // snapping, OCR hit-testing, capture rect) must go through the exact same DIP ->
+        // device-pixel conversion, rounding to the nearest device pixel. Mixing truncated
+        // (int) casts made the captured rect drift away from what the magnifier crosshair
+        // showed at the moment of release.
+        private POINT ToScreenPixels(Avalonia.Point pos)
+        {
+            double scaling = Scaling;
+            return new POINT((int)Math.Round(pos.X * scaling) + Position.X, (int)Math.Round(pos.Y * scaling) + Position.Y);
+        }
+
+        private RECT ToScreenRect(double leftDip, double topDip, double widthDip, double heightDip)
+        {
+            double scaling = Scaling;
+            int left = (int)Math.Round(leftDip * scaling) + Position.X;
+            int top = (int)Math.Round(topDip * scaling) + Position.Y;
+            int right = (int)Math.Round((leftDip + widthDip) * scaling) + Position.X;
+            int bottom = (int)Math.Round((topDip + heightDip) * scaling) + Position.Y;
+            return RECT.FromXYWH(left, top, right - left, bottom - top);
+        }
 
         public CaptureWindow() : this(new PixelRect(0, 0, 1920, 1080), null)
         {
@@ -134,6 +161,20 @@ namespace snapvox.forms
             _magnifierPanel = this.FindControl<Border>("MagnifierPanel");
             _magnifierImage = this.FindControl<Avalonia.Controls.Image>("MagnifierImage");
             if (_mainCanvas != null) _mainCanvas.Focusable = true;
+
+            // FEATURE (alignment guides): hair-thin full-screen guide lines that extend from
+            // the plus cursor to the very edges of the monitor, so the pointer can be aligned
+            // with content on the opposite side of the screen while selecting.
+            if (_mainCanvas != null)
+            {
+                _guideLineVertical = new Avalonia.Controls.Shapes.Rectangle { Fill = GuideLineBrush, IsHitTestVisible = false, IsVisible = false };
+                _guideLineHorizontal = new Avalonia.Controls.Shapes.Rectangle { Fill = GuideLineBrush, IsHitTestVisible = false, IsVisible = false };
+                // Insert directly after the frozen background so the rubberband, snap
+                // highlight and magnifier all draw on top of the guides.
+                int guideIndex = Math.Max(1, _mainCanvas.Children.IndexOf(_backgroundControl) + 1);
+                _mainCanvas.Children.Insert(guideIndex, _guideLineVertical);
+                _mainCanvas.Children.Insert(guideIndex + 1, _guideLineHorizontal);
+            }
             
             if (_backgroundControl != null && background != null)
             {
@@ -170,7 +211,7 @@ namespace snapvox.forms
             
             LayoutInstructionBanner(null);
             LayoutOcrStatus();
-            UiClipboard.Register(text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
+            UiClipboard.Register(this, text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
             if (_highlightBorder != null) _highlightBorder.IsVisible = false;
             if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
         }
@@ -192,6 +233,9 @@ namespace snapvox.forms
         private async void OnClosed(object sender, EventArgs e)
         {
             _isWindowOpen = false;
+            // ISSUE_004: this window registered itself as a clipboard text handler when it opened;
+            // remove the registration so the static UiClipboard never keeps a closed window alive.
+            UiClipboard.Unregister(this);
             await StopLocalOcrAsync().ConfigureAwait(true);
 
             bool isLastWindow;
@@ -249,6 +293,32 @@ namespace snapvox.forms
             List<CaptureWindow> toClose;
             lock (_activeWindows) { toClose = _activeWindows.ToList(); _activeWindows.Clear(); }
             foreach (var win in toClose) { if (win != this) win.Close(); }
+        }
+
+        private static void CloseAllCaptureOverlays()
+        {
+            // BUGFIX (multi-monitor cancel): ESC / right-click must cancel the capture session
+            // on EVERY monitor. Closing only the overlay that owned focus left the other
+            // overlays armed, kept their full-screen background bitmaps and the frozen snapshot
+            // alive, and left the capture session latched (red tray icon, next PrintScreen
+            // silently rejected by BeginCaptureSession).
+            List<CaptureWindow> toClose;
+            lock (_activeWindows)
+            {
+                toClose = _activeWindows.ToList();
+                _activeWindows.Clear();
+            }
+
+            foreach (var overlay in toClose)
+            {
+                overlay.CancelLocalPreemptiveOcr();
+                overlay._isWindowOpen = false;
+                overlay.Close();
+            }
+
+            // End the session immediately (restores the tray icon and re-arms PrintScreen)
+            // even if some Closed events are still queued behind this input event.
+            if (!_captureCompleted) EndCaptureSession();
         }
 
         private void LayoutInstructionBanner(Avalonia.Point? cursorPosition)
@@ -509,7 +579,9 @@ namespace snapvox.forms
         {
             Log.Debug($"CaptureWindow KeyDown: {e.Key}");
             FocusForKeyboardCapture();
-            if (e.Key == Key.Escape) { e.Handled = true; Close(); return; }
+            // BUGFIX (multi-monitor cancel): ESC cancels the whole capture session on every
+            // monitor, not just the overlay that currently owns keyboard focus.
+            if (e.Key == Key.Escape) { e.Handled = true; CloseAllCaptureOverlays(); return; }
             if (e.Key == Key.C) { e.Handled = true; CaptureAndCopyCurrentSelection(); return; }
             if (e.Key == Key.T || e.Key == Key.O)
             {
@@ -546,6 +618,7 @@ namespace snapvox.forms
             _isDragging = false;
             _isWindowSnapActive = false;
             _snappedRect = RECT.Empty;
+            _snappedWindowHandle = IntPtr.Zero;
 
             lock (_ocrStateLock)
             {
@@ -580,6 +653,7 @@ namespace snapvox.forms
             if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
             if (_dimensionBadge != null) _dimensionBadge.IsVisible = false;
             if (_magnifierPanel != null) _magnifierPanel.IsVisible = false;
+            HideGuides();
         }
 
         private void ExitOcrMode(TextBlock instructionText)
@@ -591,6 +665,7 @@ namespace snapvox.forms
             _isDragging = false;
             _isWindowSnapActive = false;
             _snappedRect = RECT.Empty;
+            _snappedWindowHandle = IntPtr.Zero;
             ClearHighlights();
             _paintedWords.Clear();
             lock (_ocrStateLock)
@@ -617,7 +692,7 @@ namespace snapvox.forms
                 _ocrText.Text = "T = Text capture";
                 _ocrText.Foreground = new SolidColorBrush(AvaloniaColor.Parse("#AAAAAA"));
             }
-            Cursor = new Cursor(StandardCursorType.Cross);
+            Cursor = CrossCursor;
         }
 
         private RECT GetFullscreenRect()
@@ -631,18 +706,27 @@ namespace snapvox.forms
         private void CaptureAndCopyCurrentSelection()
         {
             RECT target = RECT.Empty;
-            double scaling = Scaling;
-            if (_isWindowSnapActive && !_snappedRect.IsEmpty) target = _snappedRect;
-            else if (_rubberband.IsVisible && _rubberband.Width > 5) 
-                target = RECT.FromXYWH((int)(Canvas.GetLeft(_rubberband) * scaling + Position.X), (int)(Canvas.GetTop(_rubberband) * scaling + Position.Y), (int)(_rubberband.Width * scaling), (int)(_rubberband.Height * scaling));
+            IntPtr windowHandle = IntPtr.Zero;
+            if (_isWindowSnapActive && !_snappedRect.IsEmpty)
+            {
+                target = _snappedRect;
+                windowHandle = _snappedWindowHandle;
+            }
+            else if (_rubberband.IsVisible && _rubberband.Width > 5)
+                target = ToScreenRect(Canvas.GetLeft(_rubberband), Canvas.GetTop(_rubberband), _rubberband.Width, _rubberband.Height);
 
             if (target.IsEmpty) return;
-            _ = CaptureAndCopyCurrentSelectionAsync(target);
+            _ = CaptureAndCopyCurrentSelectionAsync(target, windowHandle);
         }
 
-        private async Task CaptureAndCopyCurrentSelectionAsync(RECT target)
+        private async Task CaptureAndCopyCurrentSelectionAsync(RECT target, IntPtr windowHandle = default)
         {
-            using var captured = NativeCapture.CaptureRegion(target);
+            // BUGFIX (occluded window snap): when the target is a snapped app window, render
+            // the window itself so covering windows are not baked into the copied shot.
+            var captured = windowHandle != IntPtr.Zero
+                ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle)).ConfigureAwait(false)
+                : null;
+            if (captured == null) captured = await Task.Run(() => NativeCapture.CaptureRegion(target)).ConfigureAwait(false);
             if (captured == null) return;
 
             if (IniConfig.GetIniSection<CoreConfiguration>().KeepBackup)
@@ -662,22 +746,30 @@ namespace snapvox.forms
             }
 
             await UiClipboard.SetImageAsync(captured).ConfigureAwait(false);
-            TryPostToUi(Close);
+            captured.Dispose();
+            // BUGFIX (multi-monitor cancel): finishing a copy closes every overlay so the
+            // capture session ends cleanly instead of leaving the other monitors armed.
+            TryPostToUi(CloseAllCaptureOverlays);
         }
 
         private void OnPointerPressed(object sender, PointerPressedEventArgs e)
         {
             if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
             {
-                Close();
+                // BUGFIX (multi-monitor cancel): right-click cancels the capture session on
+                // every monitor, mirroring the ESC behaviour.
+                CloseAllCaptureOverlays();
                 return;
             }
 
             _isDragging = true;
+            // FEATURE (snap hand cursor): drop the hand cursor left over from a hover snap
+            // the moment a real selection starts; painter mode keeps its own hand cursor.
+            if (!_isPainterMode) Cursor = CrossCursor;
             if (_instructionBorder != null) _instructionBorder.IsVisible = false;
             var pos = e.GetPosition(this);
             double scaling = Scaling;
-            var absolutePos = new POINT((int)(pos.X * scaling) + Position.X, (int)(pos.Y * scaling) + Position.Y);
+            var absolutePos = ToScreenPixels(pos);
             RECT windowRect = Win32WindowHelper.GetRootWindowRect(absolutePos);
             double snapX = pos.X;
             double snapY = pos.Y;
@@ -729,6 +821,7 @@ namespace snapvox.forms
 
             if (_isPainterMode)
             {
+                HideGuides();
                 if (!IsOcrReady())
                 {
                     ShowOcrWaitingState();
@@ -748,12 +841,13 @@ namespace snapvox.forms
 
             if (!_isDragging)
             {
+                UpdateGuides(currentPoint);
                 UpdateMagnifier(currentPoint);
                 CheckMagneticSnap(currentPoint);
                 return;
             }
-            var absoluteCurrent = new POINT((int)(currentPoint.X * scaling) + Position.X, (int)(currentPoint.Y * scaling) + Position.Y);
-            RECT snapRect = Win32WindowHelper.GetRootWindowRect(absoluteCurrent);
+            var absoluteCurrent = ToScreenPixels(currentPoint);
+            RECT snapRect = Win32WindowHelper.GetSnappableWindow(absoluteCurrent, out IntPtr dragSnapWindowHandle);
             double snappedX = currentPoint.X;
             double snappedY = currentPoint.Y;
             if (!snapRect.IsEmpty)
@@ -771,6 +865,11 @@ namespace snapvox.forms
                 {
                     _isWindowSnapActive = true;
                     _snappedRect = snapRect;
+                    _snappedWindowHandle = dragSnapWindowHandle;
+                    // FEATURE (snap hand cursor): one click grabs the whole snapped window,
+                    // so the cursor switches from crosshair to a hand while the magnetic
+                    // offer is active.
+                    Cursor = HandCursor;
                     if (_highlightBorder != null)
                     {
                         _highlightBorder.IsVisible = true;
@@ -781,7 +880,7 @@ namespace snapvox.forms
                     }
                     ShowWindowSnapBadge(relLeft, relTop);
                 }
-                else { _isWindowSnapActive = false; if (_highlightBorder != null) _highlightBorder.IsVisible = false; if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false; }
+                else { _isWindowSnapActive = false; _snappedWindowHandle = IntPtr.Zero; if (_highlightBorder != null) _highlightBorder.IsVisible = false; if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false; Cursor = CrossCursor; }
             }
             double x = Math.Min(_startPoint.X, snappedX);
             double y = Math.Min(_startPoint.Y, snappedY);
@@ -795,13 +894,14 @@ namespace snapvox.forms
             if (_dimensionBadge != null && _dimensionText != null)
             {
                 _dimensionBadge.IsVisible = w > 10 && h > 10;
-                _dimensionText.Text = $"{(int)(w * scaling)} x {(int)(h * scaling)}";
+                _dimensionText.Text = $"{(int)Math.Round(w * scaling)} x {(int)Math.Round(h * scaling)}";
                 Canvas.SetLeft(_dimensionBadge, x);
                 double badgeY = y - 28;
                 if (badgeY < 0) badgeY = y + 5;
                 Canvas.SetTop(_dimensionBadge, badgeY);
             }
 
+            UpdateGuides(currentPoint);
             UpdateMagnifier(currentPoint);
         }
 
@@ -817,25 +917,33 @@ namespace snapvox.forms
 
             double magSize = !double.IsNaN(_magnifierPanel.Width) && _magnifierPanel.Width > 0 ? _magnifierPanel.Width : 160;
             double offset = 30;
-            var target = ChooseMagnifierPosition(pos, magSize, offset, GetMagnifierAvoidRect(12));
+            var target = ChooseMagnifierPosition(pos, magSize, offset, GetMagnifierAvoidRect(12, pos, magSize));
 
             Canvas.SetLeft(_magnifierPanel, target.X);
             Canvas.SetTop(_magnifierPanel, target.Y);
 
             if (_magnifierImage != null)
             {
+                // BUGFIX (magnifier drift): the lens must sample the frozen snapshot in DEVICE
+                // pixels (one bitmap pixel per layout unit) so the lens shows the real pixel
+                // grid and its centre crosshair marks the exact device pixel that will be
+                // captured. Sizing the image in DIPs resampled the bitmap on any monitor with
+                // scaling != 100%, blurring the preview and making fine adjustments land on a
+                // neighbouring pixel of the final capture.
                 double scaling = Scaling;
-                _magnifierImage.Width = _screenBounds.Width / scaling;
-                _magnifierImage.Height = _screenBounds.Height / scaling;
-                Canvas.SetLeft(_magnifierImage, magSize / 2 - pos.X * 2);
-                Canvas.SetTop(_magnifierImage, magSize / 2 - pos.Y * 2);
-                _magnifierImage.RenderTransform = new ScaleTransform(2, 2);
-                _magnifierImage.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative);
+                _magnifierImage.Width = _screenBounds.Width;
+                _magnifierImage.Height = _screenBounds.Height;
+                Canvas.SetLeft(_magnifierImage, magSize / 2 - pos.X * scaling * 2);
+                Canvas.SetTop(_magnifierImage, magSize / 2 - pos.Y * scaling * 2);
+                _magnifierImage.RenderTransform = MagnifierScaleTransform;
+                _magnifierImage.RenderTransformOrigin = MagnifierTransformOrigin;
             }
         }
 
-        private Rect? GetMagnifierAvoidRect(double margin)
+        private Rect? GetMagnifierAvoidRect(double margin, Avalonia.Point cursor, double magSize)
         {
+            // While a rubberband selection is being dragged, keep avoiding the whole
+            // selection rect exactly as before.
             if (_rubberband != null && _rubberband.IsVisible && _rubberband.Width > 1 && _rubberband.Height > 1)
             {
                 double left = Canvas.GetLeft(_rubberband);
@@ -845,16 +953,13 @@ namespace snapvox.forms
                 return InflateRect(new Rect(left, top, _rubberband.Width, _rubberband.Height), margin);
             }
 
-            if (_highlightBorder != null && _highlightBorder.IsVisible && _highlightBorder.Width > 1 && _highlightBorder.Height > 1)
-            {
-                double left = Canvas.GetLeft(_highlightBorder);
-                double top = Canvas.GetTop(_highlightBorder);
-                if (double.IsNaN(left)) left = 0;
-                if (double.IsNaN(top)) top = 0;
-                return InflateRect(new Rect(left, top, _highlightBorder.Width, _highlightBorder.Height), margin);
-            }
-
-            return null;
+            // BUGFIX (lens corner pinning): while a whole-window snap is offered the
+            // highlighted rect can span (nearly) the entire monitor. Avoiding that rect
+            // forced the lens into a screen corner where it stayed stuck for the whole
+            // snap. Only the area immediately around the cursor must stay visible, so the
+            // avoid area becomes a lens-sized square centred on the cursor instead; the
+            // lens then parks right next to the cursor in a free quadrant.
+            return new Rect(cursor.X - magSize / 2, cursor.Y - magSize / 2, magSize, magSize);
         }
 
         private Rect ChooseMagnifierPosition(Avalonia.Point cursor, double magSize, double offset, Rect? avoidRect)
@@ -961,6 +1066,7 @@ namespace snapvox.forms
             
             if (!_isPainterMode && _instructionBorder != null) _instructionBorder.IsVisible = true;
             if (_magnifierPanel != null) _magnifierPanel.IsVisible = false;
+            HideGuides();
 
             if (_isPainterMode)
             {
@@ -993,30 +1099,34 @@ namespace snapvox.forms
                 CheckMagneticSnap(_startPoint);
                 if (_isWindowSnapActive && !_snappedRect.IsEmpty)
                 {
-                    StartCaptureAndClose(_snappedRect);
+                    StartCaptureAndClose(_snappedRect, _snappedWindowHandle);
                     return;
                 }
             }
 
-            if (_isWindowSnapActive && _snappedRect.Width > 0 && isIntentionalDrag) { StartCaptureAndClose(_snappedRect); return; }
+            if (_isWindowSnapActive && _snappedRect.Width > 0 && isIntentionalDrag) { StartCaptureAndClose(_snappedRect, _snappedWindowHandle); return; }
             if (isIntentionalDrag)
             {
-                double scaling = Scaling;
-                var captureRect = RECT.FromXYWH((int)(Canvas.GetLeft(_rubberband) * scaling + Position.X), (int)(Canvas.GetTop(_rubberband) * scaling + Position.Y), (int)(_rubberband.Width * scaling), (int)(_rubberband.Height * scaling));
+                var captureRect = ToScreenRect(Canvas.GetLeft(_rubberband), Canvas.GetTop(_rubberband), _rubberband.Width, _rubberband.Height);
                 if (captureRect.Width > 2 && captureRect.Height > 2) { StartCaptureAndClose(captureRect); }
             }
         }
 
         private void OnPointerReleased(object sender, PointerReleasedEventArgs e) { _ = OnPointerReleasedAsync(e); }
 
-        private void StartCaptureAndClose(RECT rect)
+        private void StartCaptureAndClose(RECT rect, IntPtr windowHandle = default)
         {
             if (rect.Width <= 0 || rect.Height <= 0) return;
-            _ = CaptureAfterOverlaysHiddenAsync(rect);
+            _ = CaptureAfterOverlaysHiddenAsync(rect, windowHandle);
         }
 
         private static async Task CloseAllCaptureOverlaysAsync()
         {
+            // ISSUE_005: instead of a blind fixed delay, wait until every overlay window has actually
+            // raised Closed (bounded by a timeout), then give the compositor a short grace period so
+            // the closed overlays are gone from the screen before any fallback live capture.
+            var allClosed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 List<CaptureWindow> toClose;
@@ -1026,29 +1136,59 @@ namespace snapvox.forms
                     _activeWindows.Clear();
                 }
 
-                foreach (var window in toClose)
+                if (toClose.Count == 0)
                 {
+                    allClosed.TrySetResult(true);
+                    return;
+                }
+
+                int remaining = toClose.Count;
+                foreach (var overlay in toClose)
+                {
+                    var window = overlay;
                     window.CancelLocalPreemptiveOcr();
                     window._isWindowOpen = false;
+                    EventHandler onClosed = null;
+                    onClosed = (_, _) =>
+                    {
+                        window.Closed -= onClosed;
+                        if (Interlocked.Decrement(ref remaining) == 0) allClosed.TrySetResult(true);
+                    };
+                    window.Closed += onClosed;
                     window.Close();
                 }
             });
 
-            await Task.Delay(100).ConfigureAwait(false);
+            var completed = await Task.WhenAny(allClosed.Task, Task.Delay(1000)).ConfigureAwait(false);
+            if (completed == allClosed.Task)
+            {
+                await Task.Delay(50).ConfigureAwait(false);
+            }
         }
 
-        private static async Task CaptureAfterOverlaysHiddenAsync(RECT rect)
+        private static async Task CaptureAfterOverlaysHiddenAsync(RECT rect, IntPtr windowHandle = default)
         {
             _captureCompleted = true;
             ImageSharpImage owned = null;
             try
             {
                 var nativeRect = RECT.FromXYWH(rect.X, rect.Y, rect.Width, rect.Height);
-                ImageSharpImage frozenCaptured = CaptureHelper.GetFrozenSnapshot(nativeRect);
+                // BUGFIX (occluded window snap): when the selection snapped onto a specific app
+                // window, render that window itself (PrintWindow) so the shot shows the snapped
+                // window as if it were in the foreground. Cropping the frozen screen snapshot
+                // instead baked in whichever window happened to cover it. Fall back to the
+                // frozen crop whenever the exclusive render is unavailable.
+                ImageSharpImage exclusiveWindowShot = windowHandle != IntPtr.Zero
+                    ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle)).ConfigureAwait(false)
+                    : null;
+                ImageSharpImage frozenCaptured = exclusiveWindowShot == null
+                    ? await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false)
+                    : null;
 
                 await CloseAllCaptureOverlaysAsync().ConfigureAwait(false);
                 if (rect.Width <= 0 || rect.Height <= 0)
                 {
+                    exclusiveWindowShot?.Dispose();
                     frozenCaptured?.Dispose();
                     CaptureHelper.ClearFrozenSnapshot();
                     return;
@@ -1057,7 +1197,7 @@ namespace snapvox.forms
                 CaptureHelper.RememberRegion(rect);
                 owned = await Task.Run(() =>
                 {
-                    ImageSharpImage captured = frozenCaptured;
+                    ImageSharpImage captured = exclusiveWindowShot ?? frozenCaptured;
                     if (captured == null) captured = NativeCapture.CaptureRegion(nativeRect);
                     if (captured == null) return null;
                     var clone = captured.Clone(x => { });
@@ -1123,23 +1263,60 @@ namespace snapvox.forms
             }
         }
 
+        private void UpdateGuides(Avalonia.Point pos)
+        {
+            if (_guideLineVertical == null || _guideLineHorizontal == null) return;
+            if (_isPainterMode) { HideGuides(); return; }
+
+            double canvasWidth = Bounds.Width > 0 ? Bounds.Width : Width;
+            double canvasHeight = Bounds.Height > 0 ? Bounds.Height : Height;
+            if (double.IsNaN(canvasWidth) || canvasWidth <= 0) canvasWidth = _screenBounds.Width / Math.Max(Scaling, 1.0);
+            if (double.IsNaN(canvasHeight) || canvasHeight <= 0) canvasHeight = _screenBounds.Height / Math.Max(Scaling, 1.0);
+
+            // One device pixel thick - visible from across the screen without shouting.
+            double thickness = 1.0 / Math.Max(Scaling, 1.0);
+
+            _guideLineVertical.Width = thickness;
+            _guideLineVertical.Height = canvasHeight;
+            Canvas.SetLeft(_guideLineVertical, pos.X - thickness / 2);
+            Canvas.SetTop(_guideLineVertical, 0);
+
+            _guideLineHorizontal.Height = thickness;
+            _guideLineHorizontal.Width = canvasWidth;
+            Canvas.SetTop(_guideLineHorizontal, pos.Y - thickness / 2);
+            Canvas.SetLeft(_guideLineHorizontal, 0);
+
+            _guideLineVertical.IsVisible = true;
+            _guideLineHorizontal.IsVisible = true;
+        }
+
+        private void HideGuides()
+        {
+            if (_guideLineVertical != null) _guideLineVertical.IsVisible = false;
+            if (_guideLineHorizontal != null) _guideLineHorizontal.IsVisible = false;
+        }
+
         private void CheckMagneticSnap(Avalonia.Point pos)
         {
             double scaling = Scaling;
-            var absolutePos = new POINT((int)(pos.X * scaling) + Position.X, (int)(pos.Y * scaling) + Position.Y);
-            RECT windowRect = Win32WindowHelper.GetRootWindowRect(absolutePos);
+            var absolutePos = ToScreenPixels(pos);
+            RECT windowRect = Win32WindowHelper.GetSnappableWindow(absolutePos, out IntPtr windowHandle);
             if (windowRect.IsEmpty || windowRect.Width <= 0 || windowRect.Height <= 0)
             {
                 _snappedRect = RECT.Empty;
+                _snappedWindowHandle = IntPtr.Zero;
                 _isWindowSnapActive = false;
                 if (_highlightBorder != null) _highlightBorder.IsVisible = false;
                 if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
-                Cursor = new Cursor(StandardCursorType.Cross);
+                Cursor = CrossCursor;
                 return;
             }
             _snappedRect = windowRect;
+            _snappedWindowHandle = windowHandle;
             _isWindowSnapActive = true;
-            Cursor = new Cursor(StandardCursorType.Cross);
+            // FEATURE (snap hand cursor): a whole-window grab is one click away while the
+            // magnetic snap is offered, so the cursor switches from crosshair to a hand.
+            Cursor = HandCursor;
             if (_highlightBorder != null)
             {
                 _highlightBorder.IsVisible = true;
@@ -1170,7 +1347,7 @@ namespace snapvox.forms
                 return;
             }
             double scaling = Scaling;
-            var absolutePos = new POINT((int)(pos.X * scaling) + Position.X, (int)(pos.Y * scaling) + Position.Y);
+            var absolutePos = ToScreenPixels(pos);
             var word = index?.FindContaining(absolutePos);
             if (word == null)
             {
@@ -1198,7 +1375,7 @@ namespace snapvox.forms
             }
 
             double scaling = Scaling;
-            var absolutePos = new POINT((int)(pos.X * scaling) + Position.X, (int)(pos.Y * scaling) + Position.Y);
+            var absolutePos = ToScreenPixels(pos);
             var word = index?.FindContaining(absolutePos);
             if (word == null)
             {

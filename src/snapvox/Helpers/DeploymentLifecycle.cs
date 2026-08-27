@@ -139,13 +139,52 @@ internal static class DeploymentLifecycle
                 throw new Exception($"Conflicting software detected: {conflict}");
             }
 
-            await PerformFullHostCleanupAsync(progress, logger, "Pre-Install Cleanup", 5, 60, requireZeroFootprint: false, purgeUserArtifacts: false, ct).ConfigureAwait(false);
+            // ISSUE (upgrade data loss): every install/upgrade used to run the scorched-
+            // earth pre-install purge unconditionally, silently wiping the user's saved
+            // settings (snapvox.ini). An upgrade now asks what to do first:
+            //   Yes    - keep settings (backed up and restored around the purge)
+            //   No     - clean install (purge user artifacts too)
+            //   Cancel - abort the installation
+            bool upgradeDetected = DetectExistingInstallation();
+            bool keepUserSettings = false;
+            bool cleanWipeRequested = false;
+            if (upgradeDetected)
+            {
+                var upgradeChoice = StartupTaskHelper.ShowForegroundMessageBox(
+                    "An existing SnapVox installation was detected on this system.\r\n\r\n" +
+                    "Yes    - Upgrade and KEEP my settings (snapvox.ini)\r\n" +
+                    "No     - Clean install: wipe ALL settings and user artifacts\r\n" +
+                    "Cancel - Abort the installation",
+                    "SnapVox Upgrade",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question);
+                await logger.LogAsync("UPGRADE", "PROMPT", $"Existing install detected; user choice: {upgradeChoice}", ct).ConfigureAwait(false);
+                if (upgradeChoice == DialogResult.Cancel)
+                {
+                    await ReportAsync(progress, logger, 100, "ABORT", "CANCELLED", "Upgrade cancelled by user.", ct).ConfigureAwait(false);
+                    return 0;
+                }
+                keepUserSettings = upgradeChoice == DialogResult.Yes;
+                cleanWipeRequested = upgradeChoice == DialogResult.No;
+            }
 
-            await ReportAsync(progress, logger, 65, "DEPLOY", "PAYLOAD", "Extracting assets...", ct).ConfigureAwait(false);
-            await InstallFreshAsync(progress, logger, ct).ConfigureAwait(false);
+            string settingsBackupFolder = keepUserSettings ? await BackupUserSettingsAsync(logger, ct).ConfigureAwait(false) : null;
+            try
+            {
+                await PerformFullHostCleanupAsync(progress, logger, "Pre-Install Cleanup", 5, 60, requireZeroFootprint: false, purgeUserArtifacts: cleanWipeRequested, ct).ConfigureAwait(false);
 
-            await ReportAsync(progress, logger, 100, "SUCCESS", "COMPLETE", "Deployment finalized.", ct).ConfigureAwait(false);
-            await LaunchInstalledApplicationAsync();
+                await ReportAsync(progress, logger, 65, "DEPLOY", "PAYLOAD", "Extracting assets...", ct).ConfigureAwait(false);
+                await InstallFreshAsync(progress, logger, ct).ConfigureAwait(false);
+
+                if (settingsBackupFolder != null) await RestoreUserSettingsAsync(settingsBackupFolder, logger, ct).ConfigureAwait(false);
+
+                await ReportAsync(progress, logger, 100, "SUCCESS", "COMPLETE", "Deployment finalized.", ct).ConfigureAwait(false);
+                await LaunchInstalledApplicationAsync();
+            }
+            finally
+            {
+                CleanupSettingsBackup(settingsBackupFolder);
+            }
             return 0;
         }
         catch (Exception ex)
@@ -761,6 +800,113 @@ internal static class DeploymentLifecycle
     private static void QueueSelfCleanup(string dir)
     {
         Process.Start(new ProcessStartInfo { FileName = "cmd.exe", Arguments = $"/c ping 127.0.0.1 -n 3 > nul & rmdir /s /q \"{dir}\"", CreateNoWindow = true, UseShellExecute = false });
+    }
+
+    // ===== ISSUE (upgrade data loss) helpers ============================================
+    // Detection / backup / restore of user settings around the scorched-earth pre-install
+    // purge. Depending on layout the snapvox.ini lives next to the executable, in
+    // <InstallFolder>\Data\Settings (portable mode) or in %AppData%\snapvox - all of which
+    // are purge targets, so the file is copied out to %Temp% before the purge and copied
+    // back to its original location once InstallFreshAsync has finished.
+
+    private static bool DetectExistingInstallation()
+    {
+        try
+        {
+            foreach (string dir in DeploymentFootprint.GetVerificationTargets())
+            {
+                if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any()) return true;
+            }
+
+            foreach (var reg in DeploymentFootprint.GetUninstallRegistryPurgeTargets())
+            {
+                using var baseKey = RegistryKey.OpenBaseKey(reg.Hive, reg.View);
+                using var key = baseKey?.OpenSubKey(reg.SubKeyPath);
+                if (key != null) return true;
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
+    }
+
+    private static string GetSettingsBackupFolder() => Path.Combine(Path.GetTempPath(), "SnapVox_UpgradeSettings_" + Process.GetCurrentProcess().Id);
+
+    private static async Task<string> BackupUserSettingsAsync(DeploymentLogger logger, CancellationToken ct)
+    {
+        try
+        {
+            string[] candidates =
+            {
+                Path.Combine(DeploymentFootprint.InstallFolder, "SnapVox.ini"),
+                Path.Combine(DeploymentFootprint.InstallFolder, "snapvox.ini"),
+                Path.Combine(DeploymentFootprint.InstallFolder, @"Data\Settings\SnapVox.ini"),
+                Path.Combine(DeploymentFootprint.RoamingAppDataFolder, "SnapVox.ini"),
+                Path.Combine(DeploymentFootprint.RoamingAppDataFolder, "snapvox.ini")
+            };
+
+            string backupFolder = GetSettingsBackupFolder();
+            Directory.CreateDirectory(backupFolder);
+            var manifest = new List<string>();
+            int index = 0;
+            foreach (string candidate in candidates)
+            {
+                if (!File.Exists(candidate)) continue;
+                string backupFile = Path.Combine(backupFolder, "settings_" + index++ + ".ini");
+                File.Copy(candidate, backupFile, true);
+                manifest.Add(candidate + "\t" + backupFile);
+                await logger.LogAsync("UPGRADE", "BACKUP", candidate, ct).ConfigureAwait(false);
+            }
+
+            if (manifest.Count == 0)
+            {
+                try { Directory.Delete(backupFolder, true); } catch { }
+                return null;
+            }
+
+            File.WriteAllLines(Path.Combine(backupFolder, "manifest.txt"), manifest);
+            return backupFolder;
+        }
+        catch (Exception ex)
+        {
+            BootstrapDebug.Log("Settings backup failed: " + ex);
+            return null;
+        }
+    }
+
+    private static async Task RestoreUserSettingsAsync(string backupFolder, DeploymentLogger logger, CancellationToken ct)
+    {
+        try
+        {
+            string manifestPath = Path.Combine(backupFolder, "manifest.txt");
+            if (!File.Exists(manifestPath)) return;
+            foreach (string line in File.ReadAllLines(manifestPath))
+            {
+                string[] parts = line.Split('\t');
+                if (parts.Length != 2 || !File.Exists(parts[1])) continue;
+                string destination = parts[0];
+                Directory.CreateDirectory(Path.GetDirectoryName(destination));
+                File.Copy(parts[1], destination, true);
+                await logger.LogAsync("UPGRADE", "RESTORE", destination, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            BootstrapDebug.Log("Settings restore failed: " + ex);
+        }
+    }
+
+    private static void CleanupSettingsBackup(string backupFolder)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(backupFolder) && Directory.Exists(backupFolder)) Directory.Delete(backupFolder, true);
+        }
+        catch
+        {
+        }
     }
 
     private static DeploymentProgress CreateDeploymentProgress(string title, string log) => InstallHostContext.HeadlessInstallerActive ? null : new DeploymentProgress(title, log);

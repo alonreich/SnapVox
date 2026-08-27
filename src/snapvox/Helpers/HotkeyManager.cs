@@ -21,6 +21,11 @@ namespace snapvox.helpers
         private static Thread _msgLoopThread;
         private static volatile bool _running;
 
+        // Tracks which hotkeys failed to register during the last Start(), so the UI can tell the
+        // user (in plain English) when Windows or another program has taken the Print Screen key.
+        private static volatile string[] _lastFailedHotkeys = Array.Empty<string>();
+        private static volatile bool _registrationCompleted;
+
         private const int WM_HOTKEY = 0x0312;
         private const int WM_APP_EXIT = 0x8001;
         private const int WM_DESTROY = 0x0002;
@@ -128,6 +133,7 @@ namespace snapvox.helpers
                 return;
             }
 
+            _registrationCompleted = false;
             _running = true;
             _msgLoopThread = new Thread(MessageLoop) { IsBackground = true, Name = "HotkeyLoop" };
             _msgLoopThread.Start();
@@ -236,6 +242,26 @@ namespace snapvox.helpers
             HandleHotkey(id);
         }
 
+        /// <summary>True once the background thread finished registering all hotkeys for the current Start() call.</summary>
+        public static bool RegistrationCompleted => _registrationCompleted;
+
+        public static string[] GetLastFailedHotkeys() => _lastFailedHotkeys ?? Array.Empty<string>();
+
+        /// <summary>True when one of the hotkeys that failed to register uses the Print Screen key.</summary>
+        public static bool HasPrintScreenRegistrationFailure
+        {
+            get
+            {
+                var failed = _lastFailedHotkeys;
+                if (failed == null) return false;
+                foreach (var hotkey in failed)
+                {
+                    if (!string.IsNullOrEmpty(hotkey) && hotkey.IndexOf("PrintScreen", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                }
+                return false;
+            }
+        }
+
         private static void RegisterAll()
         {
             var cfg = IniConfig.GetIniSection<CoreConfiguration>();
@@ -247,10 +273,22 @@ namespace snapvox.helpers
             if (!RegisterOne(HOTKEY_LASTREGION, cfg.LastregionHotkey)) failures.Add(cfg.LastregionHotkey);
             if (!RegisterOne(HOTKEY_CLIPBOARD, cfg.ClipboardHotkey)) failures.Add(cfg.ClipboardHotkey);
 
+            _lastFailedHotkeys = failures.ToArray();
+            _registrationCompleted = true;
+
             if (failures.Count > 0)
             {
                 string msg = "Failed to register: " + string.Join(", ", failures);
-                ToastHelper.ShowToast("Hotkey Conflict", msg + ". Another app (like OneDrive or Windows) might be using them.");
+                if (HasPrintScreenRegistrationFailure)
+                    {
+                        // Windows (Snipping Tool / Snip & Sketch) or another program has taken the
+                        // Print Screen key - explain the real consequence in simple words.
+                        PrintScreenConflictHelper.ShowConflictToast();
+                    }
+                    else
+                    {
+                        ToastHelper.ShowToast("Hotkey Conflict", msg + ". Another app (like OneDrive or Windows) might be using them.");
+                    }
             }
         }
 

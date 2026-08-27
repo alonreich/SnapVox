@@ -14,7 +14,12 @@ namespace snapvox.foundation.core
 {
     public static class UiClipboard
     {
-        private static Func<string, Task> _setTextAsync;
+        // ISSUE_004: owner-aware registrations. Windows register themselves on open and unregister on
+        // close, so a closed window can never stay referenced by this static class (and silently
+        // swallow clipboard text writes). The most recently registered live handler wins.
+        private static readonly object _textHandlerLock = new object();
+        private static readonly System.Collections.Generic.List<(object Owner, Func<string, Task> SetTextAsync)> _textHandlers
+            = new System.Collections.Generic.List<(object, Func<string, Task>)>();
         private static Func<Avalonia.Input.Platform.IClipboard> _getClipboard;
 
         [DllImport("user32.dll", SetLastError = true)] private static extern bool OpenClipboard(IntPtr hWndNewOwner);
@@ -33,21 +38,83 @@ namespace snapvox.foundation.core
         private const uint CF_BITMAP = 2;
         private const uint CF_DIB = 8;
         private const uint GHND = 0x0042;
-        private const int ClipboardHistoryPromotionDelayMs = 400;
+        private const int DefaultClipboardHistoryPromotionDelayMs = 400;
         private const string SnapVoxEditorImageFormat = "SnapVox.ImageEditorSource";
         private static readonly byte[] SnapVoxEditorImageBytes = { 1 };
 
-        public static void Register(Func<string, Task> setTextAsync) => _setTextAsync = setTextAsync;
+        public static void Register(Func<string, Task> setTextAsync) => Register(null, setTextAsync);
+
+        public static void Register(object owner, Func<string, Task> setTextAsync)
+        {
+            if (setTextAsync == null) return;
+            lock (_textHandlerLock)
+            {
+                if (owner == null)
+                {
+                    // Legacy anonymous registration: replace everything.
+                    _textHandlers.Clear();
+                    _textHandlers.Add((null, setTextAsync));
+                    return;
+                }
+
+                for (int i = 0; i < _textHandlers.Count; i++)
+                {
+                    if (ReferenceEquals(_textHandlers[i].Owner, owner))
+                    {
+                        _textHandlers[i] = (owner, setTextAsync);
+                        return;
+                    }
+                }
+
+                _textHandlers.Add((owner, setTextAsync));
+            }
+        }
+
+        public static void Unregister(object owner)
+        {
+            if (owner == null) return;
+            lock (_textHandlerLock)
+            {
+                _textHandlers.RemoveAll(entry => ReferenceEquals(entry.Owner, owner));
+            }
+        }
+
         public static void RegisterGetter(Func<Avalonia.Input.Platform.IClipboard> getClipboard) => _getClipboard = getClipboard;
         public static Avalonia.Input.Platform.IClipboard GetClipboard() => _getClipboard?.Invoke();
 
         public static Task SetTextAsync(string text)
         {
-            if (string.IsNullOrEmpty(text) || _setTextAsync == null) return Task.CompletedTask;
+            if (string.IsNullOrEmpty(text)) return Task.CompletedTask;
+
+            Func<string, Task> handler;
+            lock (_textHandlerLock)
+            {
+                handler = _textHandlers.Count > 0 ? _textHandlers[_textHandlers.Count - 1].SetTextAsync : null;
+            }
+
+            if (handler == null)
+            {
+                // ISSUE_004: no more silent no-op - make the dropped write visible in the log.
+                LogHelper.GetLogger(typeof(UiClipboard)).Warn("SetTextAsync dropped text: no open window registered a clipboard handler.");
+                return Task.CompletedTask;
+            }
+
             return Dispatcher.UIThread.InvokeAsync(async () =>
             {
-                await _setTextAsync(text);
+                await handler(text);
             });
+        }
+
+        // ISSUE_006: the promotion delay is configurable (Core section of the INI) instead of a hardcoded sleep.
+        private static int GetClipboardHistoryPromotionDelayMs()
+        {
+            try
+            {
+                var core = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>();
+                if (core != null && core.ClipboardHistoryPromotionDelayMs >= 0) return core.ClipboardHistoryPromotionDelayMs;
+            }
+            catch { }
+            return DefaultClipboardHistoryPromotionDelayMs;
         }
 
         public static async Task SetFilePathThenImageAsync(string filePath, Image image, bool markSnapVoxEditorImage = false)
@@ -55,7 +122,8 @@ namespace snapvox.foundation.core
             if (!string.IsNullOrWhiteSpace(filePath))
             {
                 await SetTextAsync(Path.GetFullPath(filePath)).ConfigureAwait(false);
-                await Task.Delay(ClipboardHistoryPromotionDelayMs).ConfigureAwait(false);
+                int promotionDelayMs = GetClipboardHistoryPromotionDelayMs();
+                if (promotionDelayMs > 0) await Task.Delay(promotionDelayMs).ConfigureAwait(false);
             }
 
             await SetImageAsync(image, markSnapVoxEditorImage).ConfigureAwait(false);
@@ -123,9 +191,14 @@ namespace snapvox.foundation.core
 
         private static async Task<Image> TryGetAvaloniaClipboardImageAsync(Avalonia.Input.Platform.IClipboard clipboard)
         {
-            return await Dispatcher.UIThread.InvokeAsync(async () =>
+            string[] candidateFormats = null;
+            object[] candidateData = null;
+
+            await Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 var formats = await clipboard.GetFormatsAsync();
+                var fmtList = new System.Collections.Generic.List<string>();
+                var dataList = new System.Collections.Generic.List<object>();
                 foreach (string format in new[] { "PNG", "image/png", "JPEG", "JPG", "JFIF", "image/jpeg", "image/jpg", "Bitmap", "CF_DIB", "DeviceIndependentBitmap" })
                 {
                     if (!formats.Contains(format))
@@ -134,8 +207,30 @@ namespace snapvox.foundation.core
                     }
 
                     var data = await clipboard.GetDataAsync(format);
-                    var image = TryLoadImageFromData(data);
-                    if (image == null && data is byte[] dibBytes && (format.Contains("DIB", StringComparison.OrdinalIgnoreCase) || format.Contains("DeviceIndependentBitmap", StringComparison.OrdinalIgnoreCase)))
+                    if (data != null)
+                    {
+                        fmtList.Add(format);
+                        dataList.Add(data);
+                    }
+                }
+                candidateFormats = fmtList.ToArray();
+                candidateData = dataList.ToArray();
+            });
+
+            if (candidateFormats == null || candidateFormats.Length == 0)
+            {
+                return null;
+            }
+
+            string[] formatsCopy = candidateFormats;
+            object[] dataCopy = candidateData;
+
+            return await Task.Run(() =>
+            {
+                for (int i = 0; i < formatsCopy.Length; i++)
+                {
+                    var image = TryLoadImageFromData(dataCopy[i]);
+                    if (image == null && dataCopy[i] is byte[] dibBytes && (formatsCopy[i].Contains("DIB", StringComparison.OrdinalIgnoreCase) || formatsCopy[i].Contains("DeviceIndependentBitmap", StringComparison.OrdinalIgnoreCase)))
                     {
                         try
                         {
@@ -153,7 +248,7 @@ namespace snapvox.foundation.core
                 }
 
                 return null;
-            });
+            }).ConfigureAwait(false);
         }
 
         private static Image TryLoadImageFromData(object data)
@@ -439,7 +534,7 @@ namespace snapvox.foundation.core
                             }
                             finally { CloseClipboard(); }
                         }
-                        await Task.Delay(50);
+                        await Task.Delay(50).ConfigureAwait(false);
                     }
                     if (success) return;
                 }

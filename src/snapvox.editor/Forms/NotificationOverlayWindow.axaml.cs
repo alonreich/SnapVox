@@ -101,12 +101,25 @@ namespace snapvox.editor.forms
                     var blueBrush = new SolidColorBrush(Color.Parse("#007ACC"));
                     IBrush[] colors = { whiteBrush, redBrush, blueBrush };
 
+                    // FEATURE (blink duration setting): the blink cycle length is user
+                    // configurable via CoreConfiguration.NotificationOverlayDurationMs
+                    // (INI backed, Settings > General). Default 1000ms keeps the original
+                    // 4 x 250ms cadence; the total is spread evenly over the 4 colour
+                    // changes so the blink rhythm stays constant at any duration.
+                    int blinkTotalMs = 1000;
+                    try
+                    {
+                        var blinkConfig = snapvox.foundation.IniFile.IniConfig.GetIniSection<snapvox.foundation.core.CoreConfiguration>();
+                        if (blinkConfig != null) blinkTotalMs = Math.Clamp(blinkConfig.NotificationOverlayDurationMs, 250, 10000);
+                    }
+                    catch { }
+                    int blinkStepDelay = Math.Max(50, blinkTotalMs / 4);
                     for (int i = 0; i < 4; i++)
                     {
                         IBrush foreground = colors[i % 3];
                         if (textBlock != null) textBlock.Foreground = foreground;
                         if (icon != null) icon.Foreground = foreground;
-                        await Task.Delay(250);
+                        await Task.Delay(blinkStepDelay);
                     }
                     window.Close();
                 }

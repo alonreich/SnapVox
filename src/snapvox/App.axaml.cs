@@ -107,6 +107,9 @@ namespace snapvox
                         await InitializeTrayIconAsync(); 
                         HotkeyManager.Start(); 
                         log.Info("Tray Icon and Hotkeys initialized successfully.");
+                        // Boot check: if Windows (Snipping Tool / Snip &amp; Sketch) or another program has taken
+                        // the Print Screen key, tell the user right away in very simple English.
+                        _ = PrintScreenConflictHelper.NotifyOnBootAsync();
                     }
                     foreach (var file in options.Files)
                     {

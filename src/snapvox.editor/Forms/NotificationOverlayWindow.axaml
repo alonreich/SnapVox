@@ -29,13 +29,16 @@
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            FontSize="28"/>
+                <!-- ISSUE_010: wrap long messages and cap width so the popup stays readable and on-screen. -->
                 <TextBlock Name="NotificationText"
                            Foreground="White"
                            FontSize="22"
                            FontWeight="SemiBold"
+                           MaxWidth="420"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
-                           TextWrapping="NoWrap"/>
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"/>
             </StackPanel>
         </Viewbox>
     </Border>

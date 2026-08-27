@@ -3,70 +3,97 @@
         x:Class="snapvox.forms.DeploymentProgressWindow"
         Title="SnapVox Setup"
         Width="720" Height="480"
+        MinWidth="640" MinHeight="420"
         WindowStartupLocation="CenterScreen"
         SystemDecorations="Full"
-        Background="#1E1E1E"
+        Background="{DynamicResource SnapVoxCanvasBrush}"
         Topmost="True"
         ShowInTaskbar="True"
-        CanResize="False">
-    <Border Background="#2D2D30" CornerRadius="8" BorderBrush="#007ACC" BorderThickness="2" Margin="8">
-        <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto,Auto">
+        CanResize="True">
+    <!-- ISSUE_012: theme is set once at the Application level (App.axaml). -->
+    <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxAccentBrush}" BorderThickness="2" Margin="8">
+        <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto">
             <TextBlock Name="TitleText"
                        Grid.Row="0"
                        Text="Installing SnapVox"
-                       Foreground="#007ACC"
-                       FontSize="20"
+                       Foreground="{DynamicResource SnapVoxAccentBrush}"
+                       FontSize="{DynamicResource SnapVoxDeploymentTitleFontSize}"
                        FontWeight="Bold"
                        HorizontalAlignment="Center"
                        Margin="0,0,0,8"/>
             <TextBlock Name="LogPathText"
                        Grid.Row="1"
                        Text=""
-                       Foreground="#888888"
+                       Foreground="{DynamicResource SnapVoxDimTextBrush}"
                        FontSize="11"
                        TextWrapping="Wrap"
                        Margin="0,0,0,8"/>
-            <ListBox Name="LogList"
-                     Grid.Row="2"
-                     Background="#1E1E1E"
-                     BorderThickness="0"
-                     Foreground="#C0CAF5"
-                     FontFamily="Consolas,Courier New,monospace"
-                     FontSize="12"
-                     Padding="8"/>
-            <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,12,0,4">
+            <!-- ISSUE_015: dedicated error banner shown when deployment fails. -->
+            <Border Name="ErrorBanner"
+                    Grid.Row="2"
+                    Background="#55FF0000"
+                    BorderBrush="{DynamicResource SnapVoxDestructiveBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,6"
+                    Margin="0,0,0,8"
+                    IsVisible="False">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="⚠" Foreground="{DynamicResource SnapVoxDestructiveHoverColor}" FontSize="14" VerticalAlignment="Center"/>
+                    <TextBlock Name="ErrorText" Text="Deployment failed." Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+            <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
                 <TextBlock Name="PhaseText"
                            Text="Initializing..."
-                           Foreground="#BBBBBB"
+                           Foreground="{DynamicResource SnapVoxSecondaryTextBrush}"
                            FontSize="12"
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis"/>
                 <TextBlock Name="PercentageText"
                            Grid.Column="1"
                            Text="0%"
-                           Foreground="White"
+                           Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
                            FontWeight="Bold"
                            VerticalAlignment="Center"
                            Margin="12,0,0,0"/>
             </Grid>
+            <ListBox Name="LogList"
+                     Grid.Row="4"
+                     Background="{DynamicResource SnapVoxCanvasColor}"
+                     BorderThickness="0"
+                     Foreground="{DynamicResource SnapVoxLogTextBrush}"
+                     FontFamily="Consolas,Courier New,monospace"
+                     FontSize="12"
+                     Padding="8"/>
             <ProgressBar Name="ProgressBar"
-                         Grid.Row="4"
+                         Grid.Row="5"
                          Height="16"
                          Minimum="0"
                          Maximum="100"
                          Value="0"
-                         Foreground="#007ACC"
-                         Background="#3E3E42"
-                         Margin="0,0,0,12"/>
+                         Foreground="{DynamicResource SnapVoxAccentBrush}"
+                         Background="{DynamicResource SnapVoxActionButtonBrush}"
+                         Margin="0,12,0,12"/>
+            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+                <!-- ISSUE_015: cancel button lets users abort a stalled install. -->
+                <Button Name="CancelButton"
+                        Content="Cancel"
+                        Width="120"
+                        Height="32"
+                        Background="{DynamicResource SnapVoxSecondaryButtonBrush}"
+                        Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
+                        Click="OnCancelClick"/>
+            </StackPanel>
             <Button Name="FinishButton"
-                    Grid.Row="4"
+                    Grid.Row="7"
                     Content="Finish"
                     HorizontalAlignment="Center"
                     Width="120"
                     Height="32"
                     IsVisible="False"
-                    Background="#007ACC"
-                    Foreground="White"
+                    Background="{DynamicResource SnapVoxAccentBrush}"
+                    Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
                     FontSize="14"
                     FontWeight="Bold"
                     Click="OnFinishClick"/>

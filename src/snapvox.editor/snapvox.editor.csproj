@@ -21,6 +21,7 @@
   <ItemGroup>
     <AvaloniaResource Include="..\..\icons\*.svg" Link="Icons\%(Filename)%(Extension)" />
     <AvaloniaResource Include="Drawing\Emoji\*.ttf" />
+    <AvaloniaResource Include="Themes\DesignSystem.axaml" />
   </ItemGroup>
 
   <ItemGroup>

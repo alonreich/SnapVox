@@ -138,8 +138,14 @@ namespace snapvox.native
             return IsProcessElevated(pid);
         }
 
-        public static RECT GetRootWindowRect(POINT point)
+        public static RECT GetRootWindowRect(POINT point) => GetSnappableWindow(point, out _);
+
+        // Resolves the snappable top-level window at the given point and reports both its
+        // visible (DWM extended frame) bounds and its handle, so callers can capture that
+        // specific window exclusively even when other windows cover it.
+        public static RECT GetSnappableWindow(POINT point, out IntPtr rootWindowHandle)
         {
+            rootWindowHandle = IntPtr.Zero;
             IntPtr hWnd = GetRootWindowHandle(point);
             if (hWnd == IntPtr.Zero) return RECT.Empty;
 
@@ -157,6 +163,7 @@ namespace snapvox.native
                 int virtualH = GetSystemMetrics(79);
                 if (rect.Width >= virtualW && rect.Height >= virtualH) return RECT.Empty;
 
+                rootWindowHandle = hWnd;
                 return rect;
             }
             return RECT.Empty;

@@ -20,8 +20,9 @@ namespace snapvox.editor.forms
         public CustomColorPickerWindow(Color initialColor)
         {
             InitializeComponent();
-            var picker = this.FindControl<ColorPicker>("Picker");
-            if (picker != null) picker.Color = initialColor;
+            SelectedColor = initialColor;
+            // ISSUE_016: DataContext enables the two-way Color binding declared in XAML.
+            DataContext = this;
         }
 
         private void OnOkClick(object sender, RoutedEventArgs e)

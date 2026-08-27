@@ -3,8 +3,7 @@
         xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Avalonia.Svg.Skia"
         x:Class="snapvox.editor.forms.ImageEditorWindow"
         Title="SnapVox Editor"
-        Background="#1E1E1E"
-        RequestedThemeVariant="Dark"
+        Background="{DynamicResource SnapVoxCanvasBrush}"
         ShowInTaskbar="True"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="-1"
@@ -14,21 +13,23 @@
         <VisualBrush x:Key="CheckerboardBrush" TileMode="Tile" SourceRect="0,0,20,20" DestinationRect="0,0,20,20">
             <VisualBrush.Visual>
                 <Canvas Width="20" Height="20">
-                    <Rectangle Width="10" Height="10" Fill="#333333" />
-                    <Rectangle Width="10" Height="10" Fill="#333333" Canvas.Left="10" Canvas.Top="10" />
-                    <Rectangle Width="10" Height="10" Fill="#3A3A3A" Canvas.Left="10" />
-                    <Rectangle Width="10" Height="10" Fill="#3A3A3A" Canvas.Top="10" />
+                    <Rectangle Width="10" Height="10" Fill="{DynamicResource SnapVoxCheckerDarkColor}" />
+                    <Rectangle Width="10" Height="10" Fill="{DynamicResource SnapVoxCheckerDarkColor}" Canvas.Left="10" Canvas.Top="10" />
+                    <Rectangle Width="10" Height="10" Fill="{DynamicResource SnapVoxCheckerLightColor}" Canvas.Left="10" />
+                    <Rectangle Width="10" Height="10" Fill="{DynamicResource SnapVoxCheckerLightColor}" Canvas.Top="10" />
                 </Canvas>
             </VisualBrush.Visual>
         </VisualBrush>
     </Window.Resources>
 
+    <!-- ISSUE_002: All editor styles consolidated into a single block. -->
     <Window.Styles>
         <Style Selector="Button.toolbar">
             <Setter Property="Width" Value="40" />
             <Setter Property="Height" Value="40" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#2D2D30" />
+            <!-- ISSUE_005: high-contrast toolbar text (icons inherit Foreground) -->
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextColor}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="CornerRadius" Value="4" />
@@ -44,8 +45,8 @@
         <Style Selector="Button.action">
             <Setter Property="Width" Value="40" />
             <Setter Property="Height" Value="40" />
-            <Setter Property="Background" Value="#3E3E42" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxActionButtonBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
@@ -75,34 +76,55 @@
             <Setter Property="BoxShadow" Value="0 1 2 0 #AA000000" />
         </Style>
         <Style Selector="Button.action:hover /template/ Border#ActionBorder">
-            <Setter Property="Background" Value="#757575" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverColor}" />
         </Style>
         <Style Selector="Button.context-delete">
-            <Setter Property="Background" Value="#A51D2D" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveBrush}" />
         </Style>
         <Style Selector="Button.context-delete:hover /template/ Border#ActionBorder">
-            <Setter Property="Background" Value="#C42B3D" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveHoverColor}" />
         </Style>
         <Style Selector="Button.context-apply">
-            <Setter Property="Background" Value="#107C10" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxSuccessBrush}" />
         </Style>
         <Style Selector="Button.context-apply:hover /template/ Border#ActionBorder">
             <Setter Property="Background" Value="#1F8B24" />
         </Style>
         <Style Selector="Button.toolbar:hover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#757575" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverColor}" />
         </Style>
         <Style Selector="Button.toolbar:pressed /template/ ContentPresenter">
-            <Setter Property="Background" Value="#5A5A5A" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxPressedColor}" />
         </Style>
         <Style Selector="Button.toolbar.selected /template/ ContentPresenter">
-            <Setter Property="Background" Value="#007ACC" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxAccentBrush}" />
         </Style>
         <Style Selector="Button.toolbar.selected">
-            <Setter Property="Background" Value="#007ACC" />
-            <Setter Property="Foreground" Value="#FFFFFF" />
-            <Setter Property="BorderBrush" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxAccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
             <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <!-- ISSUE_003: Destructive "Clear All" button stands out clearly in red. -->
+        <Style Selector="Button.destructive">
+            <Setter Property="Background" Value="#33A51D2D" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxDestructiveBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.1" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.destructive:hover">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveBrush}" />
+        </Style>
+        <Style Selector="Button.destructive:pressed">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveHoverColor}" />
         </Style>
         <Style Selector="Button.color-preset">
             <Setter Property="Width" Value="28" />
@@ -119,7 +141,7 @@
             </Setter>
         </Style>
         <Style Selector="Button.color-preset.selected">
-            <Setter Property="BorderBrush" Value="White" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
             <Setter Property="BorderThickness" Value="2" />
         </Style>
         <Style Selector="Rectangle.selection-indicator">
@@ -153,48 +175,138 @@
             <Setter Property="CornerRadius" Value="4" />
         </Style>
         <Style Selector="Button.thickness.selected">
-            <Setter Property="BorderBrush" Value="White" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
             <Setter Property="BorderThickness" Value="2" />
         </Style>
         <Style Selector="Slider.pixelate-strength">
             <Setter Property="Height" Value="44" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Foreground" Value="#005A9E" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxAccentDarkBrush}" />
             <Setter Property="Background" Value="#4A4A4A" />
         </Style>
         <Style Selector="Slider.pixelate-strength /template/ Thumb">
             <Setter Property="Cursor" Value="Hand" />
         </Style>
+        <!-- ISSUE_013: zoom-percent behaves like a real interactive button -->
+        <Style Selector="Button.zoom-text">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxToolbarTextBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.1" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.zoom-text:hover">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverColor}" />
+        </Style>
+        <Style Selector="Button.zoom-text:pressed">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxPressedColor}" />
+        </Style>
+        <!-- ISSUE_018: single clean emoji button style, no clash with .toolbar -->
+        <Style Selector="Button.emoji-btn">
+            <Setter Property="FontFamily" Value="avares://snapvox.editor/Drawing/Emoji/#Twemoji Mozilla"/>
+            <Setter Property="FontSize" Value="32"/>
+            <Setter Property="Width" Value="50"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.08" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.emoji-btn:hover">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverColor}" />
+        </Style>
+        <Style Selector="Button.emoji-btn:pressed">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxPressedColor}" />
+        </Style>
+        <!-- Counter annotation styles (merged from the former second style block) -->
+        <Style Selector="Border.counter">
+            <Setter Property="Background" Value="Red" />
+            <Setter Property="CornerRadius" Value="17.5" />
+            <Setter Property="Width" Value="35" />
+            <Setter Property="Height" Value="35" />
+        </Style>
+        <Style Selector="Border.counter TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
+            <Setter Property="FontSize" Value="21" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+        <!-- IDEA_008 (Ink Alive): juicy stamp-in / bloom micro-animations for new objects. -->
+        <Style Selector="Control.ink-stamp">
+            <Style.Animations>
+                <Animation Duration="0:0:0.28" FillMode="Forward">
+                    <KeyFrame KeyTime="0:0:0">
+                        <Setter Property="Opacity" Value="0"/>
+                        <Setter Property="RenderTransform" Value="scale(0.6)"/>
+                    </KeyFrame>
+                    <KeyFrame KeyTime="0:0:0.18">
+                        <Setter Property="Opacity" Value="1"/>
+                        <Setter Property="RenderTransform" Value="scale(1.12)"/>
+                    </KeyFrame>
+                    <KeyFrame KeyTime="0:0:0.28">
+                        <Setter Property="Opacity" Value="1"/>
+                        <Setter Property="RenderTransform" Value="scale(1)"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Control.ink-dissolve">
+            <Style.Animations>
+                <Animation Duration="0:0:0.2" FillMode="Forward">
+                    <KeyFrame KeyTime="0:0:0">
+                        <Setter Property="Opacity" Value="1"/>
+                        <Setter Property="RenderTransform" Value="scale(1)"/>
+                    </KeyFrame>
+                    <KeyFrame KeyTime="0:0:0.2">
+                        <Setter Property="Opacity" Value="0"/>
+                        <Setter Property="RenderTransform" Value="scale(0.8)"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
     </Window.Styles>
 
     <Panel>
     <DockPanel>
-        <Grid DockPanel.Dock="Top" Name="TitleBar" Height="32" ColumnDefinitions="Auto,*,Auto" Background="#2D2D30" IsHitTestVisible="False">
+        <Grid DockPanel.Dock="Top" Name="TitleBar" Height="32" ColumnDefinitions="Auto,*,Auto" Background="{DynamicResource SnapVoxPanelDarkBrush}" IsHitTestVisible="False">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
                 <Image Source="avares://SnapVox/SnapVox.ico" Width="16" Height="16" Margin="0,0,8,0"/>
-                <TextBlock Text="SnapVox Editor" Foreground="#AAAAAA" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="SnapVox Editor" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="{DynamicResource SnapVoxTitleFontSize}" VerticalAlignment="Center"/>
             </StackPanel>
-            <TextBlock Name="TitleDimensionText" Grid.Column="1" Text="0 x 0" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFFFFF" FontSize="12" FontWeight="SemiBold"/>
+            <TextBlock Name="TitleDimensionText" Grid.Column="1" Text="0 x 0" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" FontSize="{DynamicResource SnapVoxTitleFontSize}" FontWeight="SemiBold"/>
             <Border Grid.Column="2" Width="140" IsHitTestVisible="False"/>
         </Grid>
 
-        <Border DockPanel.Dock="Top" Background="#808080" Height="60" BorderBrush="#555555" BorderThickness="0,0,0,1">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Name="TopToolbarStackPanel" Grid.Column="0" Orientation="Horizontal" Margin="10,0" Spacing="7" VerticalAlignment="Center">
                     <Button Classes="toolbar" Name="DownloadButton" ToolTip.Tip="Save image (Ctrl+S)" Click="OnDownloadClick" IsDefault="False">
                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                             <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/download.svg" />
-                            <TextBlock Name="SaveHintLabel" Text="Save" VerticalAlignment="Center" FontSize="11" Foreground="White" IsVisible="False" />
+                            <TextBlock Name="SaveHintLabel" Text="Save" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" IsVisible="False" />
                         </StackPanel>
                     </Button>
                     <Button Classes="toolbar" Name="CopyButton" ToolTip.Tip="Copy image to clipboard (Ctrl+C)" Click="OnCopyClick" IsDefault="False">
                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                             <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/copy.svg" />
-                            <TextBlock Name="CopyHintLabel" Text="Copy" VerticalAlignment="Center" FontSize="11" Foreground="White" IsVisible="False" />
+                            <TextBlock Name="CopyHintLabel" Text="Copy" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" IsVisible="False" />
                         </StackPanel>
                     </Button>
                     
-                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="3,0" />
                     
                     <Button Classes="toolbar" Name="UndoButton" ToolTip.Tip="Undo (Ctrl+Z)" Click="OnUndoClick" IsEnabled="False">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/undo.svg" />
@@ -203,7 +315,7 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/redo.svg" />
                     </Button>
                     
-                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="3,0" />
 
                     <Button Classes="toolbar" Name="RotateCwButton" ToolTip.Tip="Rotate Clockwise" Click="OnRotateCwClick">
                         <svg:Svg Width="30" Height="30" Path="avares://snapvox.editor/Icons/rotate_clock-wise.svg" />
@@ -212,12 +324,12 @@
                         <svg:Svg Width="30" Height="30" Path="avares://snapvox.editor/Icons/rotate_counter_clock-wise.svg" />
                     </Button>
 
-                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="3,0" />
                     <Button Classes="toolbar" Name="DeleteButton" ToolTip.Tip="Delete Selected Object (Del)" Click="OnDeleteClick" IsEnabled="False">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/delete.svg" />
                     </Button>
 
-                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="3,0" />
                     <Button Classes="toolbar" Name="CropTool" ToolTip.Tip="Crop region. Esc exits this tool." Click="OnToolClick" Tag="Crop">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/crop.svg" />
                     </Button>
@@ -225,24 +337,25 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/resize.svg" />
                     </Button>
 
-                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="3,0" />
+                    <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="3,0" />
                     <Button Classes="toolbar" Name="OcrButton" ToolTip.Tip="Copy text, save text file, and open Notepad" Click="OnOcrClick" Width="NaN" Padding="5,0">
                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                             <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/ocr.svg" />
-                            <TextBlock Name="OcrButtonText" Text="OCR Text Extraction" VerticalAlignment="Center" FontSize="11" Foreground="White" />
+                            <TextBlock Name="OcrButtonText" Text="OCR Text Extraction" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                         </StackPanel>
                     </Button>
-                    <Button Classes="toolbar" Name="ClearAllButton" ToolTip.Tip="Clear all marks only" Click="OnClearAllClick" Background="#22FF0000" Width="NaN" Padding="8,0">
+                    <!-- ISSUE_003: destructive "Clear All" uses dedicated warning style -->
+                    <Button Classes="destructive" Name="ClearAllButton" ToolTip.Tip="⚠ Clears ALL marks off the canvas" Click="OnClearAllClick" Width="NaN" Padding="8,0">
                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                             <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/nuclear-sharp.svg" />
-                            <TextBlock Text="Clear All" VerticalAlignment="Center" FontSize="11" Foreground="White" />
+                            <TextBlock Text="Clear All" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <Border Name="BottomToolbarBorder" DockPanel.Dock="Bottom" Background="#808080" Height="60" BorderBrush="#555555" BorderThickness="0,1,0,0">
+        <Border Name="BottomToolbarBorder" DockPanel.Dock="Bottom" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="*,Auto,*">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0" Spacing="0" VerticalAlignment="Center" HorizontalAlignment="Left">
                     <StackPanel Name="ColorPresetsPanel" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
@@ -254,7 +367,7 @@
                         <Button Classes="color-preset" Background="#FFFFFF" Click="OnColorSelectClick" Tag="#FFFFFF" />
                     </StackPanel>
 
-                    <Rectangle Width="1" Height="30" Fill="#555555" Margin="5,0" />
+                    <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="5,0" />
                     
                     <Button Name="CustomColorBtn" Width="118" Height="40" VerticalAlignment="Center" Cursor="Hand" Padding="8,0" ToolTip.Tip="Current color">
                         <Button.Flyout>
@@ -268,7 +381,7 @@
                                         </StackPanel>
                                     </Button>
                                     <Grid ColumnDefinitions="*,*">
-                                        <Button Grid.Column="0" Content="OK" Click="OnColorConfirmClick" Margin="0,0,5,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#007ACC" Foreground="White"/>
+                                        <Button Grid.Column="0" Content="OK" Click="OnColorConfirmClick" Margin="0,0,5,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
                                         <Button Grid.Column="1" Content="Cancel" Click="OnColorCancelClick" Margin="5,0,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
                                     </Grid>
                                 </StackPanel>
@@ -276,65 +389,64 @@
                         </Button.Flyout>
                         <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                             <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/custom-color.svg" />
-                            <Border Name="CurrentColorPreview" Width="24" Height="24" CornerRadius="3" Background="#007ACC" BorderBrush="White" BorderThickness="1"/>
-                            <TextBlock Name="CurrentColorHex" Text="#007ACC" VerticalAlignment="Center" FontSize="11" Foreground="White" />
+                            <Border Name="CurrentColorPreview" Width="24" Height="24" CornerRadius="3" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="1"/>
+                            <TextBlock Name="CurrentColorHex" Text="#007ACC" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                         </StackPanel>
                     </Button>
 
-                    <Border Width="25" />
-
-                    <Button Classes="toolbar" Name="FillToggleBtn" ToolTip.Tip="Toggle Shape Fill" Click="OnFillToggleClick" VerticalAlignment="Center" Width="NaN" Padding="10,0">
+                    <!-- ISSUE_020: replaced <Border Width="25"/> spacer with margin on next sibling -->
+                    <Button Classes="toolbar" Name="FillToggleBtn" ToolTip.Tip="Toggle Shape Fill" Click="OnFillToggleClick" VerticalAlignment="Center" Width="NaN" Padding="10,0" Margin="25,0,0,0">
                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                             <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/fill.svg" />
-                            <TextBlock Name="FillToggleText" Text="Fill: Off" VerticalAlignment="Center" FontSize="12" Foreground="White" />
+                            <TextBlock Name="FillToggleText" Text="Fill: Off" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" />
                         </StackPanel>
                     </Button>
 
                     <Button Classes="toolbar" Name="ResetCounterBtn" ToolTip.Tip="Reset Counter to 1" Click="OnCounterResetClick" VerticalAlignment="Center" Width="NaN" Padding="10,0" IsVisible="False">
                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                             <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/counter.svg" />
-                            <TextBlock Text="Reset Counter" VerticalAlignment="Center" FontSize="12" Foreground="White" />
+                            <TextBlock Text="Reset Counter" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" />
                         </StackPanel>
                     </Button>
                     <StackPanel Name="CounterAdjustPanel" Orientation="Vertical" Spacing="2" VerticalAlignment="Center" IsVisible="False" Margin="5,0,0,0">
                         <Button Classes="toolbar" Name="CounterUpBtn" ToolTip.Tip="Increment Selected Counter" Click="OnCounterUpClick" Width="20" Height="14" Padding="0" Margin="0">
-                            <TextBlock Text="▲" FontSize="8" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBlock Text="▲" FontSize="8" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Button>
                         <Button Classes="toolbar" Name="CounterDownBtn" ToolTip.Tip="Decrement Selected Counter" Click="OnCounterDownClick" Width="20" Height="14" Padding="0" Margin="0">
-                            <TextBlock Text="▼" FontSize="8" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBlock Text="▼" FontSize="8" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Button>
                     </StackPanel>
 
-                    <Border Width="25" />
-
-                    <StackPanel Name="ThicknessPanel" Orientation="Horizontal" Spacing="2" Margin="0" VerticalAlignment="Center">
-                        <Rectangle Width="1" Height="30" Fill="#555555" Margin="0,0,5,0" />
+                    <!-- ISSUE_020: replaced second <Border Width="25"/> spacer with margin -->
+                    <StackPanel Name="ThicknessPanel" Orientation="Horizontal" Spacing="2" Margin="25,0,0,0" VerticalAlignment="Center">
+                        <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,0,5,0" />
                         <StackPanel Name="ThicknessChoicesPanel" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Name="ThicknessLabel" Text="Line size" VerticalAlignment="Center" Foreground="#2D2D30" FontSize="11" FontWeight="SemiBold" Margin="0,0,6,0" />
+                            <!-- ISSUE_005: high-contrast label + thickness lines -->
+                            <TextBlock Name="ThicknessLabel" Text="Line size" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" Margin="0,0,6,0" />
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="1" ToolTip.Tip="1px">
-                                <Rectangle Width="1" Height="20" Fill="#2D2D30"/>
+                                <Rectangle Width="1" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                             </Button>
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="2" ToolTip.Tip="2px">
-                                <Rectangle Width="2" Height="20" Fill="#2D2D30"/>
+                                <Rectangle Width="2" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                             </Button>
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="3" ToolTip.Tip="3px">
-                                <Rectangle Width="3" Height="20" Fill="#2D2D30"/>
+                                <Rectangle Width="3" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                             </Button>
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="5" ToolTip.Tip="5px">
-                                <Rectangle Width="5" Height="20" Fill="#2D2D30"/>
+                                <Rectangle Width="5" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                             </Button>
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="8" ToolTip.Tip="8px">
-                                 <Rectangle Width="8" Height="20" Fill="#2D2D30"/>
+                                 <Rectangle Width="8" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                             </Button>
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="12" ToolTip.Tip="12px">
-                                 <Rectangle Width="12" Height="20" Fill="#2D2D30"/>
+                                 <Rectangle Width="12" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                             </Button>
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="16" ToolTip.Tip="16px">
-                                 <Rectangle Width="16" Height="20" Fill="#2D2D30"/>
+                                 <Rectangle Width="16" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                             </Button>
                         </StackPanel>
                         <StackPanel Name="PixelateToolbarSection" Orientation="Horizontal" Spacing="8" IsVisible="False" VerticalAlignment="Center">
-                            <TextBlock Text="Pixelate" VerticalAlignment="Center" Foreground="#2D2D30" FontSize="11" FontWeight="SemiBold" Margin="0,0,2,0" />
+                            <TextBlock Text="Pixelate" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" Margin="0,0,2,0" />
                             <Slider Name="InlinePixelateSlider"
                                     Classes="pixelate-strength"
                                     Orientation="Horizontal"
@@ -342,7 +454,7 @@
                                     Maximum="29"
                                     Width="170"
                                     ToolTip.Tip="Pixelization strength" />
-                            <TextBlock Name="PixelatePercentText" Text="0%" Width="34" VerticalAlignment="Center" Foreground="#2D2D30" FontSize="11" FontWeight="SemiBold" TextAlignment="Right" />
+                            <TextBlock Name="PixelatePercentText" Text="0%" Width="34" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" TextAlignment="Right" />
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>
@@ -365,7 +477,8 @@
                         <Button Classes="toolbar" Click="OnZoomInClick" ToolTip.Tip="Zoom In">
                             <TextBlock Text="+" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
-                        <TextBlock Name="ZoomText" Text="100%" VerticalAlignment="Center" Foreground="#2D2D30" FontSize="12" Width="40" TextAlignment="Center" Cursor="Hand" ToolTip.Tip="Reset zoom to 100%" PointerPressed="OnResetZoomClick"/>
+                        <!-- ISSUE_013: zoom-percent is now a real Button with hover/press feedback -->
+                        <Button Classes="zoom-text" Name="ZoomText" Content="100%" ToolTip.Tip="Reset zoom to 100%" Click="OnZoomResetButtonClick" />
                         <Button Classes="toolbar" Click="OnZoomOutClick" ToolTip.Tip="Zoom Out">
                             <TextBlock Text="−" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
@@ -374,7 +487,7 @@
             </Grid>
         </Border>
 
-        <Border DockPanel.Dock="Left" Background="#808080" Width="60" BorderBrush="#555555" BorderThickness="0,0,1,0">
+        <Border DockPanel.Dock="Left" Background="{DynamicResource SnapVoxToolbarBrush}" Width="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,0,1,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Name="LeftToolBar" Orientation="Vertical" Margin="0,10" HorizontalAlignment="Center" Spacing="5">
                     <Button Classes="toolbar" Name="ArrowTool" ToolTip.Tip="Arrow (A). Esc exits this tool." Click="OnToolClick" Tag="Arrow">
@@ -393,7 +506,7 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/pencil.svg" />
                     </Button>
                     
-                    <Rectangle Width="30" Height="1" Fill="#555555" Margin="0,3" />
+                    <Rectangle Width="30" Height="1" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,3" />
                     
                     <Button Classes="toolbar" Name="HighlightTool" ToolTip.Tip="Highlight (H). Esc exits this tool." Click="OnToolClick" Tag="Highlight">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/highlight.svg" />
@@ -402,7 +515,7 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/pixelite.svg" />
                     </Button>
 
-                    <Rectangle Width="30" Height="1" Fill="#555555" Margin="0,3" />
+                    <Rectangle Width="30" Height="1" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,3" />
                     
                     <Button Classes="toolbar" Name="TextTool" ToolTip.Tip="Text (T). Esc exits this tool." Click="OnToolClick" Tag="Text">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/text.svg" />
@@ -414,118 +527,23 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/emoji.svg" />
                         <Button.Flyout>
                             <Flyout Placement="Right">
+                                <!-- ISSUE_004: Virtualized emoji grid built from a list, only visible items realize. -->
                                 <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
-                                    <UniformGrid Columns="8" Width="440">
-                                        <UniformGrid.Styles>
-                                            <Style Selector="Button.emoji-btn">
-                                                <Setter Property="FontFamily" Value="avares://snapvox.editor/Drawing/Emoji/#Twemoji Mozilla"/>
-                                                <Setter Property="FontSize" Value="32"/>
-                                                <Setter Property="Width" Value="50"/>
-                                                <Setter Property="Height" Value="50"/>
-                                                <Setter Property="Margin" Value="2"/>
-                                            </Style>
-                                        </UniformGrid.Styles>
-                                        <Button Classes="toolbar emoji-btn" Content="😀" Click="OnEmojiSelectClick" Tag="😀" />
-                                        <Button Classes="toolbar emoji-btn" Content="😁" Click="OnEmojiSelectClick" Tag="😁" />
-                                        <Button Classes="toolbar emoji-btn" Content="😂" Click="OnEmojiSelectClick" Tag="😂" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤣" Click="OnEmojiSelectClick" Tag="🤣" />
-                                        <Button Classes="toolbar emoji-btn" Content="😉" Click="OnEmojiSelectClick" Tag="😉" />
-                                        <Button Classes="toolbar emoji-btn" Content="😊" Click="OnEmojiSelectClick" Tag="😊" />
-                                        <Button Classes="toolbar emoji-btn" Content="😍" Click="OnEmojiSelectClick" Tag="😍" />
-                                        <Button Classes="toolbar emoji-btn" Content="😘" Click="OnEmojiSelectClick" Tag="😘" />
-                                        <Button Classes="toolbar emoji-btn" Content="😜" Click="OnEmojiSelectClick" Tag="😜" />
-                                        <Button Classes="toolbar emoji-btn" Content="😎" Click="OnEmojiSelectClick" Tag="😎" />
-                                        <Button Classes="toolbar emoji-btn" Content="😏" Click="OnEmojiSelectClick" Tag="😏" />
-                                        <Button Classes="toolbar emoji-btn" Content="😒" Click="OnEmojiSelectClick" Tag="😒" />
-                                        <Button Classes="toolbar emoji-btn" Content="😔" Click="OnEmojiSelectClick" Tag="😔" />
-                                        <Button Classes="toolbar emoji-btn" Content="😕" Click="OnEmojiSelectClick" Tag="😕" />
-                                        <Button Classes="toolbar emoji-btn" Content="😖" Click="OnEmojiSelectClick" Tag="😖" />
-                                        <Button Classes="toolbar emoji-btn" Content="😫" Click="OnEmojiSelectClick" Tag="😫" />
-                                        <Button Classes="toolbar emoji-btn" Content="🥺" Click="OnEmojiSelectClick" Tag="🥺" />
-                                        <Button Classes="toolbar emoji-btn" Content="😢" Click="OnEmojiSelectClick" Tag="😢" />
-                                        <Button Classes="toolbar emoji-btn" Content="😭" Click="OnEmojiSelectClick" Tag="😭" />
-                                        <Button Classes="toolbar emoji-btn" Content="😤" Click="OnEmojiSelectClick" Tag="😤" />
-                                        <Button Classes="toolbar emoji-btn" Content="😡" Click="OnEmojiSelectClick" Tag="😡" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤬" Click="OnEmojiSelectClick" Tag="🤬" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤯" Click="OnEmojiSelectClick" Tag="🤯" />
-                                        <Button Classes="toolbar emoji-btn" Content="😳" Click="OnEmojiSelectClick" Tag="😳" />
-                                        <Button Classes="toolbar emoji-btn" Content="🥵" Click="OnEmojiSelectClick" Tag="🥵" />
-                                        <Button Classes="toolbar emoji-btn" Content="🥶" Click="OnEmojiSelectClick" Tag="🥶" />
-                                        <Button Classes="toolbar emoji-btn" Content="😱" Click="OnEmojiSelectClick" Tag="😱" />
-                                        <Button Classes="toolbar emoji-btn" Content="😨" Click="OnEmojiSelectClick" Tag="😨" />
-                                        <Button Classes="toolbar emoji-btn" Content="😰" Click="OnEmojiSelectClick" Tag="😰" />
-                                        <Button Classes="toolbar emoji-btn" Content="😥" Click="OnEmojiSelectClick" Tag="😥" />
-                                        <Button Classes="toolbar emoji-btn" Content="😓" Click="OnEmojiSelectClick" Tag="😓" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤔" Click="OnEmojiSelectClick" Tag="🤔" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤗" Click="OnEmojiSelectClick" Tag="🤗" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤭" Click="OnEmojiSelectClick" Tag="🤭" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤫" Click="OnEmojiSelectClick" Tag="🤫" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤥" Click="OnEmojiSelectClick" Tag="🤥" />
-                                        <Button Classes="toolbar emoji-btn" Content="😶" Click="OnEmojiSelectClick" Tag="😶" />
-                                        <Button Classes="toolbar emoji-btn" Content="😐" Click="OnEmojiSelectClick" Tag="😐" />
-                                        <Button Classes="toolbar emoji-btn" Content="😑" Click="OnEmojiSelectClick" Tag="😑" />
-                                        <Button Classes="toolbar emoji-btn" Content="😬" Click="OnEmojiSelectClick" Tag="😬" />
-                                        <Button Classes="toolbar emoji-btn" Content="🙄" Click="OnEmojiSelectClick" Tag="🙄" />
-                                        <Button Classes="toolbar emoji-btn" Content="😯" Click="OnEmojiSelectClick" Tag="😯" />
-                                        <Button Classes="toolbar emoji-btn" Content="😦" Click="OnEmojiSelectClick" Tag="😦" />
-                                        <Button Classes="toolbar emoji-btn" Content="😧" Click="OnEmojiSelectClick" Tag="😧" />
-                                        <Button Classes="toolbar emoji-btn" Content="😮" Click="OnEmojiSelectClick" Tag="😮" />
-                                        <Button Classes="toolbar emoji-btn" Content="😲" Click="OnEmojiSelectClick" Tag="😲" />
-                                        <Button Classes="toolbar emoji-btn" Content="🥱" Click="OnEmojiSelectClick" Tag="🥱" />
-                                        <Button Classes="toolbar emoji-btn" Content="😴" Click="OnEmojiSelectClick" Tag="😴" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤤" Click="OnEmojiSelectClick" Tag="🤤" />
-                                        <Button Classes="toolbar emoji-btn" Content="😪" Click="OnEmojiSelectClick" Tag="😪" />
-                                        <Button Classes="toolbar emoji-btn" Content="😵" Click="OnEmojiSelectClick" Tag="😵" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤐" Click="OnEmojiSelectClick" Tag="🤐" />
-                                        <Button Classes="toolbar emoji-btn" Content="🥴" Click="OnEmojiSelectClick" Tag="🥴" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤢" Click="OnEmojiSelectClick" Tag="🤢" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤮" Click="OnEmojiSelectClick" Tag="🤮" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤧" Click="OnEmojiSelectClick" Tag="🤧" />
-                                        <Button Classes="toolbar emoji-btn" Content="😷" Click="OnEmojiSelectClick" Tag="😷" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤒" Click="OnEmojiSelectClick" Tag="🤒" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤕" Click="OnEmojiSelectClick" Tag="🤕" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤑" Click="OnEmojiSelectClick" Tag="🤑" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤠" Click="OnEmojiSelectClick" Tag="🤠" />
-                                        <Button Classes="toolbar emoji-btn" Content="😈" Click="OnEmojiSelectClick" Tag="😈" />
-                                        <Button Classes="toolbar emoji-btn" Content="👿" Click="OnEmojiSelectClick" Tag="👿" />
-                                        <Button Classes="toolbar emoji-btn" Content="👹" Click="OnEmojiSelectClick" Tag="👹" />
-                                        <Button Classes="toolbar emoji-btn" Content="👺" Click="OnEmojiSelectClick" Tag="👺" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤡" Click="OnEmojiSelectClick" Tag="🤡" />
-                                        <Button Classes="toolbar emoji-btn" Content="💩" Click="OnEmojiSelectClick" Tag="💩" />
-                                        <Button Classes="toolbar emoji-btn" Content="👻" Click="OnEmojiSelectClick" Tag="👻" />
-                                        <Button Classes="toolbar emoji-btn" Content="💀" Click="OnEmojiSelectClick" Tag="💀" />
-                                        <Button Classes="toolbar emoji-btn" Content="👽" Click="OnEmojiSelectClick" Tag="👽" />
-                                        <Button Classes="toolbar emoji-btn" Content="👾" Click="OnEmojiSelectClick" Tag="👾" />
-                                        <Button Classes="toolbar emoji-btn" Content="🤖" Click="OnEmojiSelectClick" Tag="🤖" />
-                                        <Button Classes="toolbar emoji-btn" Content="🎃" Click="OnEmojiSelectClick" Tag="🎃" />
-                                        <Button Classes="toolbar emoji-btn" Content="😺" Click="OnEmojiSelectClick" Tag="😺" />
-                                        <Button Classes="toolbar emoji-btn" Content="😸" Click="OnEmojiSelectClick" Tag="😸" />
-                                        <Button Classes="toolbar emoji-btn" Content="😹" Click="OnEmojiSelectClick" Tag="😹" />
-                                        <Button Classes="toolbar emoji-btn" Content="😻" Click="OnEmojiSelectClick" Tag="😻" />
-                                        <Button Classes="toolbar emoji-btn" Content="😼" Click="OnEmojiSelectClick" Tag="😼" />
-                                        <Button Classes="toolbar emoji-btn" Content="😽" Click="OnEmojiSelectClick" Tag="😽" />
-                                        <Button Classes="toolbar emoji-btn" Content="🙀" Click="OnEmojiSelectClick" Tag="🙀" />
-                                        <Button Classes="toolbar emoji-btn" Content="😿" Click="OnEmojiSelectClick" Tag="😿" />
-                                        <Button Classes="toolbar emoji-btn" Content="😾" Click="OnEmojiSelectClick" Tag="😾" />
-                                        <Button Classes="toolbar emoji-btn" Content="👍" Click="OnEmojiSelectClick" Tag="👍" />
-                                        <Button Classes="toolbar emoji-btn" Content="👎" Click="OnEmojiSelectClick" Tag="👎" />
-                                        <Button Classes="toolbar emoji-btn" Content="💯" Click="OnEmojiSelectClick" Tag="💯" />
-                                        <Button Classes="toolbar emoji-btn" Content="🔥" Click="OnEmojiSelectClick" Tag="🔥" />
-                                        <Button Classes="toolbar emoji-btn" Content="⭐" Click="OnEmojiSelectClick" Tag="⭐" />
-                                        <Button Classes="toolbar emoji-btn" Content="📍" Click="OnEmojiSelectClick" Tag="📍" />
-                                        <Button Classes="toolbar emoji-btn" Content="✅" Click="OnEmojiSelectClick" Tag="✅" />
-                                        <Button Classes="toolbar emoji-btn" Content="❌" Click="OnEmojiSelectClick" Tag="❌" />
-                                        <Button Classes="toolbar emoji-btn" Content="⚠️" Click="OnEmojiSelectClick" Tag="⚠️" />
-                                        <Button Classes="toolbar emoji-btn" Content="❗" Click="OnEmojiSelectClick" Tag="❗" />
-                                        <Button Classes="toolbar emoji-btn" Content="➡️" Click="OnEmojiSelectClick" Tag="➡️" />
-                                        <Button Classes="toolbar emoji-btn" Content="⬅️" Click="OnEmojiSelectClick" Tag="⬅️" />
-                                        <Button Classes="toolbar emoji-btn" Content="⬆️" Click="OnEmojiSelectClick" Tag="⬆️" />
-                                        <Button Classes="toolbar emoji-btn" Content="⬇️" Click="OnEmojiSelectClick" Tag="⬇️" />
-                                        <Button Classes="toolbar emoji-btn" Content="💡" Click="OnEmojiSelectClick" Tag="💡" />
-                                        <Button Classes="toolbar emoji-btn" Content="🔒" Click="OnEmojiSelectClick" Tag="🔒" />
-                                        <Button Classes="toolbar emoji-btn" Content="👀" Click="OnEmojiSelectClick" Tag="👀" />
-                                        <Button Classes="toolbar emoji-btn" Content="🎯" Click="OnEmojiSelectClick" Tag="🎯" />
-                                    </UniformGrid>
+                                    <ItemsControl Name="EmojiGrid">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel ItemWidth="54" ItemHeight="54" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Classes="emoji-btn"
+                                                        Content="{Binding}"
+                                                        Tag="{Binding}"
+                                                        Click="OnEmojiSelectClick" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </ScrollViewer>
                             </Flyout>
                         </Button.Flyout>
@@ -538,7 +556,8 @@
             <Panel Background="{StaticResource CheckerboardBrush}">
                 <Grid Name="MainGrid">
                     <Panel Name="ZoomContainer" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Border Name="SnipBorder" BorderBrush="#0E2548" BorderThickness="3">
+                        <!-- ISSUE_009: mandated #000080 navy frame border via shared token -->
+                        <Border Name="SnipBorder" BorderBrush="{DynamicResource SnapVoxFrameBorderBrush}" BorderThickness="3">
                             <Image Name="EditorImage" Margin="0" Stretch="None">
                                 <Image.Effect>
                                     <DropShadowEffect BlurRadius="20" Opacity="0.4" OffsetX="0" OffsetY="10" />
@@ -572,7 +591,7 @@
                                 <Button Classes="action context-duplicate" Name="OcrContextCopyButton" Click="OnOcrContextCopyClick" ToolTip.Tip="Copy Text (Ctrl+C)" Width="100" Height="36">
                                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <svg:Svg Width="18" Height="18" Path="avares://snapvox.editor/Icons/copy.svg" />
-                                        <TextBlock Text="Copy Text" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="White"/>
+                                        <TextBlock Text="Copy Text" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
@@ -581,14 +600,14 @@
 
                         
                         <Canvas Name="StartPointHandle" Width="18" Height="18" IsVisible="False" ZIndex="10002" Cursor="Hand">
-                            <Ellipse Width="18" Height="18" Fill="White" />
+                            <Ellipse Width="18" Height="18" Fill="{DynamicResource SnapVoxPrimaryTextBrush}" />
                             <Ellipse Width="16" Height="16" Margin="1" Stroke="#2E7D32" StrokeThickness="2" />
                             <Ellipse Width="8" Height="8" Margin="5" Fill="#2E7D32" />
                         </Canvas>
                         <Canvas Name="EndPointHandle" Width="18" Height="18" IsVisible="False" ZIndex="10002" Cursor="Hand">
-                            <Ellipse Width="18" Height="18" Fill="White" />
-                            <Ellipse Width="16" Height="16" Margin="1" Stroke="#007ACC" StrokeThickness="2" />
-                            <Ellipse Width="8" Height="8" Margin="5" Fill="#007ACC" />
+                            <Ellipse Width="18" Height="18" Fill="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                            <Ellipse Width="16" Height="16" Margin="1" Stroke="{DynamicResource SnapVoxAccentBrush}" StrokeThickness="2" />
+                            <Ellipse Width="8" Height="8" Margin="5" Fill="{DynamicResource SnapVoxAccentBrush}" />
                         </Canvas>
                     </Canvas>
                     </Panel>
@@ -602,31 +621,17 @@
     </DockPanel>
 
     <Grid Name="ClosePromptOverlay" IsVisible="False" ZIndex="100000" Background="#99000000">
-        <Border Background="#2D2D30" CornerRadius="8" BorderBrush="#555555" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="20">
+        <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="20">
             <StackPanel Spacing="20">
-                <TextBlock Text="Unsaved Changes" FontWeight="Bold" FontSize="18" Foreground="White" />
-                <TextBlock Text="You have unsaved modifications. What would you like to do?" Foreground="#AAAAAA" />
+                <TextBlock Text="Unsaved Changes" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                <TextBlock Text="You have unsaved modifications. What would you like to do?" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
                 <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
-                    <Button Content="Save &amp; Close" Click="OnPromptSaveClose" Background="#007ACC" Foreground="White" Padding="10,5" Cursor="Hand" />
-                    <Button Content="Discard" Click="OnPromptDiscard" Background="#D13438" Foreground="White" Padding="10,5" Cursor="Hand" />
-                    <Button Content="Cancel" Click="OnPromptCancel" Background="#444444" Foreground="White" Padding="10,5" Cursor="Hand" />
+                    <Button Content="Save &amp; Close" Click="OnPromptSaveClose" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Padding="10,5" Cursor="Hand" />
+                    <Button Content="Discard" Click="OnPromptDiscard" Background="#D13438" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Padding="10,5" Cursor="Hand" />
+                    <Button Content="Cancel" Click="OnPromptCancel" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Padding="10,5" Cursor="Hand" />
                 </StackPanel>
             </StackPanel>
         </Border>
     </Grid>
     </Panel>
-
-    <Window.Styles>
-        <Style Selector="Border.counter">
-            <Setter Property="Background" Value="Red" />
-            <Setter Property="CornerRadius" Value="17.5" />
-            <Setter Property="Width" Value="35" />
-            <Setter Property="Height" Value="35" />
-        </Style>
-        <Style Selector="Border.counter TextBlock">
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="FontSize" Value="21" />
-            <Setter Property="FontWeight" Value="Bold" />
-        </Style>
-    </Window.Styles>
 </Window>

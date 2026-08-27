@@ -62,26 +62,11 @@ namespace snapvox.foundation.core
         [IniProperty("CaptureMousepointer", Description = "Should the mouse be captured?", DefaultValue = "false")]
         public bool CaptureMousepointer { get; set; } = false;
 
-        [IniProperty("CaptureWindowsInteractive", Description = "Use interactive window selection to capture? (false=Capture active window)", DefaultValue = "true")]
-        public bool CaptureWindowsInteractive { get; set; } = true;
-
         [IniProperty("CaptureDelay", Description = "Capture delay in milliseconds.", DefaultValue = "0")]
         public int CaptureDelay { get; set; } = 0;
 
         [IniProperty("ScreenCaptureMode", Description = "The capture mode used to capture a screen. (Auto, FullScreen, Fixed)", DefaultValue = "Auto")]
         public ScreenCaptureMode ScreenCaptureMode { get; set; }
-
-        [IniProperty("ScreenToCapture", Description = "The screen number to capture when using ScreenCaptureMode Fixed.", DefaultValue = "1")]
-        public int ScreenToCapture { get; set; } = 1;
-
-        [IniProperty("WindowCaptureMode", Description = "The capture mode used to capture a Window (Screen, GDI, Aero, AeroTransparent, Auto).", DefaultValue = "Auto")]
-        public WindowCaptureMode WindowCaptureMode { get; set; }
-
-        [IniProperty("DWMBackgroundColor", Description = "The background color for a DWM window capture.")]
-        public Color DWMBackgroundColor { get; set; } = Color.Transparent;
-
-        [IniProperty("ShowTrayNotification", LanguageKey = "settings_shownotify", Description = "Show a notification from the systray when a capture is taken.", DefaultValue = "true")]
-        public bool ShowTrayNotification { get; set; } = true;
 
         [IniProperty("RunAsAdministratorOnStartup", Description = "Run snapvox elevated when it starts automatically.", DefaultValue = "false")]
         public bool RunAsAdministratorOnStartup { get; set; } = false;
@@ -98,6 +83,9 @@ namespace snapvox.foundation.core
         [IniProperty("OutputFileJpegQuality", Description = "JPEG file save quality in %.", DefaultValue = "100")]
         public int OutputFileJpegQuality { get; set; } = 100;
 
+        [IniProperty("OutputFileAllowPng", Description = "Allow saving screenshots as PNG (Higher Quality, lossless). When false, always save as JPG.", DefaultValue = "false")]
+        public bool OutputFileAllowPng { get; set; } = false;
+
         [IniProperty("LogFile", Description = "The path to the log file.")]
         public string LogFile { get; set; }
 
@@ -107,17 +95,14 @@ namespace snapvox.foundation.core
         [IniProperty("DisableHotkeys", Description = "Disable hotkeys.", DefaultValue = "False")]
         public bool DisableHotkeys { get; set; } = false;
 
-        [IniProperty("AutoZoomLargeSnippets", Description = "Automatically zoom out on snippets larger than the monitor working area.", DefaultValue = "true")]
-        public bool AutoZoomLargeSnippets { get; set; } = true;
-
-        [IniProperty("EditorGlobalLocalMode", Description = "Global/Local mode for tool settings. True=Global, False=Local/Isolated.", DefaultValue = "true")]
-        public bool EditorGlobalLocalMode { get; set; } = true;
-
         [IniProperty("UseTextFrame", Description = "Show a rectangular frame around text annotations.", DefaultValue = "true")]
         public bool UseTextFrame { get; set; } = true;
 
         [IniProperty("KeepBackup", Description = "Keep 24 Hours Backup of Snips/Text.", DefaultValue = "true")]
         public bool KeepBackup { get; set; } = true;
+
+        [IniProperty("NotificationOverlayDurationMs", Description = "Total duration of the notification overlay blink cycle in milliseconds (250-10000).", DefaultValue = "1000")]
+        public int NotificationOverlayDurationMs { get; set; } = 1000;
 
         [IniProperty("MagneticSnappingEnabled", Description = "Enable magnetic snapping in the editor.", DefaultValue = "true")]
         public bool MagneticSnappingEnabled { get; set; } = true;
@@ -142,6 +127,9 @@ namespace snapvox.foundation.core
 
         [IniProperty("WarnBeforeClosingEditor", Description = "Warn before closing the image editor with unsaved changes.", DefaultValue = "false")]
         public bool WarnBeforeClosingEditor { get; set; } = false;
+
+        [IniProperty("ClipboardHistoryPromotionDelayMs", Description = "Delay in milliseconds between copying the file path and the image to the clipboard, so Windows clipboard history can register the file entry. Set 0 to disable the delay.", DefaultValue = "400")]
+        public int ClipboardHistoryPromotionDelayMs { get; set; } = 400;
 
         [IniProperty("ArrowHotkey", DefaultValue = "A")]
         public string ArrowHotkey { get; set; } = "A";
@@ -175,12 +163,6 @@ namespace snapvox.foundation.core
 
         [IniProperty("CropHotkey", DefaultValue = "C")]
         public string CropHotkey { get; set; } = "C";
-
-        [IniProperty("CopyHotkey", DefaultValue = "C")]
-        public string CopyHotkey { get; set; } = "C";
-
-        [IniProperty("DownloadHotkey", DefaultValue = "D")]
-        public string DownloadHotkey { get; set; } = "D";
 
         [IniProperty("RotateCcwHotkey", DefaultValue = "Left")]
         public string RotateCcwHotkey { get; set; } = "Left";

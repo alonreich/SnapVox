@@ -201,5 +201,118 @@ namespace snapvox.foundation.core
                 if (hdcScreen != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdcScreen);
             }
         }
+
+        [DllImport("user32.dll")]
+        private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+
+        private const int DwmwaExtendedFrameBounds = 9;
+        private const uint PwRenderFullContent = 0x00000002;
+
+        // Renders the window itself into an offscreen bitmap via PrintWindow, which works even
+        // when other windows cover it: the result looks like the window was brought to the
+        // front and contains only that window's own content. Returns null when the window
+        // cannot be rendered this way, so callers can fall back to a region capture.
+        public static unsafe Image<Bgra32> CaptureWindow(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return null;
+
+            try
+            {
+                if (!GetWindowRect(hWnd, out RECT windowRect) || windowRect.Width <= 0 || windowRect.Height <= 0) return null;
+                if (windowRect.Width > MaxCaptureDimension || windowRect.Height > MaxCaptureDimension || (long)windowRect.Width * windowRect.Height > MaxCapturePixels)
+                {
+                    Log.WarnFormat("Refusing oversized window capture {0}x{1}", windowRect.Width, windowRect.Height);
+                    return null;
+                }
+
+                // PrintWindow renders relative to the full window rect (which includes the
+                // invisible resize borders); the visible content aligns with the DWM extended
+                // frame bounds, so capture the full rect and crop the frame offset afterwards.
+                RECT frameBounds = windowRect;
+                if (DwmGetWindowAttribute(hWnd, DwmwaExtendedFrameBounds, out RECT dwmBounds, Marshal.SizeOf<RECT>()) == 0 && dwmBounds.Width > 0 && dwmBounds.Height > 0)
+                {
+                    frameBounds = dwmBounds;
+                }
+
+                IntPtr hdcScreen = IntPtr.Zero;
+                IntPtr hdcDest = IntPtr.Zero;
+                IntPtr hBitmap = IntPtr.Zero;
+                IntPtr hOldBitmap = IntPtr.Zero;
+
+                try
+                {
+                    hdcScreen = GetDC(IntPtr.Zero);
+                    if (hdcScreen == IntPtr.Zero)
+                    {
+                        return null;
+                    }
+
+                    hdcDest = CreateCompatibleDC(hdcScreen);
+                    if (hdcDest == IntPtr.Zero)
+                    {
+                        return null;
+                    }
+
+                    BITMAPINFO bmi = new BITMAPINFO();
+                    bmi.bmiHeader.biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>();
+                    bmi.bmiHeader.biWidth = windowRect.Width;
+                    bmi.bmiHeader.biHeight = -windowRect.Height;
+                    bmi.bmiHeader.biPlanes = 1;
+                    bmi.bmiHeader.biBitCount = 32;
+                    bmi.bmiHeader.biCompression = 0;
+
+                    hBitmap = CreateDIBSection(hdcDest, ref bmi, 0, out IntPtr pBits, IntPtr.Zero, 0);
+                    if (hBitmap == IntPtr.Zero || pBits == IntPtr.Zero)
+                    {
+                        return null;
+                    }
+
+                    hOldBitmap = SelectObject(hdcDest, hBitmap);
+                    // PW_RENDERFULLCONTENT also renders DirectComposition/hardware-accelerated
+                    // content (browsers, VS, etc.) on Windows 8.1 and newer.
+                    if (!PrintWindow(hWnd, hdcDest, PwRenderFullContent))
+                    {
+                        return null;
+                    }
+
+                    int offsetX = Math.Max(0, Math.Min(windowRect.Width - 1, frameBounds.Left - windowRect.Left));
+                    int offsetY = Math.Max(0, Math.Min(windowRect.Height - 1, frameBounds.Top - windowRect.Top));
+                    int cropWidth = Math.Max(0, Math.Min(windowRect.Width - offsetX, frameBounds.Width));
+                    int cropHeight = Math.Max(0, Math.Min(windowRect.Height - offsetY, frameBounds.Height));
+                    if (cropWidth <= 0 || cropHeight <= 0) return null;
+
+                    int length = checked(windowRect.Width * windowRect.Height);
+                    using var image = Image.LoadPixelData<Bgra32>(
+                        new ReadOnlySpan<Bgra32>(pBits.ToPointer(), length),
+                        windowRect.Width,
+                        windowRect.Height);
+
+                    var cropRectangle = new Rectangle(offsetX, offsetY, cropWidth, cropHeight);
+                    if (cropRectangle.X == 0 && cropRectangle.Y == 0 && cropRectangle.Width == windowRect.Width && cropRectangle.Height == windowRect.Height)
+                    {
+                        return image.Clone(ctx => { });
+                    }
+                    return image.Clone(ctx => ctx.Crop(cropRectangle));
+                }
+                finally
+                {
+                    if (hOldBitmap != IntPtr.Zero && hdcDest != IntPtr.Zero) SelectObject(hdcDest, hOldBitmap);
+                    if (hBitmap != IntPtr.Zero) DeleteObject(hBitmap);
+                    if (hdcDest != IntPtr.Zero) DeleteDC(hdcDest);
+                    if (hdcScreen != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdcScreen);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("CaptureWindow failed.", ex);
+                return null;
+            }
+        }
     }
 }

@@ -14,6 +14,9 @@ namespace snapvox.forms
         private TextBlock _logPathText;
         private ListBox _logList;
         private Button _finishButton;
+        private Button _cancelButton;
+        private Border _errorBanner;
+        private TextBlock _errorText;
 
         public DeploymentProgressWindow()
         {
@@ -47,6 +50,9 @@ namespace snapvox.forms
             _logPathText = this.FindControl<TextBlock>("LogPathText");
             _logList = this.FindControl<ListBox>("LogList");
             _finishButton = this.FindControl<Button>("FinishButton");
+            _cancelButton = this.FindControl<Button>("CancelButton");
+            _errorBanner = this.FindControl<Border>("ErrorBanner");
+            _errorText = this.FindControl<TextBlock>("ErrorText");
         }
 
         protected override void OnOpened(EventArgs e)
@@ -54,6 +60,36 @@ namespace snapvox.forms
             base.OnOpened(e);
             Activate();
             Topmost = true;
+        }
+
+        // ISSUE_015: cancel handler — aborts a stalled install.
+        private void OnCancelClick(object sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            UpdateStatus("Installation cancelled by user.");
+            ShowError("Installation was cancelled. You can safely close this window and retry.");
+            if (_cancelButton != null) _cancelButton.IsEnabled = false;
+        }
+
+        // ISSUE_015: surfaces a clear error banner when deployment fails.
+        public void ShowError(string message)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_errorText != null && !string.IsNullOrWhiteSpace(message))
+                {
+                    _errorText.Text = message;
+                }
+
+                if (_errorBanner != null)
+                {
+                    _errorBanner.IsVisible = true;
+                }
+
+                if (_cancelButton != null)
+                {
+                    _cancelButton.IsEnabled = false;
+                }
+            });
         }
 
         public void UpdateProgress(int value)

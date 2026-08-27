@@ -24,9 +24,15 @@ namespace snapvox.foundation.core
         private static readonly ConcurrentDictionary<string, int> QueueDepths = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static readonly double TickToMilliseconds = 1000d / Stopwatch.Frequency;
         private const int MaxQueuedEntries = 8192;
-        private const int MaxRetainedLogFiles = 40;
+        // ISSUE (runaway logs): retention previously allowed 40 files x 8MB = 320MB of
+        // ExecutionTrace logs under C:\ProgramData\snapvox. Tightened to 5 files x 2MB
+        // (10MB worst case) and backed by EnforceProgramDataLogBudget, a hard aggregate
+        // ceiling over every *.log file in the shared log folder (see below).
+        private const int MaxRetainedLogFiles = 5;
         private const int MaxLogAgeDays = 7;
-        private const long MaxLogFileSizeBytes = 8L * 1024L * 1024L;
+        private const long MaxLogFileSizeBytes = 2L * 1024L * 1024L;
+        private const long MaxProgramDataLogBudgetBytes = 10L * 1024L * 1024L;
+        private static readonly TimeSpan LogBudgetSweepInterval = TimeSpan.FromMinutes(10);
         private static Channel<string> _entries;
         private static Task _writerTask;
         private static System.Timers.Timer _healthTimer;
@@ -35,6 +41,9 @@ namespace snapvox.foundation.core
         private static int _started;
         private static bool _disabled;
         private static long _droppedEntries;
+        // NOTE: only touched from the health-timer thread (and once at init), so a plain
+        // field is sufficient here; a stray extra sweep is harmless.
+        private static DateTime _lastBudgetSweepUtc = DateTime.MinValue;
 
         public static void Disable()
         {
@@ -208,6 +217,8 @@ namespace snapvox.foundation.core
                 string logDir = Path.Combine(appData, "snapvox");
                 Directory.CreateDirectory(logDir);
                 CleanupOldLogs(logDir);
+                EnforceProgramDataLogBudget(logDir);
+                _lastBudgetSweepUtc = DateTime.UtcNow;
                 Volatile.Write(ref _logDirectory, logDir);
                 Volatile.Write(ref _logPath, CreateLogPath());
                 var entries = Channel.CreateBounded<string>(new BoundedChannelOptions(MaxQueuedEntries)
@@ -226,6 +237,7 @@ namespace snapvox.foundation.core
                 _healthTimer = new System.Timers.Timer(5000d);
                 _healthTimer.AutoReset = true;
                 _healthTimer.Elapsed += delegate { LogHealth(); };
+                _healthTimer.Elapsed += delegate { TrySweepLogBudget(); };
                 _healthTimer.Start();
             }
         }
@@ -251,7 +263,7 @@ namespace snapvox.foundation.core
                         stream = null;
                         string newPath = CreateLogPath();
                         Volatile.Write(ref _logPath, newPath);
-                        try { CleanupOldLogs(Volatile.Read(ref _logDirectory)); } catch (Exception cleanupEx) { Log.Warn("ExecutionTrace cleanup on rotation failed.", cleanupEx); }
+                        try { CleanupOldLogs(Volatile.Read(ref _logDirectory)); EnforceProgramDataLogBudget(Volatile.Read(ref _logDirectory)); } catch (Exception cleanupEx) { Log.Warn("ExecutionTrace cleanup on rotation failed.", cleanupEx); }
                     }
                 }
 
@@ -394,6 +406,63 @@ namespace snapvox.foundation.core
             catch (Exception ex)
             {
                 Log.Warn("ExecutionTrace cleanup scan failed.", ex);
+            }
+        }
+
+        private static void TrySweepLogBudget()
+        {
+            try
+            {
+                if (DateTime.UtcNow - _lastBudgetSweepUtc < LogBudgetSweepInterval) return;
+                _lastBudgetSweepUtc = DateTime.UtcNow;
+                EnforceProgramDataLogBudget(Volatile.Read(ref _logDirectory));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("ExecutionTrace budget sweep timer failed.", ex);
+            }
+        }
+
+        // ISSUE (runaway logs): hard aggregate ceiling over ALL *.log files in
+        // C:\ProgramData\snapvox - ExecutionTrace_*.log plus log4net's SnapVox.log and
+        // its rolled backups. The oldest files are deleted first until the folder is back
+        // under budget; files that are in use (e.g. the log currently being written) fail
+        // to delete and are simply skipped. Runs at startup, on every rotation and about
+        // every 10 minutes from the health timer.
+        private static void EnforceProgramDataLogBudget(string logDir)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(logDir) || !Directory.Exists(logDir)) return;
+                var files = new DirectoryInfo(logDir)
+                    .GetFiles("*.log")
+                    .OrderBy(file => file.LastWriteTimeUtc)
+                    .ToList();
+                long total = 0;
+                foreach (var file in files)
+                {
+                    total += file.Length;
+                }
+
+                foreach (var file in files)
+                {
+                    if (total <= MaxProgramDataLogBudgetBytes) break;
+                    long size = file.Length;
+                    try
+                    {
+                        file.Delete();
+                        total -= size;
+                        Log.Info("Log budget sweep deleted " + file.Name);
+                    }
+                    catch
+                    {
+                        // Locked by another process (active log) or access denied - skip.
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("ExecutionTrace budget sweep failed.", ex);
             }
         }
 
