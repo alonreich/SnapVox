@@ -111,14 +111,15 @@ namespace snapvox.helpers
                     return;
                 }
 
-                // BUGFIX (cross-monitor rubberband): the overlay used to be split into one
-                // CaptureWindow per monitor, so the rubberband, magnifier and window snapping
-                // all stopped hard at every monitor border - a drag that crossed screens had
-                // to be released and restarted, and the frozen backdrop was stitched from
-                // separate PNG crops. One borderless window that spans the entire virtual
-                // desktop now keeps a single continuous coordinate space for the whole
-                // selection, and CaptureWindow maps it back to absolute device pixels with
-                // PointToScreen when the selection is released.
+                // BUGFIX (mixed-DPI cross-monitor rubberband): the frozen backdrop stays one
+                // unified image, but the overlay is split into one CaptureWindow PER MONITOR
+                // again. Under the app's PerMonitorV2 manifest a single window spanning the
+                // whole virtual desktop carries exactly one DPI factor (the monitor that owns
+                // it), so the rubberband was pixel-exact only on that monitor and drifted
+                // off the drag or vanished on every other scale factor. One window per
+                // monitor gives every overlay its own correct DPI factor, and CaptureWindow
+                // keeps the whole selection state in ABSOLUTE device pixels (see its shared
+                // visual broadcasts), so a drag crossing monitors stays continuous.
                 using var unifiedBackdrop = (Image<Rgba32>)snapshotForCropping.Clone();
                 if (Config.AddFrameBorders)
                 {
@@ -131,33 +132,56 @@ namespace snapvox.helpers
                     }
                 }
 
-                Avalonia.Media.Imaging.Bitmap backdrop = null;
+                var backdrops = new List<(PixelRect Bounds, Avalonia.Media.Imaging.Bitmap Bitmap)>();
                 try
                 {
-                    // BMP round-trip keeps the encode/decode off the UI thread; the old
-                    // per-screen PNG pipeline paid a compression pass per monitor.
-                    backdrop = await Task.Run(() => snapvox.editor.helpers.ImageSharpAvaloniaHelper.ToAvaloniaBitmap(unifiedBackdrop)).ConfigureAwait(false);
+                    // BMP round-trip keeps the encode/decode off the UI thread; slicing the
+                    // unified clone per monitor also avoids any PNG compression passes.
+                    backdrops = await Task.Run(() =>
+                    {
+                        var slices = new List<(PixelRect Bounds, Avalonia.Media.Imaging.Bitmap Bitmap)>();
+                        foreach (var screen in screensInfo)
+                        {
+                            var cropRect = ClampCropRectangle(
+                                new Rectangle(screen.Bounds.X - virtualBounds.Left, screen.Bounds.Y - virtualBounds.Top, screen.Bounds.Width, screen.Bounds.Height),
+                                unifiedBackdrop.Width,
+                                unifiedBackdrop.Height);
+                            if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
+                            using var slice = unifiedBackdrop.Clone(x => x.Crop(cropRect));
+                            slices.Add((screen.Bounds, snapvox.editor.helpers.ImageSharpAvaloniaHelper.ToAvaloniaBitmap(slice)));
+                        }
+                        return slices;
+                    }).ConfigureAwait(false);
+
+                    if (backdrops.Count == 0) throw new InvalidOperationException("No monitor produced a usable capture backdrop.");
 
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        forms.CaptureWindow window = null;
-                        try
+                        for (int i = 0; i < backdrops.Count; i++)
                         {
-                            window = new forms.CaptureWindow(new PixelRect(virtualBounds.Left, virtualBounds.Top, virtualBounds.Width, virtualBounds.Height), backdrop);
-                            backdrop = null;
-                            window.Show();
-                        }
-                        catch
-                        {
-                            window?.Close();
-                            throw;
+                            forms.CaptureWindow window = null;
+                            try
+                            {
+                                var slice = backdrops[i];
+                                window = new forms.CaptureWindow(slice.Bounds, slice.Bitmap);
+                                backdrops[i] = (slice.Bounds, null); // bitmap ownership moved into the window
+                                window.Show();
+                            }
+                            catch
+                            {
+                                window?.Close();
+                                throw;
+                            }
                         }
                     });
                     overlaysShown = true;
                 }
                 finally
                 {
-                    backdrop?.Dispose();
+                    foreach (var leftover in backdrops)
+                    {
+                        leftover.Bitmap?.Dispose();
+                    }
                 }
             }
             catch (Exception ex) 

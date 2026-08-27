@@ -86,11 +86,11 @@ namespace snapvox.forms
         // device-pixel conversion, rounding to the nearest device pixel. Mixing truncated
         // (int) casts made the captured rect drift away from what the magnifier crosshair
         // showed at the moment of release.
-        // BUGFIX (cross-monitor rubberband): the overlay is now a single window that spans
-        // the whole virtual desktop, where every monitor may carry a different DPI scale.
-        // PointToScreen honours the platform's per-monitor DPI mapping, so the released
-        // selection still lands on the exact device pixels the magnifier crosshair showed,
-        // even when the drag crossed monitors with mixed scaling.
+        // BUGFIX (cross-monitor rubberband): the selection state is kept in absolute device
+        // pixels. PointToScreen honours the platform's per-monitor DPI mapping, so the
+        // released selection still lands on the exact device pixels the magnifier
+        // crosshair showed, even when the drag crossed monitors with mixed scaling (each
+        // monitor now owns its own overlay window - one window can only carry one DPI).
         private POINT ToScreenPixels(Avalonia.Point pos)
         {
             PixelPoint p = this.PointToScreen(pos);
@@ -102,6 +102,146 @@ namespace snapvox.forms
             PixelPoint topLeft = this.PointToScreen(new Avalonia.Point(leftDip, topDip));
             PixelPoint bottomRight = this.PointToScreen(new Avalonia.Point(leftDip + widthDip, topDip + heightDip));
             return RECT.FromXYWH(topLeft.X, topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y);
+        }
+
+        // BUGFIX (mixed-DPI cross-monitor rubberband): the process manifest opts into
+        // PerMonitorV2, so EVERY top-level window carries exactly one DPI factor - the one
+        // of the monitor that owns it. A single overlay spanning the whole virtual desktop
+        // could therefore only map DIPs to device pixels correctly on its own monitor; on
+        // every other scale factor the rubberband drifted off the drag or vanished and the
+        // frozen backdrop was mis-projected. CaptureRegionAsync now spawns one overlay PER
+        // MONITOR (each window lives entirely inside one screen, so its DPI factor is
+        // exact), while this class keeps ONE shared selection state expressed in absolute
+        // device pixels: the overlay that owns the pointer gesture pushes the rubberband,
+        // snap highlight, alignment guides and magnifier ownership to its sibling overlays,
+        // and each sibling converts those absolute pixels through its own Position/Scaling
+        // pair. That is pixel-exact on every monitor and mixed-DPI combination.
+        private static void ForEachOtherOverlay(CaptureWindow source, Action<CaptureWindow> apply)
+        {
+            if (source == null) return;
+            List<CaptureWindow> targets;
+            lock (_activeWindows) { targets = _activeWindows.Where(w => !ReferenceEquals(w, source)).ToList(); }
+            foreach (var target in targets)
+            {
+                if (target != null && target._isWindowOpen) apply(target);
+            }
+        }
+
+        private double LocalDipX(double absoluteX) => (absoluteX - Position.X) / Scaling;
+        private double LocalDipY(double absoluteY) => (absoluteY - Position.Y) / Scaling;
+
+        private bool IsPointInsideBounds(Avalonia.Point local)
+        {
+            double w = Bounds.Width > 0 ? Bounds.Width : Width;
+            double h = Bounds.Height > 0 ? Bounds.Height : Height;
+            return local.X >= 0 && local.Y >= 0 && local.X <= w && local.Y <= h;
+        }
+
+        private void PushRubberbandToOtherWindows()
+        {
+            if (_rubberband == null) return;
+            bool visible = _rubberband.IsVisible;
+            RECT absolute = visible
+                ? ToScreenRect(Canvas.GetLeft(_rubberband), Canvas.GetTop(_rubberband), _rubberband.Width, _rubberband.Height)
+                : RECT.Empty;
+            ForEachOtherOverlay(this, w => w.ApplySharedRubberband(visible, absolute));
+        }
+
+        private void ApplySharedRubberband(bool visible, RECT absolute)
+        {
+            if (_rubberband == null) return;
+            bool show = visible && !absolute.IsEmpty && absolute.Width > 0 && absolute.Height > 0;
+            _rubberband.IsVisible = show;
+            double left = LocalDipX(absolute.Left);
+            double top = LocalDipY(absolute.Top);
+            Canvas.SetLeft(_rubberband, left);
+            Canvas.SetTop(_rubberband, top);
+            _rubberband.Width = absolute.Width / Scaling;
+            _rubberband.Height = absolute.Height / Scaling;
+            if (_dimensionBadge != null && _dimensionText != null)
+            {
+                bool showBadge = show && absolute.Width > 10 && absolute.Height > 10;
+                _dimensionBadge.IsVisible = showBadge;
+                if (showBadge)
+                {
+                    // Same absolute pixel size on every monitor.
+                    _dimensionText.Text = $"{absolute.Width} x {absolute.Height}";
+                    Canvas.SetLeft(_dimensionBadge, left);
+                    double badgeY = top - 28;
+                    if (badgeY < 0) badgeY = top + 5;
+                    Canvas.SetTop(_dimensionBadge, badgeY);
+                }
+            }
+        }
+
+        private void PushSnapToOtherWindows()
+        {
+            bool active = _isWindowSnapActive && !_snappedRect.IsEmpty;
+            RECT absolute = active ? _snappedRect : RECT.Empty;
+            IntPtr handle = active ? _snappedWindowHandle : IntPtr.Zero;
+            ForEachOtherOverlay(this, w => w.ApplySharedSnap(active, absolute, handle));
+        }
+
+        private void ApplySharedSnap(bool active, RECT absolute, IntPtr handle)
+        {
+            // Mirror the snap state onto every overlay so keyboard shortcuts (C = copy)
+            // work no matter which overlay currently owns keyboard focus.
+            _isWindowSnapActive = active;
+            _snappedRect = absolute;
+            _snappedWindowHandle = handle;
+            ApplySnapVisuals(active, absolute);
+        }
+
+        private void ApplySnapVisuals(bool active, RECT absolute)
+        {
+            if (_highlightBorder != null)
+            {
+                if (active && !absolute.IsEmpty)
+                {
+                    _highlightBorder.IsVisible = true;
+                    Canvas.SetLeft(_highlightBorder, LocalDipX(absolute.Left));
+                    Canvas.SetTop(_highlightBorder, LocalDipY(absolute.Top));
+                    _highlightBorder.Width = absolute.Width / Scaling;
+                    _highlightBorder.Height = absolute.Height / Scaling;
+                }
+                else
+                {
+                    _highlightBorder.IsVisible = false;
+                }
+            }
+            if (_windowSnapBadge != null)
+            {
+                if (active && !absolute.IsEmpty)
+                {
+                    _windowSnapBadge.IsVisible = true;
+                    Canvas.SetLeft(_windowSnapBadge, LocalDipX(absolute.Left) + 8);
+                    Canvas.SetTop(_windowSnapBadge, Math.Max(8, LocalDipY(absolute.Top) + 8));
+                }
+                else
+                {
+                    _windowSnapBadge.IsVisible = false;
+                }
+            }
+        }
+
+        private void PushCursorToOtherWindows(Avalonia.Point local)
+        {
+            POINT absolute = ToScreenPixels(local);
+            ForEachOtherOverlay(this, w => w.ApplySharedCursor(absolute.X, absolute.Y));
+        }
+
+        private void ApplySharedCursor(double absoluteX, double absoluteY)
+        {
+            var local = new Avalonia.Point(LocalDipX(absoluteX), LocalDipY(absoluteY));
+            if (_isPainterMode)
+            {
+                HideGuides();
+                if (_magnifierPanel != null) _magnifierPanel.IsVisible = false;
+                return;
+            }
+            UpdateGuides(local);
+            if (IsPointInsideBounds(local)) UpdateMagnifier(local);
+            else if (_magnifierPanel != null) _magnifierPanel.IsVisible = false;
         }
 
         public CaptureWindow() : this(new PixelRect(0, 0, 1920, 1080), null)
@@ -809,6 +949,7 @@ namespace snapvox.forms
             _rubberband.Height = 0;
             if (_highlightBorder != null) _highlightBorder.IsVisible = false;
             if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
+            PushRubberbandToOtherWindows();
         }
 
         private void OnPointerMoved(object sender, PointerEventArgs e)
@@ -846,6 +987,10 @@ namespace snapvox.forms
                 UpdateGuides(currentPoint);
                 UpdateMagnifier(currentPoint);
                 CheckMagneticSnap(currentPoint);
+                // BUGFIX (cross-monitor guides/lens): mirror the guides and the snap offer
+                // onto the sibling overlays so the alignment lines span every monitor.
+                PushCursorToOtherWindows(currentPoint);
+                PushSnapToOtherWindows();
                 return;
             }
             var absoluteCurrent = ToScreenPixels(currentPoint);
@@ -872,17 +1017,20 @@ namespace snapvox.forms
                     // so the cursor switches from crosshair to a hand while the magnetic
                     // offer is active.
                     Cursor = HandCursor;
-                    if (_highlightBorder != null)
-                    {
-                        _highlightBorder.IsVisible = true;
-                        Canvas.SetLeft(_highlightBorder, relLeft);
-                        Canvas.SetTop(_highlightBorder, relTop);
-                        _highlightBorder.Width = relRight - relLeft;
-                        _highlightBorder.Height = relBottom - relTop;
-                    }
-                    ShowWindowSnapBadge(relLeft, relTop);
                 }
-                else { _isWindowSnapActive = false; _snappedWindowHandle = IntPtr.Zero; if (_highlightBorder != null) _highlightBorder.IsVisible = false; if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false; Cursor = CrossCursor; }
+                else { _isWindowSnapActive = false; _snappedRect = RECT.Empty; _snappedWindowHandle = IntPtr.Zero; Cursor = CrossCursor; }
+                ApplySnapVisuals(_isWindowSnapActive, _snappedRect);
+            }
+            else if (_isWindowSnapActive)
+            {
+                // BUGFIX (stale drag snap): leaving the snap zone mid-drag used to keep the
+                // last highlight frozen on screen; clear the offer exactly like the hover
+                // path does.
+                _isWindowSnapActive = false;
+                _snappedRect = RECT.Empty;
+                _snappedWindowHandle = IntPtr.Zero;
+                Cursor = CrossCursor;
+                ApplySnapVisuals(false, RECT.Empty);
             }
             double x = Math.Min(_startPoint.X, snappedX);
             double y = Math.Min(_startPoint.Y, snappedY);
@@ -903,8 +1051,19 @@ namespace snapvox.forms
                 Canvas.SetTop(_dimensionBadge, badgeY);
             }
 
+            bool cursorOnThisOverlay = IsPointInsideBounds(currentPoint);
             UpdateGuides(currentPoint);
-            UpdateMagnifier(currentPoint);
+            // BUGFIX (lens handover): while a drag crosses onto another monitor the gesture
+            // owner keeps the mouse capture, so its own lens must switch off and the monitor
+            // actually under the cursor takes over via the shared cursor broadcast.
+            if (cursorOnThisOverlay) UpdateMagnifier(currentPoint);
+            else if (_magnifierPanel != null) _magnifierPanel.IsVisible = false;
+            // BUGFIX (mixed-DPI cross-monitor rubberband): share the band, the snap offer
+            // and the cursor position with the sibling overlays so the selection paints
+            // continuously across every monitor border.
+            PushRubberbandToOtherWindows();
+            PushSnapToOtherWindows();
+            PushCursorToOtherWindows(currentPoint);
         }
 
         private void UpdateMagnifier(Avalonia.Point pos)
@@ -1069,6 +1228,13 @@ namespace snapvox.forms
             if (!_isPainterMode && _instructionBorder != null) _instructionBorder.IsVisible = true;
             if (_magnifierPanel != null) _magnifierPanel.IsVisible = false;
             HideGuides();
+            // BUGFIX (cross-monitor release): drop the transient lens/guide visuals on the
+            // sibling overlays too, not just on the overlay that owned the drag.
+            ForEachOtherOverlay(this, w =>
+            {
+                w.HideGuides();
+                if (w._magnifierPanel != null) w._magnifierPanel.IsVisible = false;
+            });
 
             if (_isPainterMode)
             {
@@ -1300,7 +1466,6 @@ namespace snapvox.forms
 
         private void CheckMagneticSnap(Avalonia.Point pos)
         {
-            double scaling = Scaling;
             var absolutePos = ToScreenPixels(pos);
             RECT windowRect = Win32WindowHelper.GetSnappableWindow(absolutePos, out IntPtr windowHandle);
             if (windowRect.IsEmpty || windowRect.Width <= 0 || windowRect.Height <= 0)
@@ -1308,9 +1473,9 @@ namespace snapvox.forms
                 _snappedRect = RECT.Empty;
                 _snappedWindowHandle = IntPtr.Zero;
                 _isWindowSnapActive = false;
-                if (_highlightBorder != null) _highlightBorder.IsVisible = false;
-                if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
                 Cursor = CrossCursor;
+                ApplySnapVisuals(false, RECT.Empty);
+                PushSnapToOtherWindows();
                 return;
             }
             _snappedRect = windowRect;
@@ -1319,23 +1484,10 @@ namespace snapvox.forms
             // FEATURE (snap hand cursor): a whole-window grab is one click away while the
             // magnetic snap is offered, so the cursor switches from crosshair to a hand.
             Cursor = HandCursor;
-            if (_highlightBorder != null)
-            {
-                _highlightBorder.IsVisible = true;
-                Canvas.SetLeft(_highlightBorder, (windowRect.Left - Position.X) / scaling);
-                Canvas.SetTop(_highlightBorder, (windowRect.Top - Position.Y) / scaling);
-                _highlightBorder.Width = windowRect.Width / scaling;
-                _highlightBorder.Height = windowRect.Height / scaling;
-            }
-            ShowWindowSnapBadge((windowRect.Left - Position.X) / scaling, (windowRect.Top - Position.Y) / scaling);
-        }
-
-        private void ShowWindowSnapBadge(double left, double top)
-        {
-            if (_windowSnapBadge == null) return;
-            _windowSnapBadge.IsVisible = true;
-            Canvas.SetLeft(_windowSnapBadge, left + 8);
-            Canvas.SetTop(_windowSnapBadge, Math.Max(8, top + 8));
+            ApplySnapVisuals(true, windowRect);
+            // A snapped app window can straddle monitors - share the offer with every
+            // overlay so the highlight follows it across the screen borders.
+            PushSnapToOtherWindows();
         }
 
         private void PaintWords(Avalonia.Point pos)
