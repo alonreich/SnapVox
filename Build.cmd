@@ -6,24 +6,59 @@ set "SCRIPT_DIR=%~dp0"
 pushd "%SCRIPT_DIR%" >nul || exit /b 1
 rem ---------------------------------------------------------------------------
 
-rem  Build.cmd — dual output: live console + .\build.log (ANSI colors in log).
+rem  Build.cmd â€” dual output: live console + .\build.log (ANSI colors in log).
 
 rem  Log is deleted at the start of each run; header/footer include timestamps.
 
 rem ---------------------------------------------------------------------------
 
-if /I not "%~1"=="__BUILD_LOGGED__" (
+rem  THE ONLY PLACE THAT PAUSES: the real run happens inside BuildLog.ps1's
+rem  pipeline, so a `pause` there would prompt into the pipe and look like a
+rem  hang. The wrapper below is deliberately FLAT sequential lines, NOT one
+rem  big parenthesized block: cmd expands %VARIABLES% when it reads an entire
+rem  block at once, which would freeze BUILD_EXIT at its pre-build value and
+rem  silently break both the pauses and the returned exit code.
+rem      0 = build OK and release published (or publishing was not requested)
+rem      1 = BUILD FAILED           -> nothing was published, the release is untouched
+rem      2 = build OK, PUBLISH DID NOT COMPLETE -> local exes are good, GitHub not updated
+rem  Success is silent so a clean run needs no keypress.
+
+if /I "%~1"=="__BUILD_LOGGED__" goto :run_logged
 
   powershell -NoProfile -ExecutionPolicy Bypass -File ".\developer_tools\BuildLog.ps1" %*
 
   set "BUILD_EXIT=%ERRORLEVEL%"
 
+  rem Exit code legend:
+  rem   0 = build OK and release published (or publishing was not requested)
+  rem   1 = BUILD FAILED           -> nothing was published, the release is untouched
+  rem   2 = build OK, PUBLISH DID NOT COMPLETE -> local exes are good, GitHub not updated
+  if "%BUILD_EXIT%"=="1" (
+    echo.
+    echo ###########################################################
+    echo  BUILD FAILED - nothing was published.
+    echo  The existing GitHub release was NOT touched.
+    echo  Scroll up for the first ERROR line, or read .\build.log
+    echo ###########################################################
+    pause
+  )
+  if "%BUILD_EXIT%"=="2" (
+    echo.
+    echo ###########################################################
+    echo  BUILD OK - but the release was NOT updated.
+    echo  .\compiled\ holds good, usable exes.
+    echo  Only the GitHub publish step did not finish - reason above.
+    echo ###########################################################
+    pause
+  )
+
   popd >nul
 
   exit /b %BUILD_EXIT%
 
-)
 
+
+:run_logged
 shift
 
 
@@ -40,6 +75,29 @@ set "PUBLISH_BASE_ARGS=-p:TreatWarningsAsErrors=true"
 
 set "DOTNET_LOG_ARGS=-consoleLoggerParameters:Summary;NoItemAndPropertyList"
 
+rem --no-publish = compile only, leave GitHub alone. Everything else needs no arguments.
+set "DO_PUBLISH=1"
+if /I "%~1"=="--no-publish" set "DO_PUBLISH=0"
+
+rem ---------------------------------------------------------------------------
+rem  VERSION STAMP (pattern ported from the reference build script): every
+rem  release used to report an unstamped version, so a bug report could not be
+rem  tied to a binary and two builds on the same day collided on one tag. The
+rem  version is computed ONCE here so both exes, the release tag and the
+rem  release notes all say the same thing.
+rem    yyyy.MM.dd.HHmm - each part must stay under 65535 for a Windows version
+rem    resource. HHmm does; HHmmss does not.
+rem ---------------------------------------------------------------------------
+set "BUILD_VERSION="
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "Get-Date -Format yyyy.MM.dd.HHmm"`) do set "BUILD_VERSION=%%V"
+if not defined BUILD_VERSION (
+  echo ERROR: could not compute a build version.
+  exit /b 1
+)
+set "TAG=v!BUILD_VERSION!"
+set "VERSION_ARGS=-p:Version=!BUILD_VERSION! -p:FileVersion=!BUILD_VERSION! -p:InformationalVersion=!BUILD_VERSION!"
+echo Build version: !BUILD_VERSION!  ^(tag !TAG!^)
+
 
 
 echo ###########################################################
@@ -47,6 +105,10 @@ echo ###########################################################
 echo PURGING PREVIOUS BUILD ARTIFACTS...
 
 echo ###########################################################
+
+rem A running SnapVox/SnapVox_tesseract instance keeps .\compiled locked and the
+rem wipe below silently half-fails. Kill both flavors first.
+call :TERMINATE_PROCESSES
 
 if exist ".\compiled" rd /s /q ".\compiled"
 
@@ -63,6 +125,16 @@ echo ###########################################################
 echo BUILDING BRANCH 1: Native
 
 echo ###########################################################
+
+rem Soft probe only: the .NET SDK can locate the MSVC toolchain by itself even
+rem when link.exe is not on PATH, so this must not gate the build (the wording
+rem deliberately avoids the word error/warning - BuildLog.ps1 greps for those).
+where link.exe >nul 2>&1
+if not errorlevel 1 (
+  echo Native AOT toolchain detected ^(link.exe on PATH^).
+) else (
+  echo NOTE: link.exe not on PATH - the .NET SDK will locate the MSVC toolchain itself.
+)
 
 call :BUILD_STANDALONE "Branch1" "SnapVox" "USE_TESSERACT=false" "-p:PublishAot=true"
 
@@ -107,6 +179,24 @@ echo Log file:               .\build.log  (first line: OK / WARN / FAIL)
 
 echo ###########################################################
 
+if "!DO_PUBLISH!"=="0" (
+  echo.
+  echo [PUBLISH] Skipped on request ^(--no-publish^). GitHub was not touched.
+  exit /b 0
+)
+
+echo.
+
+echo ###########################################################
+
+echo PUBLISHING RELEASE TO GITHUB...
+
+echo ###########################################################
+
+call :PUBLISH_RELEASE
+
+if errorlevel 1 exit /b 2
+
 exit /b 0
 
 
@@ -138,7 +228,7 @@ if exist "src\SnapVox\payload.zip" del /f /q "src\SnapVox\payload.zip"
 
 echo [%BRANCH_NAME%] 2. Publishing raw payload to staging...
 
-dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% %AOT_ARGS% -p:%EXTRA_ARGS% -o "%STAGING_DIR%" %DOTNET_LOG_ARGS%
+dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% %AOT_ARGS% -p:%EXTRA_ARGS% !VERSION_ARGS! -o "%STAGING_DIR%" %DOTNET_LOG_ARGS%
 
 if errorlevel 1 exit /b 1
 
@@ -152,7 +242,7 @@ powershell -NoProfile -Command "Compress-Archive -Path '%STAGING_DIR%\*' -Destin
 
 echo [%BRANCH_NAME%] 4. Publishing standalone installer...
 
-dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% -p:PublishAot=true -p:%EXTRA_ARGS% -o "%FINAL_DIR%" %DOTNET_LOG_ARGS%
+dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% -p:PublishAot=true -p:%EXTRA_ARGS% !VERSION_ARGS! -o "%FINAL_DIR%" %DOTNET_LOG_ARGS%
 
 if errorlevel 1 exit /b 1
 
@@ -279,6 +369,8 @@ exit /b 0
 
 taskkill /F /IM SnapVox.exe /T 2>nul
 
+taskkill /F /IM SnapVox_tesseract.exe /T 2>nul
+
 taskkill /F /IM SnapVox_Cleanup.exe /T 2>nul
 
 dotnet build-server shutdown 2>nul
@@ -307,6 +399,142 @@ exit /b 0
 
 :UNLOCK_MAIN_EXE
 
+exit /b 0
+
+
+
+
+rem =====================================================================================
+rem  :PUBLISH_RELEASE - replace the one-and-only GitHub release with what was just built.
+rem
+rem  ONLY REACHED WHEN THE BUILD SUCCEEDED. dotnet publish runs with
+rem  -p:TreatWarningsAsErrors=true, so "no errors" is already enforced upstream; if any
+rem  stage above failed the script exited 1 long before this point and GitHub is untouched.
+rem
+rem  ZERO MAINTENANCE BY DESIGN - nothing in here is hardcoded:
+rem    * the repository is resolved from THIS FOLDER'S git remote via `gh repo view`,
+rem      so renaming or forking the repo needs no edit here;
+rem    * the tag comes from the version stamp computed at the top of this run;
+rem    * every pre-existing release is enumerated and removed, so "latest and only"
+rem      stays true without anyone tracking version numbers.
+rem =====================================================================================
+:PUBLISH_RELEASE
+
+where gh >nul 2>&1
+if errorlevel 1 (
+  echo [PUBLISH] STOPPED: GitHub CLI ^(gh^) is not installed or not on PATH.
+  echo [PUBLISH] Fix: install from https://cli.github.com  -  or run  .\Build.cmd --no-publish
+  exit /b 1
+)
+
+gh auth status >nul 2>&1
+if errorlevel 1 (
+  echo [PUBLISH] STOPPED: gh is installed but not signed in.
+  echo [PUBLISH] Fix: run  gh auth login
+  exit /b 1
+)
+echo [PUBLISH] 1/7 GitHub CLI found and signed in.                   [OK]
+
+set "REPO="
+for /f "usebackq delims=" %%R in (`gh repo view --json nameWithOwner --jq .nameWithOwner 2^>nul`) do set "REPO=%%R"
+if not defined REPO (
+  echo [PUBLISH] STOPPED: could not work out the GitHub repository for this folder.
+  echo [PUBLISH] Fix: confirm  git remote -v  points at GitHub and you can reach the network.
+  exit /b 1
+)
+echo [PUBLISH] 2/7 Target repository: !REPO!                         [OK]
+
+call :GET_SHA256 ".\compiled\SnapVox.exe"
+if not defined SHA256_OUT (
+  echo [PUBLISH] STOPPED: could not fingerprint .\compiled\SnapVox.exe
+  exit /b 1
+)
+set "HASH_NATIVE=!SHA256_OUT!"
+
+call :GET_SHA256 ".\compiled\SnapVox_tesseract.exe"
+if not defined SHA256_OUT (
+  echo [PUBLISH] STOPPED: could not fingerprint .\compiled\SnapVox_tesseract.exe
+  exit /b 1
+)
+set "HASH_TESS=!SHA256_OUT!"
+echo [PUBLISH] 3/7 Both built exes fingerprinted, tag !TAG! ready.   [OK]
+
+rem ---------------------------------------------------------------------------
+rem  THERE IS EXACTLY ONE RELEASE, EVERYWHERE, ALWAYS - NO EXCEPTIONS.
+rem    local : :VALIDATE_COMPILED_OUTPUT proves .\compiled holds exactly the
+rem           three shipped files, and the purge at the top of this run wiped
+rem           the folder before anything was written into it.
+rem    cloud : EVERY previous release is deleted below, whatever its tag.
+rem    git   : and every tag with it. `--cleanup-tag` only removes a tag owned
+rem           by the release being deleted; a tag created by hand, or one left
+rem           behind when a release delete half-failed, survives it and still
+rem           shows up as another "version". The sweep below removes every
+rem           remaining tag remotely AND locally. The slate is then RE-READ
+rem           before publishing onto it: a delete that silently failed must
+rem           not be counted as a success.
+rem ---------------------------------------------------------------------------
+set "REMOVED=0"
+for /f "usebackq delims=" %%T in (`gh release list --repo !REPO! --limit 200 --json tagName --jq ".[].tagName" 2^>nul`) do (
+  echo [PUBLISH]     removing previous release %%T
+  gh release delete %%T --repo !REPO! --cleanup-tag --yes >nul 2>&1
+  set /a REMOVED+=1
+)
+
+git fetch --tags --prune --prune-tags >nul 2>&1
+for /f "usebackq delims=" %%T in (`git tag --list 2^>nul`) do (
+  git push origin --delete "%%T" >nul 2>&1
+  git tag -d "%%T" >nul 2>&1
+)
+
+set "SURVIVORS="
+for /f "usebackq delims=" %%T in (`gh release list --repo !REPO! --limit 200 --json tagName --jq ".[].tagName" 2^>nul`) do set "SURVIVORS=!SURVIVORS! %%T"
+if defined SURVIVORS (
+  echo [PUBLISH] STOPPED: these releases could not be removed:!SURVIVORS!
+  echo [PUBLISH] Publishing now would leave more than one release live. Remove them by hand.
+  exit /b 1
+)
+echo [PUBLISH] 4/7 Removed !REMOVED! previous release^(s^) and all tags.    [OK]
+
+gh release create !TAG! ".\compiled\SnapVox.exe#SnapVox.exe - Native AOT" ".\compiled\SnapVox_tesseract.exe#SnapVox_tesseract.exe - with OCR" ".\compiled\LICENSE.txt#LICENSE.txt" --repo !REPO! --title "SnapVox !TAG!" --notes "Automated release published by Build.cmd on !TAG!. This is the only release: every previous release and tag is deleted on each publish. SnapVox.exe SHA256 !HASH_NATIVE! / SnapVox_tesseract.exe SHA256 !HASH_TESS!." --latest >nul 2>&1
+if errorlevel 1 (
+  echo [PUBLISH] STOPPED: creating release !TAG! failed.
+  echo [PUBLISH] Your build is fine - only the upload failed. Retry, or publish by hand.
+  exit /b 1
+)
+echo [PUBLISH] 5/7 Release !TAG! created, 3 assets uploaded.              [OK]
+
+rem  THE UPLOAD IS VERIFIED BY HASH, NOT BY EXIT CODE: gh reports success even
+rem  when the asset that ends up attached is not the file you meant to send.
+rem  The check below compares the SHA256 digests GitHub reports for BOTH exes
+rem  against the freshly built files. The whole pipeline lives inside one
+rem  quoted powershell -Command string, so no cmd for /f escaping games.
+powershell -NoProfile -Command "$assets = (gh release view !TAG! --repo !REPO! --json assets | ConvertFrom-Json).assets; $assets | ForEach-Object { Write-Host ('[PUBLISH]     remote: ' + $_.name + ' ' + $_.digest) }; $n = $assets | Where-Object name -eq 'SnapVox.exe'; $t = $assets | Where-Object name -eq 'SnapVox_tesseract.exe'; if (-not $n -or -not $t -or $n.digest.ToLower() -ne ('sha256:!HASH_NATIVE!').ToLower() -or $t.digest.ToLower() -ne ('sha256:!HASH_TESS!').ToLower()) { exit 1 }; exit 0"
+if errorlevel 1 (
+  echo [PUBLISH] STOPPED: an uploaded asset does NOT match the file that was just built.
+  echo [PUBLISH]     SnapVox.exe built        sha256:!HASH_NATIVE!
+  echo [PUBLISH]     SnapVox_tesseract built  sha256:!HASH_TESS!
+  echo [PUBLISH] The release would be serving the WRONG binary - fix before telling anyone.
+  exit /b 1
+)
+echo [PUBLISH] 6/7 Both uploaded exe hashes match the built files.    [OK]
+
+echo [PUBLISH] 7/7 Done. https://github.com/!REPO!/releases now holds exactly one release.
+
+echo.
+echo ###########################################################
+echo SUCCESS: release !TAG! is live and is the only release.
+echo Download: https://github.com/!REPO!/releases/latest/download/SnapVox.exe
+echo ###########################################################
+exit /b 0
+
+rem  Fingerprint helper: %1 = file, result lands in SHA256_OUT (UPPERCASE hex).
+rem  certutil prints the header on line 1 and the hash on line 2 - take line 2.
+:GET_SHA256
+set "SHA256_OUT="
+for /f "skip=1 delims=" %%H in ('certutil -hashfile "%~1" SHA256') do (
+  if not defined SHA256_OUT set "SHA256_OUT=%%H"
+)
+set "SHA256_OUT=!SHA256_OUT: =!"
 exit /b 0
 
 

@@ -2,33 +2,55 @@
   <img src="src/snapvox/SnapVox.ico" width="128" height="128" alt="SnapVox Icon">
 </p>
 
-# SnapVox 📸🗣️
+<h1 align="center">SnapVox 📸🗣️</h1>
 
-**SnapVox** is a modern, premium, and lightning-fast screen capture and annotation utility. Built from the ground up using **Avalonia UI** and **.NET 9**, it brings a beautiful, distraction-free interface to your desktop while packing incredibly powerful features—like fully interactive on-image OCR.
+<h3 align="center">A modern, premium, lightning-fast screen capture &amp; annotation utility for Windows —<br>built from the ground up with <b>Avalonia UI</b> and <b>.NET 9</b>.</h3>
 
-Whether you're snapping a quick region to share with a colleague, building complex annotations for documentation, or extracting text straight from an image without leaving the editor, SnapVox makes it frictionless.
+<p align="center">
+  <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET_9-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 9" /></a>
+  <a href="https://avaloniaui.net/"><img src="https://img.shields.io/badge/Avalonia_UI-11.x-purple?style=for-the-badge" alt="Avalonia UI" /></a>
+  <a href="https://github.com/alonreich/SnapVox/releases/latest"><img src="https://img.shields.io/badge/Compiled-NativeAOT-black?style=for-the-badge" alt="NativeAOT" /></a>
+  <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge" alt="GPLv3" /></a>
+</p>
+
+<h2 align="center">
+  <a href="https://github.com/alonreich/SnapVox/releases/latest/download/SnapVox.exe">⬇️ DOWNLOAD LATEST — SnapVox.exe ⬇️</a>
+</h2>
+
+<p align="center">
+  <sub>Need built-in OCR? Grab <a href="https://github.com/alonreich/SnapVox/releases/latest/download/SnapVox_tesseract.exe"><b>SnapVox_tesseract.exe</b></a> instead.</sub>
+</p>
+
+> **🔗 These links never go stale.** They are GitHub *latest-release* permalinks — they always resolve to the most recently published build, so whenever you click them you get the newest version. SnapVox deliberately keeps **exactly one release alive at any time**: every publish deletes all previous releases and their tags, no exceptions.
+
+---
 
 ## ✨ Features
 
-- 🎯 **Precision Capture:** Capture your entire screen, a specific window, or a precise rectangular region across multiple monitors effortlessly.
-- 🎨 **Beautiful Image Editor:** A sleek, dark-themed image editor that feels natively premium. 
-- 🖍️ **Rich Annotations:** Draw shapes, glowing arrows, and add text overlays. 
-- 🤖 **Interactive OCR Mode:** Powered by Tesseract, seamlessly toggle into OCR mode directly within the editor. The UI fades away, and detected text is dynamically highlighted—just click and drag to copy exactly what you need.
-- 🚀 **Blazing Fast:** Available in a hyper-optimized Native AOT build for instant launch times and low memory footprint.
-- ⚙️ **Highly Configurable:** Global hotkeys, startup behaviors, multi-monitor notification overlays, and more.
+| 🎯 Feature | ✨ Description |
+| :--- | :--- |
+| 🖥️ **Precision Capture** | Capture your entire screen, a specific window, or an exact rectangular region across multiple monitors — effortlessly. |
+| 🎨 **Premium Image Editor** | A sleek, dark-themed editor that feels natively premium, with snapping, zooming, and multi-monitor awareness. |
+| 🖍️ **Rich Annotations** | Arrows, shapes, freehand drawing, numbered steps, pixelate, Greenshot-style marker highlight, and text overlays. |
+| 🤖 **Interactive OCR Mode** | Powered by Tesseract. Toggle into OCR mode right inside the editor — the UI fades away, detected text is highlighted live, and you click-and-drag to copy exactly what you need. |
+| 🚀 **Blazing Fast** | Hyper-optimized **Native AOT** build for instant launch times and a tiny memory footprint. |
+| ⚙️ **Highly Configurable** | Global hotkeys, startup behaviors, multi-monitor notification overlays with a configurable blink duration, and more. |
 
 ## 📦 Installation & Releases
 
-SnapVox is distributed as a standalone executable. You can find the latest builds on the [Releases](../../releases) page.
+SnapVox ships as **standalone executables** — download and run, no installer wizard required. Two builds are published with every release:
 
-1. **SnapVox.exe**: The core, blazing-fast Native AOT compiled executable.
-2. **SnapVox_tesseract.exe**: The standard deployment executable bundled with OCR capabilities.
+1. **[SnapVox.exe](https://github.com/alonreich/SnapVox/releases/latest/download/SnapVox.exe)** — the core, blazing-fast Native AOT compiled executable.
+2. **[SnapVox_tesseract.exe](https://github.com/alonreich/SnapVox/releases/latest/download/SnapVox_tesseract.exe)** — the standard deployment executable bundled with OCR capabilities.
+
+Both links are *latest-release* permalinks and always download the newest build. There is never more than one release in this repository: each publish replaces everything that came before it.
 
 ## 🛠️ Build from Source
 
 Requirements:
 - .NET 9.0 SDK
 - Windows 10/11
+- GitHub CLI (`gh`), signed in — only needed for the publish step
 
 Clone the repository and run the build script to generate the binaries in the `.\compiled\` directory:
 
@@ -38,12 +60,20 @@ cd SnapVox
 .\Build.cmd
 ```
 
+The script compiles both binaries, stamps them with a `vYYYY.MM.DD.HHmm` version, then **replaces the one-and-only GitHub release**: every pre-existing release and tag — local and remote — is deleted first (no exceptions), a fresh release is published with `SnapVox.exe`, `SnapVox_tesseract.exe` and `LICENSE.txt` as assets, and the upload is verified by SHA256 digest.
+
+To build without touching GitHub at all:
+
+```powershell
+.\Build.cmd --no-publish
+```
+
 ## ⚖️ License & Open Source Compliance
 
-SnapVox is proudly open-source and is licensed under the **GNU General Public License v3.0 (GPLv3)**. 
+SnapVox is proudly open-source and is licensed under the **GNU General Public License v3.0 (GPLv3)**.
 
 ### Why GPLv3?
-To provide you with the most reliable capture engine possible, portions of SnapVox’s low-level native capture logic and bounds calculations were adapted from **[Greenshot](https://getgreenshot.org/)**, an incredible open-source screenshot tool. Because Greenshot is licensed under the GPL, SnapVox inherits this license to ensure full compliance and respect for their hard work.
+To provide you with the most reliable capture engine possible, portions of SnapVox’s low-level native capture logic, bounds calculations and highlight filter were adapted from **[Greenshot](https://getgreenshot.org/)**, an incredible open-source screenshot tool. Because Greenshot is licensed under the GPL, SnapVox inherits this license to ensure full compliance and respect for their hard work.
 
 ### Third-Party Acknowledgements
 SnapVox stands on the shoulders of giants. We gratefully acknowledge the following open-source projects used in our software:
