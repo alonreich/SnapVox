@@ -106,25 +106,46 @@
             <Setter Property="BorderThickness" Value="2" />
         </Style>
         <!-- ISSUE_003: Destructive "Clear All" button stands out clearly in red. -->
+        <!-- UX: fixed 40px height so it lines up exactly with the neighboring toolbar buttons,
+             solid readable tint instead of a translucent wash, and clear hover/press states. -->
         <Style Selector="Button.destructive">
-            <Setter Property="Background" Value="#33A51D2D" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="MinWidth" Value="40" />
+            <Setter Property="Background" Value="#66A51D2D" />
             <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxDestructiveBrush}" />
+            <Setter Property="BorderBrush" Value="#A51D2D" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="10,0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="{DynamicResource SnapVoxToolbarFontSize}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Transitions">
                 <Transitions>
                     <BrushTransition Property="Background" Duration="0:0:0.1" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.1" />
                 </Transitions>
             </Setter>
         </Style>
         <Style Selector="Button.destructive:hover">
             <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
         </Style>
         <Style Selector="Button.destructive:pressed">
             <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveHoverColor}" />
+        </Style>
+        <Style Selector="Button.destructive:disabled">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+        <!-- ISSUE: the editor scrollbars must stay fully visible whenever there is something to
+             scroll to. Avalonia's Fluent scrollbars auto-collapse (fade to a hairline overlay)
+             by default, which reads as if scrolling is impossible. AllowAutoHide=False keeps
+             them painted at full width for as long as the content overflows, and Auto visibility
+             still hides them completely when the whole picture already fits. -->
+        <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar">
+            <Setter Property="AllowAutoHide" Value="False" />
         </Style>
         <Style Selector="Button.color-preset">
             <Setter Property="Width" Value="28" />
@@ -345,7 +366,7 @@
                         </StackPanel>
                     </Button>
                     <!-- ISSUE_003: destructive "Clear All" uses dedicated warning style -->
-                    <Button Classes="destructive" Name="ClearAllButton" ToolTip.Tip="⚠ Clears ALL marks off the canvas" Click="OnClearAllClick" Width="NaN" Padding="8,0">
+                    <Button Classes="destructive" Name="ClearAllButton" ToolTip.Tip="⚠ Clears ALL marks off the canvas" Click="OnClearAllClick" Padding="10,0">
                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                             <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/nuclear-sharp.svg" />
                             <TextBlock Text="Clear All" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
@@ -555,7 +576,10 @@
         <ScrollViewer Name="EditorScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <Panel Background="{StaticResource CheckerboardBrush}">
                 <Grid Name="MainGrid">
-                    <Panel Name="ZoomContainer" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- BUGFIX (zoom anchoring): top-left anchored so that when the zoomed image is
+                         smaller than the viewport the leftover space can only ever appear on the
+                         right/bottom sides - never as black voids on all four sides. -->
+                    <Panel Name="ZoomContainer" HorizontalAlignment="Left" VerticalAlignment="Top">
                         <!-- ISSUE_009: mandated #000080 navy frame border via shared token -->
                         <Border Name="SnipBorder" BorderBrush="{DynamicResource SnapVoxFrameBorderBrush}" BorderThickness="3">
                             <Image Name="EditorImage" Margin="0" Stretch="None">

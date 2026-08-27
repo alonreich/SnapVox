@@ -116,7 +116,20 @@ internal static class DeploymentLifecycle
         }
 
         using var mutex = new Mutex(false, DeploymentFootprint.InstallerMutexName);
-        if (!AcquireMutex(mutex)) return 2;
+        if (!AcquireMutex(mutex))
+        {
+            // ISSUE (silent second installer): when another setup instance already holds
+            // the installer mutex this worker used to exit silently, which looked like
+            // "nothing happened". Tell the user why instead of just vanishing.
+            BootstrapDebug.Log("Install worker: another installer instance already holds the mutex, exiting.");
+            InstallHostContext.WriteEarlyTrace("Install worker: installer mutex already held by another instance.");
+            StartupTaskHelper.ShowForegroundMessageBox(
+                "Another SnapVox setup is already running.\r\n\r\nPlease finish or close the other setup window first, then run this installer again.",
+                "SnapVox Setup",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return 2;
+        }
 
         DeploymentLogger logger = null;
         DeploymentProgress progress = null;
@@ -131,10 +144,10 @@ internal static class DeploymentLifecycle
             if (conflict != null)
             {
                 await logger.LogAsync("CRITICAL", "CONFLICT", $"Detected {conflict}", ct).ConfigureAwait(false);
-                StartupTaskHelper.ShowForegroundMessageBox(
+                await ShowBlockingPromptAsync(progress,
                     $"Installation had detected a current installed software of {conflict} installed on you system!\r\n\r\nPlease first remove/uninstall the app of {conflict} then re-run the installer again.",
-                    "Installation Conflict", 
-                    MessageBoxButtons.OK, 
+                    "Installation Conflict",
+                    MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 throw new Exception($"Conflicting software detected: {conflict}");
             }
@@ -150,14 +163,14 @@ internal static class DeploymentLifecycle
             bool cleanWipeRequested = false;
             if (upgradeDetected)
             {
-                var upgradeChoice = StartupTaskHelper.ShowForegroundMessageBox(
+                var upgradeChoice = await ShowBlockingPromptAsync(progress,
                     "An existing SnapVox installation was detected on this system.\r\n\r\n" +
                     "Yes    - Upgrade and KEEP my settings (snapvox.ini)\r\n" +
                     "No     - Clean install: wipe ALL settings and user artifacts\r\n" +
                     "Cancel - Abort the installation",
                     "SnapVox Upgrade",
                     MessageBoxButtons.YesNoCancel,
-                    MessageBoxIcon.Question);
+                    MessageBoxIcon.Question).ConfigureAwait(false);
                 await logger.LogAsync("UPGRADE", "PROMPT", $"Existing install detected; user choice: {upgradeChoice}", ct).ConfigureAwait(false);
                 if (upgradeChoice == DialogResult.Cancel)
                 {
@@ -521,7 +534,7 @@ internal static class DeploymentLifecycle
         catch (Exception ex)
         {
             BootstrapDebug.Log("Launcher FATAL: " + ex);
-            MessageBox.Show("Uninstall could not start: " + ex.Message, "Uninstall Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            StartupTaskHelper.ShowForegroundMessageBox("Uninstall could not start: " + ex.Message, "Uninstall Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -917,6 +930,28 @@ internal static class DeploymentLifecycle
         if (l != null) await l.LogAsync(phase, status, detail, ct, ex).ConfigureAwait(false);
     }
 
+    // ISSUE (installer prompts behind the setup window): native prompts are shown from
+    // a background continuation while the topmost Avalonia setup window owns the
+    // activation, so they used to appear (and wait, invisibly) BEHIND it. The progress
+    // window is temporarily dropped from the topmost band before each prompt so the
+    // dialog — itself MB_TOPMOST|MB_SETFOREGROUND — is guaranteed to be the front-most
+    // window, and the install flow only resumes once the user has actually answered.
+    private static async Task<DialogResult> ShowBlockingPromptAsync(DeploymentProgress progress, string message, string title, MessageBoxButtons buttons, MessageBoxIcon icon)
+    {
+        progress?.SuppressTopmost();
+        try
+        {
+            // Give the UI thread a beat to apply the topmost change before the native
+            // dialog is created on this thread.
+            await Task.Delay(120, CancellationToken.None).ConfigureAwait(false);
+            return StartupTaskHelper.ShowForegroundMessageBox(message, title, buttons, icon);
+        }
+        finally
+        {
+            progress?.RestoreTopmost();
+        }
+    }
+
     private static async Task<int> RunHiddenProcessAsync(string exe, string args, int timeout, DeploymentLogger logger, CancellationToken ct)
     {
         using var p = new Process { StartInfo = new ProcessStartInfo { FileName = exe, Arguments = args, UseShellExecute = false, CreateNoWindow = true } };
@@ -949,6 +984,22 @@ internal static class DeploymentLifecycle
             Dispatcher.UIThread.Post(() => {
                 _window?.UpdateProgress(pct); 
                 _window?.UpdateStatus(status); 
+            });
+        }
+
+        // ISSUE (installer prompts behind the setup window): see ShowBlockingPromptAsync.
+        // Temporarily leave the topmost band so a native prompt is guaranteed to be the
+        // front-most, activated window while it waits for the user's answer.
+        public void SuppressTopmost()
+        {
+            Dispatcher.UIThread.Post(() => {
+                try { if (_window != null) _window.Topmost = false; } catch { }
+            });
+        }
+        public void RestoreTopmost()
+        {
+            Dispatcher.UIThread.Post(() => {
+                try { if (_window != null) { _window.Topmost = true; _window.Activate(); } } catch { }
             });
         }
         public void Dispose() 

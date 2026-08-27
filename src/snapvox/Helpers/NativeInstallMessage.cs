@@ -9,6 +9,7 @@ internal static class NativeInstallMessage
     private const uint MbIconInformation = 0x00000040;
     private const uint MbIconError = 0x00000010;
     private const uint MbTopmost = 0x00040000;
+    private const uint MbSetForeground = 0x00010000;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
@@ -25,7 +26,7 @@ internal static class NativeInstallMessage
               (string.IsNullOrWhiteSpace(detail) ? "See the log file for details." : detail) + Environment.NewLine +
               Environment.NewLine + "Log: " + logPath;
 
-        uint flags = MbOk | MbTopmost | (success ? MbIconInformation : MbIconError);
+        uint flags = MbOk | MbSetForeground | MbTopmost | (success ? MbIconInformation : MbIconError);
         try
         {
             MessageBoxW(IntPtr.Zero, body, caption, flags);

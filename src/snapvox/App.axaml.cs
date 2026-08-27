@@ -213,35 +213,41 @@ namespace snapvox
                     blueBytes = ms.ToArray();
                 }
 
-                byte[] pngBytes = null;
-                using (var iconStream = new MemoryStream(blueBytes))
-                using (var avaloniaBitmap = new Avalonia.Media.Imaging.Bitmap(iconStream))
-                using (var bridgeMs = new MemoryStream())
-                {
-                    avaloniaBitmap.Save(bridgeMs);
-                    pngBytes = bridgeMs.ToArray();
-                }
+                // BUGFIX (red tray eye): the .ico asset used to be handed straight to
+                // Avalonia.Media.Imaging.Bitmap, which cannot decode ICO containers. That threw,
+                // the catch below swallowed it, _redIcon stayed null, and every red-state request
+                // silently fell back to the blue icon - the eye never turned red no matter what
+                // the state machine did. The ICO is now decoded manually: the largest sub-image is
+                // extracted (embedded PNG or 32bpp DIB) and converted to PNG bytes first.
+                byte[] pngBytes = TryDecodeIcoToPng(blueBytes);
 
-                redBytes = await Task.Run(() =>
+                if (pngBytes != null)
                 {
-                    using var image = SixLabors.ImageSharp.Image.Load<Bgra32>(pngBytes);
-                    image.Mutate(x => x.ProcessPixelRowsAsVector4(row =>
+                    redBytes = await Task.Run(() =>
                     {
-                        for (int i = 0; i < row.Length; i++)
+                        using var image = SixLabors.ImageSharp.Image.Load<Bgra32>(pngBytes);
+                        image.Mutate(x => x.ProcessPixelRowsAsVector4(row =>
                         {
-                            float r = row[i].X;
-                            float g = row[i].Y;
-                            float b = row[i].Z;
-                            row[i].X = Math.Max(r, Math.Max(g, b));
-                            row[i].Y = g * 0.2f;
-                            row[i].Z = b * 0.2f;
-                        }
-                    }));
+                            for (int i = 0; i < row.Length; i++)
+                            {
+                                float r = row[i].X;
+                                float g = row[i].Y;
+                                float b = row[i].Z;
+                                row[i].X = Math.Max(r, Math.Max(g, b));
+                                row[i].Y = g * 0.2f;
+                                row[i].Z = b * 0.2f;
+                            }
+                        }));
 
-                    using var ms = new MemoryStream();
-                    image.Save(ms, new PngEncoder());
-                    return ms.ToArray();
-                }).ConfigureAwait(true);
+                        using var ms = new MemoryStream();
+                        image.Save(ms, new PngEncoder());
+                        return ms.ToArray();
+                    }).ConfigureAwait(true);
+                }
+                else
+                {
+                    LogHelper.GetLogger(typeof(App)).Error("Tray red-eye icon unavailable: SnapVox.ico could not be decoded to pixels (falling back to blue-only).");
+                }
             }
             catch (Exception ex)
             {
@@ -284,18 +290,105 @@ namespace snapvox
             });
         }
 
+        /// <summary>
+        /// Decodes an ICO container into PNG bytes for the largest sub-image it contains.
+        /// Supports both PNG-compressed entries and classic 32bpp BMP (DIB) entries.
+        /// </summary>
+        private static byte[] TryDecodeIcoToPng(byte[] icoBytes)
+        {
+            try
+            {
+                if (icoBytes == null || icoBytes.Length < 6) return null;
+                int count = BitConverter.ToUInt16(icoBytes, 4);
+
+                int bestOffset = -1, bestLength = 0, bestWidth = 0, bestHeight = 0;
+                long bestArea = 0;
+                for (int i = 0; i < count; i++)
+                {
+                    int entry = 6 + i * 16;
+                    if (entry + 16 > icoBytes.Length) break;
+                    int width = icoBytes[entry] == 0 ? 256 : icoBytes[entry];
+                    int height = icoBytes[entry + 1] == 0 ? 256 : icoBytes[entry + 1];
+                    int length = BitConverter.ToInt32(icoBytes, entry + 8);
+                    int offset = BitConverter.ToInt32(icoBytes, entry + 12);
+                    long area = (long)width * height;
+                    if (area > bestArea && offset >= 0 && length > 0 && offset + length <= icoBytes.Length)
+                    {
+                        bestArea = area;
+                        bestOffset = offset;
+                        bestLength = length;
+                        bestWidth = width;
+                        bestHeight = height;
+                    }
+                }
+
+                if (bestOffset < 0) return null;
+
+                byte[] subImage = new byte[bestLength];
+                Array.Copy(icoBytes, bestOffset, subImage, 0, bestLength);
+
+                // PNG-compressed entry: usable as-is.
+                if (subImage.Length > 8 && subImage[0] == 0x89 && subImage[1] == 0x50 && subImage[2] == 0x4E && subImage[3] == 0x47)
+                {
+                    return subImage;
+                }
+
+                return DibEntryToPng(subImage, bestWidth, bestHeight);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Converts a 32bpp BITMAPINFOHEADER entry (bottom-up BGRA rows) from an ICO into PNG
+        /// bytes. Modern Windows icons are 32bpp with a real alpha channel, so the AND mask is
+        /// ignored.
+        /// </summary>
+        private static byte[] DibEntryToPng(byte[] dib, int width, int height)
+        {
+            if (dib == null || dib.Length < 40 || width <= 0 || height <= 0) return null;
+            int headerSize = BitConverter.ToInt32(dib, 0);
+            if (headerSize < 40) return null;
+            short bitsPerPixel = BitConverter.ToInt16(dib, 14);
+            if (bitsPerPixel != 32) return null;
+
+            int stride = ((width * 32 + 31) / 32) * 4;
+            int pixelBytes = stride * height;
+            if (headerSize + pixelBytes > dib.Length) return null;
+
+            using var image = SixLabors.ImageSharp.Image.LoadPixelData<Bgra32>(
+                new ReadOnlySpan<byte>(dib, headerSize, pixelBytes), width, height);
+            image.Mutate(x => x.Flip(FlipMode.Vertical)); // DIB rows are stored bottom-up.
+
+            using var ms = new MemoryStream();
+            image.Save(ms, new PngEncoder());
+            return ms.ToArray();
+        }
+
         private static int _redStateRequestCount = 0;
         private static volatile bool _currentIconIsRed = false;
         private static readonly object _iconLock = new object();
 
-        public static void ForceRedTrayIcon(bool force)
+        public static void ForceRedTrayIcon(bool force, string reason = null)
         {
             lock (_iconLock)
             {
+                bool wasRed = _redStateRequestCount > 0;
                 if (force) _redStateRequestCount++;
                 else _redStateRequestCount = Math.Max(0, _redStateRequestCount - 1);
+                bool isRed = _redStateRequestCount > 0;
 
-                SetTrayIconStateInternal(_redStateRequestCount > 0);
+                if (wasRed != isRed)
+                {
+                    // Trace every red/blue transition so any future drift between capture
+                    // components is diagnosable from the log instead of guesswork.
+                    LogHelper.GetLogger(typeof(App)).Info(
+                        $"Tray eye -> {(isRed ? "RED (capture active)" : "BLUE (idle)")} [holds={_redStateRequestCount}]{(string.IsNullOrEmpty(reason) ? "" : " " + reason)}");
+                }
+
+                SetTrayIconStateInternal(isRed);
             }
         }
 

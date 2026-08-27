@@ -477,23 +477,75 @@ public static class StartupTaskHelper
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int MessageBox(IntPtr hWnd, string lpText, string lpCaption, uint uType);
 
+    // Win32 MessageBox button / icon / behaviour flags.
+    private const uint MbOk = 0x00000000;
+    private const uint MbOkCancel = 0x00000001;
+    private const uint MbAbortRetryIgnore = 0x00000002;
+    private const uint MbYesNoCancel = 0x00000003;
+    private const uint MbYesNo = 0x00000004;
+    private const uint MbRetryCancel = 0x00000005;
+    private const uint MbIconError = 0x00000010;
+    private const uint MbIconQuestion = 0x00000020;
+    private const uint MbIconWarning = 0x00000030;
+    private const uint MbIconInformation = 0x00000040;
+    private const uint MbSetForeground = 0x00010000; // forces the dialog into the foreground
+    private const uint MbTopmost = 0x00040000;       // places it in the topmost window band
+
+    // Win32 MessageBox return codes. These intentionally match the DialogResult
+    // shim values (None=0, OK=1, Cancel=2, Abort=3, Retry=4, Ignore=5, Yes=6, No=7).
+    private const int IdOk = 1;
+    private const int IdCancel = 2;
+    private const int IdAbort = 3;
+    private const int IdRetry = 4;
+    private const int IdIgnore = 5;
+    private const int IdYes = 6;
+    private const int IdNo = 7;
+
     public static DialogResult ShowForegroundMessageBox(string message, string title, MessageBoxButtons buttons = MessageBoxButtons.OK, MessageBoxIcon icon = MessageBoxIcon.Information)
     {
         try
         {
-            uint type = 0x00000040; // MB_ICONINFORMATION
-            if (icon == MessageBoxIcon.Error) type = 0x00000010; // MB_ICONERROR
-            if (icon == MessageBoxIcon.Warning) type = 0x00000030; // MB_ICONWARNING
+            // ISSUE (installer prompts invisible + never answered): the requested button
+            // set was previously ignored, so every dialog rendered as plain MB_OK and
+            // always returned "OK" — the Yes/No/Cancel upgrade decision could never be
+            // made by the user and the install silently proceeded on its own. The button
+            // set and icon are now honoured, and MB_SETFOREGROUND makes the dialog the
+            // active foreground window instead of sitting deactivated behind the
+            // installer's own topmost progress window.
+            uint type = MbOk;
+            if (buttons == MessageBoxButtons.OKCancel) type = MbOkCancel;
+            else if (buttons == MessageBoxButtons.AbortRetryIgnore) type = MbAbortRetryIgnore;
+            else if (buttons == MessageBoxButtons.YesNoCancel) type = MbYesNoCancel;
+            else if (buttons == MessageBoxButtons.YesNo) type = MbYesNo;
+            else if (buttons == MessageBoxButtons.RetryCancel) type = MbRetryCancel;
 
-            // This brings the message box to the foreground.
-            type |= 0x00040000; // MB_TOPMOST
+            if (icon == MessageBoxIcon.Hand || icon == MessageBoxIcon.Stop || icon == MessageBoxIcon.Error) type |= MbIconError;
+            else if (icon == MessageBoxIcon.Question) type |= MbIconQuestion;
+            else if (icon == MessageBoxIcon.Exclamation || icon == MessageBoxIcon.Warning) type |= MbIconWarning;
+            else if (icon == MessageBoxIcon.None) { /* no icon */ }
+            else type |= MbIconInformation; // Asterisk / Information
 
-            return (DialogResult)MessageBox(IntPtr.Zero, message, title, type);
+            // Bring the dialog above every other window (including the setup window,
+            // which is itself topmost) and make it the active window so the calling
+            // flow truly halts until the user has answered.
+            type |= MbSetForeground | MbTopmost;
+
+            int result = MessageBox(IntPtr.Zero, message, title, type);
+
+            if (result == IdYes) return DialogResult.Yes;
+            if (result == IdNo) return DialogResult.No;
+            if (result == IdCancel) return DialogResult.Cancel;
+            if (result == IdAbort) return DialogResult.Abort;
+            if (result == IdRetry) return DialogResult.Retry;
+            if (result == IdIgnore) return DialogResult.Ignore;
+            return DialogResult.OK;
         }
         catch
         {
-            // Fallback for non-windows or other issues
-            return snapvox.foundation.core.AvaloniaShims.MessageBox.Show(message, title, buttons, icon);
+            // Fallback for non-windows or other issues. Never let the non-interactive
+            // shim silently answer a question the user never saw: any dialog offering
+            // a choice defaults to the safe "cancel" outcome instead of "OK".
+            return buttons == MessageBoxButtons.OK ? DialogResult.OK : DialogResult.Cancel;
         }
     }
 }

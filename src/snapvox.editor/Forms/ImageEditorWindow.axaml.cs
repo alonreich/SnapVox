@@ -245,6 +245,12 @@ namespace snapvox.editor.forms
             Closed += OnWindowClosed;
             Opened += OnWindowOpened;
             Closing += OnWindowClosing;
+
+            var editorScroller = this.FindControl<ScrollViewer>("EditorScrollViewer");
+            if (editorScroller != null)
+            {
+                editorScroller.PointerMoved += (s, e) => _lastPointerInScroller = e.GetPosition(editorScroller);
+            }
         }
 
         private static readonly string[] EmojiPalette =
@@ -706,6 +712,10 @@ namespace snapvox.editor.forms
         }
 
         private CancellationTokenSource _zoomHintCts;
+        // FEATURE (anchored zoom): last pointer position over the editor scroller, used as the
+        // focus point when zooming from the toolbar buttons so zoom-in aims at the area the user
+        // is actually looking at instead of jumping to an arbitrary corner.
+        private AvaloniaPoint? _lastPointerInScroller;
 
         private async void ShowZoomHintDebounced()
         {
@@ -747,19 +757,10 @@ namespace snapvox.editor.forms
                 var scrollViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
                 if (scrollViewer == null) return;
 
-                double oldZoom = _zoomFactor;
-                if (e.Delta.Y > 0) _zoomFactor = Math.Min(4.0, _zoomFactor + 0.1);
-                else _zoomFactor = Math.Max(0.1, _zoomFactor - 0.1);
-
-                if (Math.Abs(oldZoom - _zoomFactor) < 0.01) return;
-
                 var viewportPos = e.GetPosition(scrollViewer);
-                var oldOffset = scrollViewer.Offset;
-                ApplyZoom();
+                _lastPointerInScroller = viewportPos;
+                ZoomTowards(viewportPos, _zoomFactor + (e.Delta.Y > 0 ? 0.1 : -0.1));
 
-                double ratio = _zoomFactor / oldZoom;
-                scrollViewer.Offset = new Avalonia.Vector((oldOffset.X + viewportPos.X) * ratio - viewportPos.X, (oldOffset.Y + viewportPos.Y) * ratio - viewportPos.Y);
-                
                 ShowZoomHintDebounced();
                 e.Handled = true;
             }
@@ -808,6 +809,35 @@ namespace snapvox.editor.forms
                 _ghostIconScale.ScaleX = 1.0 / _zoomFactor;
                 _ghostIconScale.ScaleY = 1.0 / _zoomFactor;
             }
+        }
+
+        // FEATURE (anchored zoom): every zoom path goes through here. The point under the cursor
+        // (or the last known cursor position over the canvas when zooming from the toolbar) stays
+        // pinned in place while the scale changes, so zooming in always digs deeper into the area
+        // the user is actually looking at. The ZoomContainer is top-left anchored, and the offset
+        // is clamped at zero, so when zooming out the leftover space can only appear on the
+        // right/bottom sides - never as voids on all four sides.
+        private void ZoomTowards(AvaloniaPoint? anchorViewportPos, double requestedZoom)
+        {
+            double oldZoom = _zoomFactor;
+            _zoomFactor = Math.Clamp(requestedZoom, 0.1, 4.0);
+            if (Math.Abs(oldZoom - _zoomFactor) < 0.001) return;
+
+            var scrollViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
+            if (scrollViewer == null)
+            {
+                ApplyZoom();
+                return;
+            }
+
+            var anchor = anchorViewportPos ?? new AvaloniaPoint(scrollViewer.Viewport.Width / 2, scrollViewer.Viewport.Height / 2);
+            var oldOffset = scrollViewer.Offset;
+            ApplyZoom();
+
+            double ratio = _zoomFactor / oldZoom;
+            double newOffsetX = (oldOffset.X + anchor.X) * ratio - anchor.X;
+            double newOffsetY = (oldOffset.Y + anchor.Y) * ratio - anchor.Y;
+            scrollViewer.Offset = new Avalonia.Vector(Math.Max(0, newOffsetX), Math.Max(0, newOffsetY));
         }
 
         private bool _forceClose = false;
@@ -1502,11 +1532,23 @@ namespace snapvox.editor.forms
             }
 
             double scaling = targetScreen.Scaling;
-            double maxAllowedWidth = (targetScreen.WorkingArea.Width - 100) / scaling;
-            double maxAllowedHeight = (targetScreen.WorkingArea.Height - 160) / scaling;
+            // BUGFIX (auto-size): the old formula divided the image's DIP size by the screen
+            // scaling, shrinking the window on any high-DPI monitor (125%/150%), so a snip smaller
+            // than the screen still needed manual enlarging before the whole picture was visible.
+            // The picture is laid out 1:1 in DIPs and the working-area budget is converted to DIPs
+            // exactly once. The chrome budget now accounts for the real editor furniture:
+            // left tool rail (60) + snip frame (2 x 3) + scrollbar allowance (~18) + breathing
+            // room on each axis; top = title bar (32) + main toolbar (60); bottom bar = 60.
+            const double ChromeLeft = 60 + SnapVoxFrameThickness * 2 + 18 + 12;
+            const double ChromeRight = SnapVoxFrameThickness * 2 + 18 + 12;
+            const double ChromeTop = 32 + 60 + SnapVoxFrameThickness * 2 + 18 + 12;
+            const double ChromeBottom = 60 + SnapVoxFrameThickness * 2 + 18 + 12;
 
-            double targetWidth = ((_image.Width * _zoomFactor) + 50) / scaling;
-            double targetHeight = ((_image.Height * _zoomFactor) + 50) / scaling;
+            double maxAllowedWidth = (targetScreen.WorkingArea.Width - 24) / scaling;
+            double maxAllowedHeight = (targetScreen.WorkingArea.Height - 24) / scaling;
+
+            double targetWidth = _image.Width * _zoomFactor + ChromeLeft + ChromeRight;
+            double targetHeight = _image.Height * _zoomFactor + ChromeTop + ChromeBottom;
 
             if (targetWidth < 850) targetWidth = 850;
             if (targetHeight < 650) targetHeight = 650;
@@ -1535,9 +1577,9 @@ namespace snapvox.editor.forms
             ClearSnapshotStack(_redoStack);
         }
         private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }
-        private void OnZoomInClick(object sender, RoutedEventArgs e) { _zoomFactor = Math.Min(4.0, _zoomFactor + 0.1); ApplyZoom(); }
-        private void OnZoomOutClick(object sender, RoutedEventArgs e) { _zoomFactor = Math.Max(0.1, _zoomFactor - 0.1); ApplyZoom(); }
-        private void OnZoomResetButtonClick(object sender, RoutedEventArgs e) { _zoomFactor = 1.0; ApplyZoom(); }
+        private void OnZoomInClick(object sender, RoutedEventArgs e) { ZoomTowards(_lastPointerInScroller, _zoomFactor + 0.1); ShowZoomHintDebounced(); }
+        private void OnZoomOutClick(object sender, RoutedEventArgs e) { ZoomTowards(_lastPointerInScroller, _zoomFactor - 0.1); ShowZoomHintDebounced(); }
+        private void OnZoomResetButtonClick(object sender, RoutedEventArgs e) { ZoomTowards(_lastPointerInScroller, 1.0); ShowZoomHintDebounced(); }
         private void OnCounterDoubleTapped(object sender, TappedEventArgs e) { _counterValue = 1; }
         private void OnCounterResetClick(object sender, RoutedEventArgs e) { _counterValue = 1; OverlayHelper.ShowLightToast("COUNTER RESET TO 1", this); }
         private void OnCounterUpClick(object sender, RoutedEventArgs e)
@@ -1856,14 +1898,25 @@ namespace snapvox.editor.forms
 
         // ===== FEATURE (shape snap guides) =================================================
         // Magnetic alignment between shape bounds: the moving shape's left/center/right and
-        // top/middle/bottom can each align with any of those anchors on every other shape plus
-        // the image borders and the image center. When an alignment is within threshold the shape
-        // shifts onto it and dashed guide lines stretch from one shape to the other.
+        // top/middle/bottom can each align with any of those anchors on every other shape, plus
+        // the image borders and the image's exact vertical/horizontal middle. When an alignment
+        // is within threshold the shape shifts onto it and guide lines appear. Guides always
+        // span the full image (like every classic design tool) instead of stretching from shape
+        // A to shape B, so a line can never read as something glued to the moving shape itself.
+        // Locking onto the image middle additionally pops a gentle full-length cross through
+        // the exact center of the picture until the snap is released.
 
         private readonly struct ShapeSnapTarget
         {
             public readonly Rect Bounds;
-            public ShapeSnapTarget(Rect bounds) { Bounds = bounds; }
+            // True for the image's vertical-middle / horizontal-middle rails: matching one of
+            // these triggers the center-cross guide.
+            public readonly bool IsImageMiddle;
+            public ShapeSnapTarget(Rect bounds, bool isImageMiddle = false)
+            {
+                Bounds = bounds;
+                IsImageMiddle = isImageMiddle;
+            }
         }
 
         private static bool IsStampTool(EditorTool tool) => tool is EditorTool.Text or EditorTool.Counter or EditorTool.Emoji;
@@ -1874,7 +1927,15 @@ namespace snapvox.editor.forms
         {
             if (_image != null)
             {
-                yield return new ShapeSnapTarget(new Rect(0, 0, _image.Width, _image.Height));
+                double w = _image.Width;
+                double h = _image.Height;
+                // The full-image target supplies the left/right/top/bottom frame rails.
+                yield return new ShapeSnapTarget(new Rect(0, 0, w, h));
+                // Vertical-middle rail: a shape's left/center/right can lock to x = w/2 anywhere
+                // along the line. Degenerate (zero-width) rect: Left == Center.X == Right == w/2.
+                yield return new ShapeSnapTarget(new Rect(w / 2, 0, 0, h), isImageMiddle: true);
+                // Horizontal-middle rail: a shape's top/middle/bottom can lock to y = h/2.
+                yield return new ShapeSnapTarget(new Rect(0, h / 2, w, 0), isImageMiddle: true);
             }
 
             foreach (var control in GetUserAnnotations())
@@ -1892,19 +1953,54 @@ namespace snapvox.editor.forms
             if (_image == null) return false;
 
             var targets = GetShapeSnapTargets(moving).ToList();
-            bool snappedX = TrySnapAxis(vertical: false, movingBounds, targets, out snapDx, out var guideX);
-            bool snappedY = TrySnapAxis(vertical: true, movingBounds, targets, out snapDy, out var guideY);
+            bool snappedX = TrySnapAxis(vertical: false, movingBounds, targets, out snapDx, out var snapX);
+            bool snappedY = TrySnapAxis(vertical: true, movingBounds, targets, out snapDy, out var snapY);
 
             if (guides == null) return snappedX || snappedY;
-            if (snappedX) guides.Add(guideX);
-            if (snappedY) guides.Add(guideY);
+
+            // BUGFIX (guide geometry): guides used to stretch from shape A to shape B, which read
+            // as a stray line attached to the moving shape whenever the alignment partner was the
+            // image frame. Classic design tools draw rail guides across the whole canvas instead:
+            // an X-axis alignment draws a vertical rail spanning the full image height, a Y-axis
+            // alignment draws a horizontal rail spanning the full image width.
+            if (snappedX) guides.Add(new SnapGuideInfo(false, snapX.Coordinate, 0, _image.Height));
+            if (snappedY) guides.Add(new SnapGuideInfo(true, snapY.Coordinate, 0, _image.Width));
+
+            // FEATURE (center cross): locking onto the image's vertical or horizontal middle pops
+            // a gentle full-length cross through the exact center of the picture until release.
+            if ((snappedX && snapX.IsMiddle) || (snappedY && snapY.IsMiddle))
+            {
+                AddGuideOnce(guides, new SnapGuideInfo(false, _image.Width / 2, 0, _image.Height));
+                AddGuideOnce(guides, new SnapGuideInfo(true, _image.Height / 2, 0, _image.Width));
+            }
+
             return snappedX || snappedY;
         }
 
-        private static bool TrySnapAxis(bool vertical, Rect moving, List<ShapeSnapTarget> targets, out double delta, out SnapGuideInfo guide)
+        private static void AddGuideOnce(List<SnapGuideInfo> guides, SnapGuideInfo guide)
+        {
+            for (int i = 0; i < guides.Count; i++)
+            {
+                if (guides[i].Horizontal == guide.Horizontal && Math.Abs(guides[i].Coordinate - guide.Coordinate) < 0.5) return;
+            }
+            guides.Add(guide);
+        }
+
+        private readonly struct AxisSnapResult
+        {
+            public readonly double Coordinate;
+            public readonly bool IsMiddle;
+            public AxisSnapResult(double coordinate, bool isMiddle)
+            {
+                Coordinate = coordinate;
+                IsMiddle = isMiddle;
+            }
+        }
+
+        private static bool TrySnapAxis(bool vertical, Rect moving, List<ShapeSnapTarget> targets, out double delta, out AxisSnapResult snapped)
         {
             delta = 0;
-            guide = default;
+            snapped = default;
 
             double[] mine =
             {
@@ -1916,7 +2012,7 @@ namespace snapvox.editor.forms
             double bestDistance = VectorSnapThreshold + 0.001;
             double bestDelta = 0;
             double bestCoordinate = 0;
-            Rect bestTarget = default;
+            bool bestIsMiddle = false;
             bool found = false;
 
             foreach (var target in targets)
@@ -1928,6 +2024,13 @@ namespace snapvox.editor.forms
                     vertical ? target.Bounds.Bottom : target.Bounds.Right
                 };
 
+                // The middle coordinate this target can offer on the axis being tested (for the
+                // degenerate middle rails this IS the rail coordinate; for ordinary shapes and the
+                // image frame it is the bounds center, which is not treated as a center rail).
+                double targetMiddle = vertical
+                    ? target.Bounds.Top + target.Bounds.Height / 2
+                    : target.Bounds.Left + target.Bounds.Width / 2;
+
                 foreach (double m in mine)
                 {
                     foreach (double t in theirs)
@@ -1938,7 +2041,7 @@ namespace snapvox.editor.forms
                             bestDistance = distance;
                             bestDelta = t - m;
                             bestCoordinate = t;
-                            bestTarget = target.Bounds;
+                            bestIsMiddle = target.IsImageMiddle && Math.Abs(t - targetMiddle) < 0.5;
                             found = true;
                         }
                     }
@@ -1948,13 +2051,8 @@ namespace snapvox.editor.forms
             if (!found) return false;
 
             delta = bestDelta;
-            double snappedNear = (vertical ? moving.Top : moving.Left) + bestDelta;
-            double snappedFar = (vertical ? moving.Bottom : moving.Right) + bestDelta;
-            double targetNear = vertical ? bestTarget.Top : bestTarget.Left;
-            double targetFar = vertical ? bestTarget.Bottom : bestTarget.Right;
-
             // A Y-axis alignment draws a horizontal guide; an X-axis alignment draws a vertical one.
-            guide = new SnapGuideInfo(vertical, bestCoordinate, Math.Min(snappedNear, targetNear), Math.Max(snappedFar, targetFar));
+            snapped = new AxisSnapResult(bestCoordinate, bestIsMiddle);
             return true;
         }
 
