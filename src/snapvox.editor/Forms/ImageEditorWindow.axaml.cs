@@ -246,12 +246,6 @@ namespace snapvox.editor.forms
             Closed += OnWindowClosed;
             Opened += OnWindowOpened;
             Closing += OnWindowClosing;
-
-            var editorScroller = this.FindControl<ScrollViewer>("EditorScrollViewer");
-            if (editorScroller != null)
-            {
-                editorScroller.PointerMoved += (s, e) => _lastPointerInScroller = e.GetPosition(editorScroller);
-            }
         }
 
         private static readonly string[] EmojiPalette =
@@ -713,10 +707,6 @@ namespace snapvox.editor.forms
         }
 
         private CancellationTokenSource _zoomHintCts;
-        // FEATURE (anchored zoom): last pointer position over the editor scroller, used as the
-        // focus point when zooming from the toolbar buttons so zoom-in aims at the area the user
-        // is actually looking at instead of jumping to an arbitrary corner.
-        private AvaloniaPoint? _lastPointerInScroller;
 
         private async void ShowZoomHintDebounced()
         {
@@ -758,9 +748,11 @@ namespace snapvox.editor.forms
                 var scrollViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
                 if (scrollViewer == null) return;
 
-                var viewportPos = e.GetPosition(scrollViewer);
-                _lastPointerInScroller = viewportPos;
-                ZoomTowards(viewportPos, _zoomFactor + (e.Delta.Y > 0 ? 0.1 : -0.1));
+                // PRODUCT DECISION (top-left zoom anchor): the wheel anchors the TOP-LEFT corner
+                // exactly like the toolbar buttons. Cursor-pinned zooming dug toward wherever the
+                // pointer happened to rest (usually the bottom-right of the viewport), visibly
+                // detaching the picture from the top-left corner on every step.
+                ZoomTowards(_zoomFactor + (e.Delta.Y > 0 ? 0.1 : -0.1));
 
                 ShowZoomHintDebounced();
                 e.Handled = true;
@@ -812,13 +804,15 @@ namespace snapvox.editor.forms
             }
         }
 
-        // FEATURE (anchored zoom): every zoom path goes through here. The point under the cursor
-        // (or the last known cursor position over the canvas when zooming from the toolbar) stays
-        // pinned in place while the scale changes, so zooming in always digs deeper into the area
-        // the user is actually looking at. The ZoomContainer is top-left anchored, and the offset
-        // is clamped at zero, so when zooming out the leftover space can only appear on the
-        // right/bottom sides - never as voids on all four sides.
-        private void ZoomTowards(AvaloniaPoint? anchorViewportPos, double requestedZoom)
+        // FEATURE (top-left anchored zoom): every zoom path - wheel, toolbar +/-, reset - anchors
+        // the TOP-LEFT corner. The content point currently sitting at the viewport's top-left
+        // stays exactly where it is: the offset is simply rescaled (offset * ratio), so zooming
+        // IN always expands the picture toward the bottom-right and zooming OUT shrinks it back
+        // toward the top-left. Combined with the ZoomContainer's Left/Top alignment and the
+        // [0, content - viewport] clamp this makes voids at the top-left structurally
+        // impossible - leftover space can only ever appear on the right/bottom sides, and only
+        // when the zoomed content is smaller than the viewport.
+        private void ZoomTowards(double requestedZoom)
         {
             double oldZoom = _zoomFactor;
             _zoomFactor = Math.Clamp(requestedZoom, 0.1, 4.0);
@@ -831,27 +825,40 @@ namespace snapvox.editor.forms
                 return;
             }
 
-            // BUGFIX (zoom anchor flip): when zooming from the toolbar there is no meaningful
-            // cursor anchor - the previous default (viewport centre) made the picture visibly
-            // "flip" sideways on every step, especially when zooming out of a fitted view.
-            // A null anchor now pins the TOP-LEFT corner, the stable behaviour expected from
-            // +/- buttons, while wheel zoom still pins the exact point under the cursor.
-            var anchor = anchorViewportPos ?? new AvaloniaPoint(0, 0);
             var oldOffset = scrollViewer.Offset;
             ApplyZoom();
 
+            // Top-left anchor: rescale the existing offset around the viewport's (0,0) corner.
             double ratio = _zoomFactor / oldZoom;
-            double newOffsetX = (oldOffset.X + anchor.X) * ratio - anchor.X;
-            double newOffsetY = (oldOffset.Y + anchor.Y) * ratio - anchor.Y;
+            double desiredX = oldOffset.X * ratio;
+            double desiredY = oldOffset.Y * ratio;
+            ApplyTopLeftAnchoredOffset(scrollViewer, desiredX, desiredY);
 
-            // BUGFIX (zoom anchor flip): once the zoomed content fits inside the viewport on
-            // an axis there is nothing left to scroll to - force that offset to 0 so the
-            // picture never drifts off the top-left corner when the scroll range collapses.
-            double contentWidth = (_image?.Width ?? 0) * _zoomFactor;
-            double contentHeight = (_image?.Height ?? 0) * _zoomFactor;
-            double maxX = Math.Max(0, contentWidth - scrollViewer.Viewport.Width);
-            double maxY = Math.Max(0, contentHeight - scrollViewer.Viewport.Height);
-            scrollViewer.Offset = new Avalonia.Vector(Math.Clamp(newOffsetX, 0, maxX), Math.Clamp(newOffsetY, 0, maxY));
+            // The new extent is only measured on the NEXT layout pass; the ScrollViewer may
+            // re-clamp the offset against the stale extent in between and drift the picture
+            // toward the bottom-right. Re-assert the desired offset once the new extent is real.
+            Dispatcher.UIThread.Post(
+                () => ApplyTopLeftAnchoredOffset(scrollViewer, desiredX, desiredY),
+                DispatcherPriority.Loaded);
+        }
+
+        private void ApplyTopLeftAnchoredOffset(ScrollViewer scrollViewer, double desiredX, double desiredY)
+        {
+            if (_image == null) return;
+
+            double contentWidth = _image.Width * _zoomFactor;
+            double contentHeight = _image.Height * _zoomFactor;
+
+            // Once the zoomed content fits inside the viewport on an axis there is nothing left
+            // to scroll to - snap that axis to 0 so the picture hugs the top-left corner instead
+            // of floating on a phantom scroll offset.
+            double x = contentWidth <= scrollViewer.Viewport.Width + 0.5
+                ? 0
+                : Math.Clamp(desiredX, 0, Math.Max(0, contentWidth - scrollViewer.Viewport.Width));
+            double y = contentHeight <= scrollViewer.Viewport.Height + 0.5
+                ? 0
+                : Math.Clamp(desiredY, 0, Math.Max(0, contentHeight - scrollViewer.Viewport.Height));
+            scrollViewer.Offset = new Avalonia.Vector(x, y);
         }
 
         private bool _forceClose = false;
@@ -1650,12 +1657,12 @@ namespace snapvox.editor.forms
             ClearSnapshotStack(_redoStack);
         }
         private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }
-        // BUGFIX (zoom anchor flip): toolbar buttons have no cursor anchor - passing the stale
-        // _lastPointerInScroller (which can sit anywhere on screen) made consecutive steps
-        // jitter sideways. ZoomTowards(null) now pins the stable top-left corner instead.
-        private void OnZoomInClick(object sender, RoutedEventArgs e) { ZoomTowards(null, _zoomFactor + 0.1); ShowZoomHintDebounced(); }
-        private void OnZoomOutClick(object sender, RoutedEventArgs e) { ZoomTowards(null, _zoomFactor - 0.1); ShowZoomHintDebounced(); }
-        private void OnZoomResetButtonClick(object sender, RoutedEventArgs e) { ZoomTowards(null, 1.0); ShowZoomHintDebounced(); }
+        // PRODUCT DECISION (top-left zoom anchor): toolbar buttons, wheel and reset all anchor
+        // the TOP-LEFT corner - zooming in expands toward the bottom-right and zooming out
+        // shrinks back toward the top-left, so voids can only ever open on the right/bottom.
+        private void OnZoomInClick(object sender, RoutedEventArgs e) { ZoomTowards(_zoomFactor + 0.1); ShowZoomHintDebounced(); }
+        private void OnZoomOutClick(object sender, RoutedEventArgs e) { ZoomTowards(_zoomFactor - 0.1); ShowZoomHintDebounced(); }
+        private void OnZoomResetButtonClick(object sender, RoutedEventArgs e) { ZoomTowards(1.0); ShowZoomHintDebounced(); }
         private void OnCounterDoubleTapped(object sender, TappedEventArgs e) { _counterValue = 1; }
         private void OnCounterResetClick(object sender, RoutedEventArgs e) { _counterValue = 1; OverlayHelper.ShowLightToast("COUNTER RESET TO 1", this); }
         private void OnCounterUpClick(object sender, RoutedEventArgs e)
