@@ -218,7 +218,7 @@ namespace snapvox.foundation.core
         // when other windows cover it: the result looks like the window was brought to the
         // front and contains only that window's own content. Returns null when the window
         // cannot be rendered this way, so callers can fall back to a region capture.
-        public static unsafe Image<Bgra32> CaptureWindow(IntPtr hWnd)
+        public static unsafe Image<Bgra32> CaptureWindow(IntPtr hWnd, RECT? visibleBounds = null)
         {
             if (hWnd == IntPtr.Zero) return null;
 
@@ -238,6 +238,21 @@ namespace snapvox.foundation.core
                 if (DwmGetWindowAttribute(hWnd, DwmwaExtendedFrameBounds, out RECT dwmBounds, Marshal.SizeOf<RECT>()) == 0 && dwmBounds.Width > 0 && dwmBounds.Height > 0)
                 {
                     frameBounds = dwmBounds;
+                }
+
+                // ISSUE_024: callers pass the exact on-screen bounds they highlighted; trim the
+                // crop to them so maximized windows cannot include the off-screen overhang.
+                if (visibleBounds.HasValue)
+                {
+                    RECT visible = visibleBounds.Value;
+                    int clampedLeft = Math.Max(frameBounds.Left, visible.Left);
+                    int clampedTop = Math.Max(frameBounds.Top, visible.Top);
+                    int clampedRight = Math.Min(frameBounds.Right, visible.Right);
+                    int clampedBottom = Math.Min(frameBounds.Bottom, visible.Bottom);
+                    if (clampedRight > clampedLeft && clampedBottom > clampedTop)
+                    {
+                        frameBounds = RECT.FromXYWH(clampedLeft, clampedTop, clampedRight - clampedLeft, clampedBottom - clampedTop);
+                    }
                 }
 
                 IntPtr hdcScreen = IntPtr.Zero;

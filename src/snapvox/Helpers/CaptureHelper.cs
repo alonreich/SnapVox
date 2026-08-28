@@ -299,9 +299,15 @@ namespace snapvox.helpers
                     {
                         if (Win32WindowHelper.GetWindowRect(activeHwnd, out RECT rawRect) && !rawRect.IsEmpty)
                         {
-                            if (!fromHotkey && Win32WindowHelper.GetWindowRectActual(activeHwnd, out RECT dwmRect))
+                            // ISSUE_024: prefer the VISIBLE (DWM extended frame) bounds on every
+                            // path - the raw GetWindowRect includes the invisible resize borders,
+                            // so captures came out bigger than the chosen window. Maximized
+                            // windows are additionally clamped to their monitor so the DWM frame
+                            // overhang past the screen edges is trimmed off.
+                            if (Win32WindowHelper.GetWindowRectActual(activeHwnd, out RECT dwmRect) && !dwmRect.IsEmpty)
                             {
-                                if (dwmRect.Width > rawRect.Width && dwmRect.Height > rawRect.Height) rawRect = dwmRect;
+                                dwmRect = Win32WindowHelper.ClampRectToMonitor(activeHwnd, dwmRect);
+                                if (!dwmRect.IsEmpty) rawRect = dwmRect;
                             }
 
                             var cropRect = ClampCropRectangle(new Rectangle(rawRect.Left - virtualBounds.Left, rawRect.Top - virtualBounds.Top, rawRect.Width, rawRect.Height), fullSnapshot.Width, fullSnapshot.Height);

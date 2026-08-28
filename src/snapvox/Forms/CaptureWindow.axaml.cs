@@ -378,6 +378,11 @@ namespace snapvox.forms
             // ISSUE_004: this window registered itself as a clipboard text handler when it opened;
             // remove the registration so the static UiClipboard never keeps a closed window alive.
             UiClipboard.Unregister(this);
+            // ISSUE_023: the preemptive OCR task is PER-WINDOW state. Cancel it for every
+            // closing overlay (not just the last one) so no orphaned OCR/provider work -
+            // including a spawned Tesseract process - outlives its overlay on multi-monitor
+            // sessions (zombie tasks, leaked images, hanging scans).
+            CancelLocalPreemptiveOcr();
             await StopLocalOcrAsync().ConfigureAwait(true);
 
             bool isLastWindow;
@@ -394,7 +399,6 @@ namespace snapvox.forms
                     EndCaptureSession();
                 }
                 _globalOcrMode = false;
-                CancelLocalPreemptiveOcr();
                 CaptureHelper.ClearFrozenSnapshot();
             }
             
@@ -573,7 +577,9 @@ namespace snapvox.forms
             try
             {
                 var nativeRect = RECT.FromXYWH(targetRegion.X, targetRegion.Y, targetRegion.Width, targetRegion.Height);
-                for (int attempt = 0; attempt < 10 && image == null; attempt++)
+                // ISSUE_023: the frozen snapshot can lag slightly behind the overlay opening;
+                // give it up to a full second instead of half of one before declaring failure.
+                for (int attempt = 0; attempt < 20 && image == null; attempt++)
                 {
                     image = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false);
                     if (image == null) await Task.Delay(50, cancellationToken).ConfigureAwait(false);
@@ -599,7 +605,25 @@ namespace snapvox.forms
             try
             {
                 TryPostToUi(() => { if (_isPainterMode && _ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = true; });
-                OcrInformation result = await StartLocalPreemptiveOcr(_screenBounds).WaitAsync(cts.Token).ConfigureAwait(false);
+                // ISSUE_023 (OCR stuck on "Processing"): an external OCR engine (e.g. the
+                // Tesseract exe) can hang forever, which left the "Processing OCR" badge up
+                // permanently with no reachable end state. Bound the whole scan with a hard
+                // timeout so the overlay always transitions to a real, usable state.
+                OcrInformation result;
+                try
+                {
+                    result = await StartLocalPreemptiveOcr(_screenBounds).WaitAsync(TimeSpan.FromSeconds(45), cts.Token).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    BootstrapDebug.Log("Interactive OCR timed out after 45s.");
+                    _ocrFailed = true;
+                    TryPostToUi(() =>
+                    {
+                        if (_isPainterMode) ShowOcrWaitingState();
+                    });
+                    return;
+                }
                 if (result == null || cts.Token.IsCancellationRequested || !_isWindowOpen)
                 {
                     _ocrFailed = result == null;
@@ -624,7 +648,10 @@ namespace snapvox.forms
 
                 TryPostToUi(() =>
                 {
-                    if (_isPainterMode) ShowOcrWaitingState();
+                    // ISSUE_023: on SUCCESS the overlay must land in the ready state - the old
+                    // call to ShowOcrWaitingState() re-showed the "Processing OCR" badge
+                    // forever even though the scan had already finished.
+                    if (_isPainterMode) ShowOcrReadyState();
                 });
             }
             catch (OperationCanceledException) { }
@@ -715,6 +742,18 @@ namespace snapvox.forms
             LayoutOcrStatus();
             var instruction = this.FindControl<TextBlock>("InstructionText");
             if (instruction != null) instruction.Text = "Text capture loading...";
+        }
+
+        // ISSUE_023: the transition used when a scan SUCCEEDS - hide the processing badge and
+        // tell the user the words are clickable. (ShowOcrWaitingState keeps the badge up, so
+        // it must never be called from the success path.)
+        private void ShowOcrReadyState()
+        {
+            if (_ocrProcessingStatus != null) _ocrProcessingStatus.IsVisible = false;
+            if (!_isPainterMode) return;
+            if (_instructionBorder != null) _instructionBorder.IsVisible = true;
+            var instruction = this.FindControl<TextBlock>("InstructionText");
+            if (instruction != null) instruction.Text = "Click text to capture";
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
@@ -865,8 +904,10 @@ namespace snapvox.forms
         {
             // BUGFIX (occluded window snap): when the target is a snapped app window, render
             // the window itself so covering windows are not baked into the copied shot.
+            // ISSUE_024: crop the exclusive window render to the exact highlighted rect so
+            // maximized windows cannot include the off-screen DWM frame overhang.
             var captured = windowHandle != IntPtr.Zero
-                ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle)).ConfigureAwait(false)
+                ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, target)).ConfigureAwait(false)
                 : null;
             if (captured == null) captured = await Task.Run(() => NativeCapture.CaptureRegion(target)).ConfigureAwait(false);
             if (captured == null) return;
@@ -1253,7 +1294,11 @@ namespace snapvox.forms
                         string text = HebrewOcrCorrectionHelper.BuildVisualSelectionText(_paintedWords);
                         await handler.HandleOcrResult(text).ConfigureAwait(false);
                     }
-                    TryPostToUi(Close);
+                    // ISSUE_023 (multi-monitor OCR hang): closing only THIS overlay left the
+                    // sibling overlays armed and the capture session latched (frozen snapshot
+                    // alive, next PrintScreen rejected). Finishing a text pick ends the whole
+                    // session on every monitor.
+                    TryPostToUi(CloseAllCaptureOverlays);
                 }
                 else
                 {
@@ -1347,7 +1392,7 @@ namespace snapvox.forms
                 // instead baked in whichever window happened to cover it. Fall back to the
                 // frozen crop whenever the exclusive render is unavailable.
                 ImageSharpImage exclusiveWindowShot = windowHandle != IntPtr.Zero
-                    ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle)).ConfigureAwait(false)
+                    ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, rect)).ConfigureAwait(false)
                     : null;
                 ImageSharpImage frozenCaptured = exclusiveWindowShot == null
                     ? await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false)

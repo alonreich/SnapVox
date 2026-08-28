@@ -394,7 +394,7 @@ namespace snapvox.forms
                     if (win._recordingDot != null) { win._recordingDot.IsVisible = true; win._recordingDot.Classes.Add("pulse"); }
                 }
                 StartInputPolling();
-                BroadcastStatus("SCROLLING ACTIVE", "Space/Left-click finishes");
+                BroadcastStatus("SCROLLING ACTIVE", "Scroll slowly · Space finishes");
             }
             catch (Exception ex)
             {

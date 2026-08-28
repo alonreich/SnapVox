@@ -82,6 +82,20 @@ namespace snapvox.helpers
                     Image<Bgra32> frame = NativeCapture.CaptureRegion(_target, false);
                     if (frame != null)
                     {
+                        // ISSUE_025 (scroll capture distortion): frames grabbed mid
+                        // smooth-scroll animation are half-rendered intermediate states, and
+                        // stitching them duplicated/skewed rows. Re-capture after a short
+                        // settle gap and only feed frames whose content has stopped moving
+                        // into the stitcher.
+                        await Task.Delay(35, _cts.Token).ConfigureAwait(false);
+                        using Image<Bgra32> confirm = NativeCapture.CaptureRegion(_target, false);
+                        if (confirm != null && !IsFrameSettled(frame, confirm))
+                        {
+                            frame.Dispose();
+                            await Task.Delay(45, _cts.Token).ConfigureAwait(false);
+                            continue;
+                        }
+
                         try
                         {
                             await _frames.Writer.WriteAsync(frame, _cts.Token).ConfigureAwait(false);
@@ -108,6 +122,30 @@ namespace snapvox.helpers
             {
                 _frames.Writer.TryComplete();
             }
+        }
+
+        // ISSUE_025: two captures taken ~35ms apart must be virtually identical before the
+        // first one is considered a settled (fully rendered) frame worth stitching.
+        private static bool IsFrameSettled(Image<Bgra32> first, Image<Bgra32> second)
+        {
+            if (first.Width != second.Width || first.Height != second.Height) return false;
+            long diff = 0;
+            long count = 0;
+            int stride = Math.Max(4, Math.Min(first.Width, first.Height) / 120);
+            first.ProcessPixelRows(second, (a, b) =>
+            {
+                for (int y = 0; y < a.Height; y += stride)
+                {
+                    Span<Bgra32> rowA = a.GetRowSpan(y);
+                    Span<Bgra32> rowB = b.GetRowSpan(y);
+                    for (int x = 0; x < a.Width; x += stride)
+                    {
+                        diff += Math.Abs(rowA[x].R - rowB[x].R);
+                        count++;
+                    }
+                }
+            });
+            return count == 0 || (double)diff / count < 2.5;
         }
 
         private async Task ConsumeAsync()
@@ -180,10 +218,21 @@ namespace snapvox.helpers
     {
         private static readonly ILog Log = LogHelper.GetLogger(typeof(ScrollFrameStitcher));
         private const int MinMovementPixels = 12;
-        private const double MaxAverageDiff = 50.0;
+        // ISSUE_025 (scroll capture distortion): the coarse gate used to accept almost any
+        // match (50 mean-abs-diff on sparse samples), so badly misaligned frames were still
+        // stitched. Tightened here, and the full-resolution refinement below enforces the
+        // real per-pixel alignment quality.
+        private const double MaxAverageDiff = 30.0;
+        private const double MaxRefinedDiff = 16.0;
+        private const int BandHeightPixels = 257;
         private const long MaxCompositePixels = 180L * 1024L * 1024L;
         private readonly List<ScrollSegment> _segments = new List<ScrollSegment>();
         private SampleFrame _previousSample;
+        // ISSUE_025: full-resolution grayscale band of the last accepted frame, used to
+        // refine the coarse (sample-grid-quantized) motion estimate to exact pixels.
+        private byte[] _previousBand;
+        private int _bandWidth;
+        private int _bandHeight;
         private int _offsetX;
         private int _offsetY;
         private int _frameWidth;
@@ -206,6 +255,7 @@ namespace snapvox.helpers
                     _frameWidth = frame.Width;
                     _frameHeight = frame.Height;
                     _previousSample = SampleFrame.Create(frame);
+                    _previousBand = BuildBand(frame);
                     _segments.Add(new ScrollSegment(frame.Clone(), 0, 0));
                     AcceptedFrames = 1;
                     return ScrollFrameStatus.Accepted;
@@ -224,6 +274,19 @@ namespace snapvox.helpers
                     return ScrollFrameStatus.Rejected;
                 }
 
+                // ISSUE_025: the coarse estimate lives on the downsampled grid, so its deltas
+                // are quantized to whole sample-steps (~4-11 real pixels). Real scroll deltas
+                // are rarely exact multiples of that, and the accumulated error showed up as
+                // smeared/wavy rows in the stitched image. Refine against a full-resolution
+                // band so every accepted frame locks to the exact pixel row.
+                byte[] currentBand = BuildBand(frame);
+                estimate = RefineMovement(_previousBand, currentBand, estimate);
+                if (!estimate.IsReliable)
+                {
+                    currentSample.Dispose();
+                    return ScrollFrameStatus.Rejected;
+                }
+
                 if (Math.Abs(estimate.DeltaX) < MinMovementPixels && Math.Abs(estimate.DeltaY) < MinMovementPixels)
                 {
                     currentSample.Dispose();
@@ -235,6 +298,7 @@ namespace snapvox.helpers
                 AddVisibleStrips(frame, _offsetX, _offsetY, estimate.DeltaX, estimate.DeltaY);
                 _previousSample.Dispose();
                 _previousSample = currentSample;
+                _previousBand = currentBand;
                 AcceptedFrames++;
                 return ScrollFrameStatus.Accepted;
             }
@@ -402,6 +466,89 @@ namespace snapvox.helpers
                 for (int x = xStart; x < xEnd; x += stride)
                 {
                     diff += Math.Abs(previous.Gray[previousRow + x + dx] - current.Gray[currentRow + x]);
+                    count++;
+                }
+            }
+
+            return count == 0 ? double.MaxValue : (double)diff / count;
+        }
+
+        // ISSUE_025: extracts a full-resolution grayscale band (centered rows) from a frame
+        // for exact per-pixel motion refinement.
+        private byte[] BuildBand(Image<Bgra32> frame)
+        {
+            _bandWidth = frame.Width;
+            _bandHeight = Math.Min(BandHeightPixels, frame.Height);
+            byte[] band = new byte[_bandWidth * _bandHeight];
+            int top = (frame.Height - _bandHeight) / 2;
+            frame.ProcessPixelRows(accessor =>
+            {
+                for (int y = 0; y < _bandHeight; y++)
+                {
+                    Span<Bgra32> row = accessor.GetRowSpan(top + y);
+                    int target = y * _bandWidth;
+                    for (int x = 0; x < _bandWidth; x++)
+                    {
+                        Bgra32 px = row[x];
+                        band[target + x] = (byte)((px.R * 30 + px.G * 59 + px.B * 11) / 100);
+                    }
+                }
+            });
+            return band;
+        }
+
+        // ISSUE_025: local full-resolution search around the coarse (quantized) estimate.
+        // Uses exactly the same alignment convention as the coarse AverageDiff: previous
+        // pixel (x + dx, y + dy) matching current pixel (x, y).
+        private MovementEstimate RefineMovement(byte[] previous, byte[] current, MovementEstimate coarse)
+        {
+            if (previous == null || current == null || previous.Length != current.Length || _bandWidth <= 0 || _bandHeight <= 0)
+            {
+                return coarse;
+            }
+
+            // Cover at least one full sample-step of quantization error in each direction.
+            int yRadius = Math.Min(24, Math.Max(8, _bandWidth / 160 + 4));
+            int xRadius = 4;
+            const int stride = 3;
+            int bestDx = coarse.DeltaX;
+            int bestDy = coarse.DeltaY;
+            double bestScore = double.MaxValue;
+
+            for (int dy = coarse.DeltaY - yRadius; dy <= coarse.DeltaY + yRadius; dy++)
+            {
+                for (int dx = coarse.DeltaX - xRadius; dx <= coarse.DeltaX + xRadius; dx++)
+                {
+                    double score = BandDiff(previous, current, dx, dy, stride);
+                    if (score < bestScore)
+                    {
+                        bestScore = score;
+                        bestDx = dx;
+                        bestDy = dy;
+                    }
+                }
+            }
+
+            return new MovementEstimate(bestDx, bestDy, bestScore <= MaxRefinedDiff);
+        }
+
+        private double BandDiff(byte[] previous, byte[] current, int dx, int dy, int stride)
+        {
+            int xStart = Math.Max(0, -dx);
+            int yStart = Math.Max(0, -dy);
+            int xEnd = Math.Min(_bandWidth, _bandWidth - dx);
+            int yEnd = Math.Min(_bandHeight, _bandHeight - dy);
+            if (xEnd - xStart < 8 || yEnd - yStart < 8) return double.MaxValue;
+
+            long diff = 0;
+            long count = 0;
+            for (int y = yStart; y < yEnd; y += stride)
+            {
+                int previousRow = (y + dy) * _bandWidth;
+                int currentRow = y * _bandWidth;
+                for (int x = xStart; x < xEnd; x += stride)
+                {
+                    diff += Math.Abs(previous[previousRow + x + dx] - current[currentRow + x]);
                     count++;
                 }
             }

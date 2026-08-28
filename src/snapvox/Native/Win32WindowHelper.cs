@@ -56,6 +56,51 @@ namespace snapvox.native
         }
 
         [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MONITORINFO
+        {
+            public int cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public uint dwFlags;
+        }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+        public static RECT GetMonitorBounds(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return RECT.Empty;
+            IntPtr monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+            if (monitor == IntPtr.Zero) return RECT.Empty;
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (!GetMonitorInfoW(monitor, ref info)) return RECT.Empty;
+            return info.rcMonitor;
+        }
+
+        // ISSUE_024 (window capture accuracy): maximized windows report DWM extended frame
+        // bounds that extend PAST the monitor edges by the invisible border thickness, so
+        // captures came out larger than what was actually visible on screen (off-screen
+        // overhang, slivers of neighbouring monitors, black bars). Clamping the frame to the
+        // window's own monitor trims exactly that invisible overhang.
+        public static RECT ClampRectToMonitor(IntPtr hWnd, RECT rect)
+        {
+            RECT monitor = GetMonitorBounds(hWnd);
+            if (monitor.IsEmpty) return rect;
+            int left = Math.Max(rect.Left, monitor.Left);
+            int top = Math.Max(rect.Top, monitor.Top);
+            int right = Math.Min(rect.Right, monitor.Right);
+            int bottom = Math.Min(rect.Bottom, monitor.Bottom);
+            if (right <= left || bottom <= top) return rect;
+            return RECT.FromXYWH(left, top, right - left, bottom - top);
+        }
+
+        [DllImport("user32.dll")]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
@@ -159,14 +204,57 @@ namespace snapvox.native
 
             if (GetWindowRectActual(hWnd, out RECT rect))
             {
+                // ISSUE_024: trim the off-screen DWM frame overhang of maximized windows so
+                // the highlighted/captured rect matches exactly what is visible on screen.
+                rect = ClampRectToMonitor(hWnd, rect);
                 int virtualW = GetSystemMetrics(78);
                 int virtualH = GetSystemMetrics(79);
                 if (rect.Width >= virtualW && rect.Height >= virtualH) return RECT.Empty;
+
+                // ISSUE_027 (magnetic snap offered the entire display): the class filter above
+                // only catches the stock desktop windows. Wallpaper-engine / desktop-surface
+                // windows cover a whole monitor under a foreign class name, so hovering the
+                // bare desktop background highlighted - and offered - the ENTIRE display as a
+                // snap target. A candidate that covers (nearly) all of its monitor AND is the
+                // bottom-most application window there (nothing but the desktop beneath it in
+                // Z-order) is the background surface, not an app: never offer it.
+                if (IsDesktopSurfaceWindow(hWnd, rect)) return RECT.Empty;
 
                 rootWindowHandle = hWnd;
                 return rect;
             }
             return RECT.Empty;
+        }
+
+        private static bool IsDesktopSurfaceWindow(IntPtr hWnd, RECT rect)
+        {
+            RECT monitor = GetMonitorBounds(hWnd);
+            if (monitor.IsEmpty) return false;
+            if ((long)rect.Width * rect.Height < ((long)monitor.Width * monitor.Height * 95) / 100) return false;
+
+            // Walk DOWN the Z-order: if any other real app window shares this monitor below
+            // the candidate, it is an ordinary fullscreen/maximized app - keep it snappable.
+            uint currentPid = (uint)Environment.ProcessId;
+            IntPtr below = GetWindow(hWnd, 2);
+            while (below != IntPtr.Zero)
+            {
+                if (IsWindowVisible(below))
+                {
+                    GetWindowThreadProcessId(below, out uint pid);
+                    if (pid != currentPid && GetWindowRect(below, out RECT r) && !r.IsEmpty
+                        && r.Left < monitor.Right && r.Right > monitor.Left
+                        && r.Top < monitor.Bottom && r.Bottom > monitor.Top)
+                    {
+                        string cls = GetWindowClassName(below);
+                        if (cls != "Progman" && cls != "WorkerW" && cls != "Shell_TrayWnd" && cls != "Shell_SecondaryTrayWnd")
+                        {
+                            return false;
+                        }
+                    }
+                }
+                below = GetWindow(below, 2);
+            }
+            return true;
         }
 
         public static IntPtr GetRootWindowHandle(POINT point)

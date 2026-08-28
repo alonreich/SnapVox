@@ -186,6 +186,16 @@ namespace snapvox.editor.forms
         private readonly List<SnapGuideInfo> _activeSnapGuides = new List<SnapGuideInfo>();
         private AvaloniaPoint _previewSnapDelta;
 
+        // ISSUE_021 (anchor-locked rectangle/ellipse draw): per-axis direction locks set on
+        // the first movement away from the press point. Once locked, the dragged corner can
+        // never cross the anchor corner - dragging back past it only shrinks the shape to the
+        // minimum instead of flipping/reversing it. The anchor is the source of truth until
+        // the mouse button is released.
+        private int _rectDrawDirX;
+        private int _rectDrawDirY;
+
+        private bool _zoomViewportHooked;
+
         private readonly struct SnapGuideInfo
         {
             public readonly bool Horizontal; // true: the line runs left-right at a fixed Y
@@ -844,6 +854,13 @@ namespace snapvox.editor.forms
             var oldOffset = scrollViewer.Offset;
             ApplyZoom();
 
+            // ISSUE_026 (deterministic top-left zoom): the ScrollViewer validates offsets
+            // against its CURRENT extent, which is still the pre-zoom one until the next
+            // layout pass. Forcing the layout NOW makes Extent/Viewport real, so the offset
+            // below is clamped against the final extent exactly once - no stale-extent
+            // re-clamping afterwards and no in/out drift of the anchored corner.
+            scrollViewer.UpdateLayout();
+
             // Top-left anchor: rescale the existing offset around the viewport's (0,0) corner.
             double ratio = _zoomFactor / oldZoom;
             double desiredX = oldOffset.X * ratio;
@@ -930,6 +947,19 @@ namespace snapvox.editor.forms
         private void OnWindowOpened(object sender, EventArgs e)
         {
             UiClipboard.Register(this, text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
+
+            // ISSUE_026: when the viewport resizes (scrollbars toggling while zooming, window
+            // resize), re-normalize the offsets so any axis whose content now fits snaps back
+            // to 0 - the anchored top-left corner can never detach from the viewport origin.
+            if (!_zoomViewportHooked)
+            {
+                _zoomViewportHooked = true;
+                var zoomViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
+                if (zoomViewer != null)
+                {
+                    zoomViewer.SizeChanged += (_, _) => ApplyTopLeftAnchoredOffset(zoomViewer, zoomViewer.Offset.X, zoomViewer.Offset.Y);
+                }
+            }
 
             // BUGFIX (oversized editor): PositionWindow() estimates the chrome before the
             // first layout pass. Once the window is open, measure the REAL viewport and
@@ -2837,6 +2867,8 @@ namespace snapvox.editor.forms
         private void BeginPreviewShape(AvaloniaPoint start, IBrush brush)
         {
             RemovePreviewShape();
+            _rectDrawDirX = 0;
+            _rectDrawDirY = 0;
             _previewControl = _currentTool switch
             {
                 EditorTool.Line => new Avalonia.Controls.Shapes.Line { Stroke = brush, StrokeThickness = _currentThickness, StrokeJoin = PenLineJoin.Round, StrokeLineCap = PenLineCap.Round, IsHitTestVisible = false, ZIndex = _currentZIndex++ },
@@ -2873,6 +2905,7 @@ namespace snapvox.editor.forms
                 return;
             }
 
+            end = ClampRectDrawEnd(end);
             double minX = Math.Min(_startPoint.X, end.X);
             double minY = Math.Min(_startPoint.Y, end.Y);
             double maxX = Math.Max(_startPoint.X, end.X);
@@ -2890,6 +2923,29 @@ namespace snapvox.editor.forms
                 line.StartPoint = new AvaloniaPoint(_startPoint.X - minX, _startPoint.Y - minY);
                 line.EndPoint = new AvaloniaPoint(end.X - minX, end.Y - minY);
             }
+        }
+
+        // ISSUE_021: clamps the dragged corner of a Rectangle/Ellipse draw so it can never
+        // cross the anchor corner. The direction locks the first time the pointer moves away
+        // from the anchor; afterwards the edge simply stops at the anchor (minimum size)
+        // when the user drags back past it. All other tools are returned untouched.
+        private AvaloniaPoint ClampRectDrawEnd(AvaloniaPoint end)
+        {
+            if (_currentTool != EditorTool.Rectangle && _currentTool != EditorTool.Ellipse) return end;
+
+            const double lockEpsilon = 3.0;
+            if (_rectDrawDirX == 0 && Math.Abs(end.X - _startPoint.X) > lockEpsilon)
+                _rectDrawDirX = end.X > _startPoint.X ? 1 : -1;
+            if (_rectDrawDirY == 0 && Math.Abs(end.Y - _startPoint.Y) > lockEpsilon)
+                _rectDrawDirY = end.Y > _startPoint.Y ? 1 : -1;
+
+            double x = _rectDrawDirX > 0 ? Math.Max(_startPoint.X, end.X)
+                     : _rectDrawDirX < 0 ? Math.Min(_startPoint.X, end.X)
+                     : end.X;
+            double y = _rectDrawDirY > 0 ? Math.Max(_startPoint.Y, end.Y)
+                     : _rectDrawDirY < 0 ? Math.Min(_startPoint.Y, end.Y)
+                     : end.Y;
+            return new AvaloniaPoint(x, y);
         }
 
         private void UpdateArrowPreview(Canvas group, AvaloniaPoint end)
@@ -3066,6 +3122,37 @@ namespace snapvox.editor.forms
                 }
 
                 case EditorTool.Text:
+                {
+                    // ISSUE_022 (text tool ghost): the old ghost was a bare "T" - it never
+                    // previewed what would actually land. The ghost is now the EXACT 140x36
+                    // landing box (same geometry as TryGetStampSnapRect/PlaceText) with a
+                    // text caret, an "Aa" sample rendered at the persisted font size and a
+                    // small size badge, so click-to-place is fully predictable.
+                    double persistedSize = config.LastTextSize > 0 ? config.LastTextSize : 16;
+                    double sampleSize = Math.Clamp(persistedSize, 9, 20);
+                    var sample = new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        Spacing = 3,
+                        Margin = new Thickness(7, 0, 0, 0),
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        IsHitTestVisible = false
+                    };
+                    sample.Children.Add(new Avalonia.Controls.Shapes.Rectangle { Width = 1.5, Height = sampleSize, Fill = brush }); // caret
+                    sample.Children.Add(new TextBlock { Text = "Aa", Foreground = brush, FontSize = sampleSize, FontWeight = FontWeight.SemiBold, IsHitTestVisible = false });
+                    var content = new Grid { IsHitTestVisible = false };
+                    content.Children.Add(sample);
+                    content.Children.Add(new TextBlock
+                    {
+                        Text = $"{(int)persistedSize}px",
+                        FontSize = 9,
+                        Foreground = new SolidColorBrush(AvaloniaColor.FromArgb(170, 170, 170, 170)),
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom,
+                        Margin = new Thickness(0, 0, 4, 1),
+                        IsHitTestVisible = false
+                    });
                     _toolGhost = new Border
                     {
                         Width = 140,
@@ -3076,18 +3163,10 @@ namespace snapvox.editor.forms
                             ? new SolidColorBrush(AvaloniaColor.FromArgb(100, 30, 30, 30))
                             : new SolidColorBrush(AvaloniaColor.FromArgb(30, 0, 0, 0)),
                         Opacity = 0.65,
-                        Child = new TextBlock
-                        {
-                            Text = "T",
-                            Foreground = brush,
-                            FontSize = 16,
-                            FontWeight = FontWeight.SemiBold,
-                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                            IsHitTestVisible = false
-                        }
+                        Child = content
                     };
                     break;
+                }
 
                 case EditorTool.FreeDraw:
                     _toolGhost = CreatePencilGhost(brush);
@@ -3431,6 +3510,7 @@ namespace snapvox.editor.forms
             else
             {
                 var previewEnd = IsVectorTool(_currentTool) ? ApplyVectorConstraints(pos, _startPoint, e.KeyModifiers) : pos;
+                previewEnd = ClampRectDrawEnd(previewEnd); // ISSUE_021: never flip past the anchor while drawing
                 UpdatePreviewShape(previewEnd);
                 // FEATURE (shape snap guides): while stretching a new shape, magnetically align its
                 // edges/center with the other shapes and stretch gentle guide lines between them.
@@ -3664,6 +3744,7 @@ namespace snapvox.editor.forms
             _isDrawing = false;
             var endPoint = e.GetPosition(_canvas);
             if (IsVectorTool(_currentTool)) endPoint = ApplyVectorConstraints(endPoint, _startPoint, e.KeyModifiers);
+            endPoint = ClampRectDrawEnd(endPoint); // ISSUE_021: the committed shape never flips past the anchor
             RemovePreviewShape();
             HideVectorInfo();
             if (IsRectSnappableTool(_currentTool) && (_previewSnapDelta.X != 0 || _previewSnapDelta.Y != 0))
