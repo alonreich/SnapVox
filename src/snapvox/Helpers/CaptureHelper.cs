@@ -120,7 +120,12 @@ namespace snapvox.helpers
                 // monitor gives every overlay its own correct DPI factor, and CaptureWindow
                 // keeps the whole selection state in ABSOLUTE device pixels (see its shared
                 // visual broadcasts), so a drag crossing monitors stays continuous.
-                using var unifiedBackdrop = (Image<Rgba32>)snapshotForCropping.Clone();
+                // BUGFIX (capture crash): the snapshot is Image<Bgra32> (NativeCapture's pixel
+                // type) - a hard (Image<Rgba32>) cast of it compiles but ALWAYS throws
+                // InvalidCastException at runtime, killing every capture ~50ms in. CloneAs does
+                // a real Bgra32->Rgba32 pixel conversion instead (same pattern as
+                // OcrImagePreprocessor).
+                using var unifiedBackdrop = snapshotForCropping.CloneAs<Rgba32>();
                 if (Config.AddFrameBorders)
                 {
                     // Preserve the mandated 3px navy (#000080) outline around every monitor
