@@ -46,6 +46,27 @@ namespace snapvox.native
 
         private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
 
+        private const int DWMWA_CLOAKED = 13;
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttributeInt(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
+
+        // ISSUE_033 (whole-display snap captured black): a cloaked window (suspended UWP host,
+        // shell-hidden or swapped-out surface) is invisible on screen yet still hit-testable,
+        // and rendering it prints a solid black frame. Never offer such windows as snap targets.
+        private static bool IsCloakedWindow(IntPtr hWnd)
+        {
+            try
+            {
+                if (DwmGetWindowAttributeInt(hWnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) != 0) return false;
+                return cloaked != 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool GetWindowRectActual(IntPtr hWnd, out RECT rect)
         {
             if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf<RECT>()) == 0)
@@ -196,6 +217,19 @@ namespace snapvox.native
 
             string className = GetWindowClassName(hWnd);
             if (className == "Progman" || className == "WorkerW" || className == "Shell_TrayWnd" || className == "Shell_SecondaryTrayWnd")
+            {
+                return RECT.Empty;
+            }
+
+            // ISSUE_033 (whole-display snap captured black on the primary display): DWM/system
+            // surface windows (DummyDWMTargetWindow & friends) and cloaked shell windows pass the
+            // stock class filter, yet PrintWindow renders them as a solid black frame - snapping
+            // to one opened an all-black snapshot of the entire display. They are never real app
+            // windows: reject them up front (the capture pipeline also falls back to the frozen
+            // screen crop whenever an exclusive render still comes back black).
+            if (className == "DummyDWMTargetWindow" || className == "ThumbnailDeviceHelperWnd"
+                || className == "Windows.UI.Composition.DesktopWindowContentBridge" || className == "EdgeUiInputTopWnd"
+                || IsCloakedWindow(hWnd))
             {
                 return RECT.Empty;
             }

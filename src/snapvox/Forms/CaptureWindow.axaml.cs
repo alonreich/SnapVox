@@ -906,9 +906,18 @@ namespace snapvox.forms
             // the window itself so covering windows are not baked into the copied shot.
             // ISSUE_024: crop the exclusive window render to the exact highlighted rect so
             // maximized windows cannot include the off-screen DWM frame overhang.
-            var captured = windowHandle != IntPtr.Zero
+            ImageSharpImage captured = windowHandle != IntPtr.Zero
                 ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, target)).ConfigureAwait(false)
                 : null;
+            if (captured != null && NativeCapture.IsLikelyBlankBlackFrame(captured))
+            {
+                // ISSUE_033 (whole-display snap captured black): some DWM surfaces "succeed" at
+                // PrintWindow yet render a solid black frame. Drop it and fall back to the
+                // frozen backdrop (what was actually on screen) before any live capture.
+                captured.Dispose();
+                captured = null;
+            }
+            if (captured == null) captured = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(target)).ConfigureAwait(false);
             if (captured == null) captured = await Task.Run(() => NativeCapture.CaptureRegion(target)).ConfigureAwait(false);
             if (captured == null) return;
 
@@ -1394,6 +1403,14 @@ namespace snapvox.forms
                 ImageSharpImage exclusiveWindowShot = windowHandle != IntPtr.Zero
                     ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, rect)).ConfigureAwait(false)
                     : null;
+                if (exclusiveWindowShot != null && NativeCapture.IsLikelyBlankBlackFrame(exclusiveWindowShot))
+                {
+                    // ISSUE_033 (whole-display snap captured black): PrintWindow "succeeded" but
+                    // produced a solid black frame (DWM/composition surface window). Discard it so
+                    // the frozen crop of what was actually on screen is used instead.
+                    exclusiveWindowShot.Dispose();
+                    exclusiveWindowShot = null;
+                }
                 ImageSharpImage frozenCaptured = exclusiveWindowShot == null
                     ? await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false)
                     : null;

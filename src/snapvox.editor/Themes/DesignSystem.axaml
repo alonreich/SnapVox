@@ -148,22 +148,27 @@
 
     <!-- ScrollBar wires its scrolling behaviour to the PART_* named buttons/track below;
          it exposes no command properties in Avalonia 11. -->
+    <!-- ISSUE_031 (scrollbar width & arrow proportions): the bars were 14px while the arrow
+         cells were 16px, and the chevrons were tiny 6px glyphs with a hairline stroke - the
+         arrows looked squashed and out of proportion with the bar itself. Bars are now 18px
+         with 18x18 square arrow cells and chevrons drawn to the bar's own scale (8px span,
+         2px stroke) so bar and arrows stay proportional. -->
     <ControlTheme x:Key="SnapVoxScrollBarVertical" TargetType="ScrollBar">
-        <Setter Property="Width" Value="14" />
-        <Setter Property="MinWidth" Value="14" />
+        <Setter Property="Width" Value="18" />
+        <Setter Property="MinWidth" Value="18" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
-                    <Grid Background="{TemplateBinding Background}" MinWidth="14">
+                    <Grid Background="{TemplateBinding Background}" MinWidth="18">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="16" />
+                            <RowDefinition Height="18" />
                             <RowDefinition Height="*" />
-                            <RowDefinition Height="16" />
+                            <RowDefinition Height="18" />
                         </Grid.RowDefinitions>
                         <RepeatButton Grid.Row="0" Name="PART_LineUpButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="3,3,0,0" Cursor="Hand">
-                            <Path Data="M 4 10 L 7 7 L 10 10" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round" />
+                            <Path Data="M 5 11 L 9 7 L 13 11" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
                         </RepeatButton>
                         <Track Grid.Row="1" Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical"
                                Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
@@ -179,7 +184,7 @@
                             </Track.IncreaseButton>
                         </Track>
                         <RepeatButton Grid.Row="2" Name="PART_LineDownButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="0,0,3,3" Cursor="Hand">
-                            <Path Data="M 4 7 L 7 10 L 10 7" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round" />
+                            <Path Data="M 5 7 L 9 11 L 13 7" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
                         </RepeatButton>
                     </Grid>
                 </ControlTemplate>
@@ -195,21 +200,21 @@
     <x:Double x:Key="SnapVoxDeploymentTitleFontSize">20</x:Double>
 
     <ControlTheme x:Key="SnapVoxScrollBarHorizontal" TargetType="ScrollBar">
-        <Setter Property="Height" Value="14" />
-        <Setter Property="MinHeight" Value="14" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="MinHeight" Value="18" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
-                    <Grid Background="{TemplateBinding Background}" MinHeight="14">
+                    <Grid Background="{TemplateBinding Background}" MinHeight="18">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="18" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="18" />
                         </Grid.ColumnDefinitions>
                         <RepeatButton Grid.Column="0" Name="PART_LineLeftButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="3,0,0,3" Cursor="Hand">
-                            <Path Data="M 10 4 L 7 7 L 10 10" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round" />
+                            <Path Data="M 11 5 L 7 9 L 11 13" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
                         </RepeatButton>
                         <Track Grid.Column="1" Name="PART_Track" Orientation="Horizontal"
                                Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
@@ -225,7 +230,7 @@
                             </Track.IncreaseButton>
                         </Track>
                         <RepeatButton Grid.Column="2" Name="PART_LineRightButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="0,3,3,0" Cursor="Hand">
-                            <Path Data="M 7 4 L 10 7 L 7 10" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round" />
+                            <Path Data="M 7 5 L 11 9 L 7 13" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
                         </RepeatButton>
                     </Grid>
                 </ControlTemplate>

@@ -329,5 +329,49 @@ namespace snapvox.foundation.core
                 return null;
             }
         }
+
+        // ISSUE_033 (whole-display snap captured black): some DWM/composition surface windows
+        // "succeed" at PrintWindow yet produce a solid black frame. Callers use this sampled
+        // luminance check to detect that failure and fall back to the frozen screen crop.
+        // A legitimately dark window still has >0.1% of samples above luminance 24 (text,
+        // cursors, borders), while a failed render is uniformly ~0.
+        public static bool IsLikelyBlankBlackFrame(Image image)
+        {
+            // Callers hold the non-generic Image base type; the capture pipeline always
+            // produces Bgra32 frames, so dispatch on the runtime pixel type and let any
+            // other layout pass through untouched (treat as "not black").
+            if (image is Image<Bgra32> bgra) return IsLikelyBlankBlackFrameCore(bgra);
+            return false;
+        }
+
+        private static bool IsLikelyBlankBlackFrameCore(Image<Bgra32> image)
+        {
+            if (image == null || image.Width <= 0 || image.Height <= 0) return false;
+            try
+            {
+                int width = image.Width, height = image.Height;
+                int stepX = Math.Max(1, width / 64);
+                int stepY = Math.Max(1, height / 64);
+                long sum = 0, count = 0, bright = 0;
+                for (int y = stepY / 2; y < height; y += stepY)
+                {
+                    for (int x = stepX / 2; x < width; x += stepX)
+                    {
+                        Bgra32 p = image[x, y];
+                        int luminance = (p.R * 299 + p.G * 587 + p.B * 114) / 1000;
+                        sum += luminance;
+                        count++;
+                        if (luminance > 24) bright++;
+                    }
+                }
+                if (count == 0) return false;
+                double mean = (double)sum / count;
+                return mean < 2.5 && bright * 1000.0 / count < 1.0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

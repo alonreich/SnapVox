@@ -184,7 +184,7 @@ namespace snapvox.editor.forms
         private Canvas _snapGuideLayer;
         private readonly List<Avalonia.Controls.Shapes.Line> _snapGuideLines = new List<Avalonia.Controls.Shapes.Line>();
         private readonly List<SnapGuideInfo> _activeSnapGuides = new List<SnapGuideInfo>();
-        private AvaloniaPoint _previewSnapDelta;
+
 
         // ISSUE_021 (anchor-locked rectangle/ellipse draw): per-axis direction locks set on
         // the first movement away from the press point. Once locked, the dragged corner can
@@ -1691,6 +1691,25 @@ namespace snapvox.editor.forms
             Position = new PixelPoint((int)centerX, (int)centerY);
         }
 
+        // ISSUE_032 (resize should resize the editor): changing the IMAGE size (not zooming)
+        // used to leave the window at its old dimensions - a 4K resize became a scrollboxed
+        // thumbnail and a shrink left a cavern of empty chrome. After an image resize the
+        // editor now adopts the new size exactly like a fresh snapshot of those dimensions:
+        // recompute the working-area budget for the screen the window is on and let the shared
+        // AutoFitWindowToContent pass size + centre the window with the real viewport chrome.
+        private void RefitWindowToImage()
+        {
+            var screen = Screens.ScreenFromPoint(Position) ?? Screens.Primary;
+            if (screen == null) return;
+            double scaling = screen.Scaling;
+            _autoFitWorkingArea = screen.WorkingArea;
+            _autoFitScaling = scaling;
+            _autoFitMaxWidth = (screen.WorkingArea.Width - 24) / scaling;
+            _autoFitMaxHeight = (screen.WorkingArea.Height - 24) / scaling;
+            _autoFitRetries = 0;
+            Dispatcher.UIThread.Post(AutoFitWindowToContent, DispatcherPriority.Loaded);
+        }
+
         private void ReleaseImageResources()
         {
             RemovePreviewShape();
@@ -1861,7 +1880,6 @@ namespace snapvox.editor.forms
                 HideVectorInfo();
                 
                 _isDrawing = true; _startPoint = pos; var brush = _toolBrushes[_currentTool];
-                _previewSnapDelta = default;
                 _disableSnappingForCurrentDrag = false;
                 HideToolGhost(); // the rubberband/annotation itself replaces the ghost while drawing
                 Cursor = CrossCursor;
@@ -2206,35 +2224,14 @@ namespace snapvox.editor.forms
             return true;
         }
 
-        private void ApplyPreviewShapeSnap(AvaloniaPoint rawEnd, bool altSnapBypass = false)
-        {
-            var config = IniConfig.GetIniSection<CoreConfiguration>();
-            if (altSnapBypass || !config.MagneticSnappingEnabled || _disableSnappingForCurrentDrag || _previewControl == null)
-            {
-                _previewSnapDelta = default;
-                HideSnapGuides();
-                return;
-            }
-
-            double minX = Math.Min(_startPoint.X, rawEnd.X);
-            double minY = Math.Min(_startPoint.Y, rawEnd.Y);
-            double width = Math.Max(1, Math.Abs(rawEnd.X - _startPoint.X));
-            double height = Math.Max(1, Math.Abs(rawEnd.Y - _startPoint.Y));
-            var raw = new Rect(minX, minY, width, height);
-
-            if (TrySnapRectToBoundsTargets(null, raw, out var dx, out var dy, _activeSnapGuides))
-            {
-                _previewSnapDelta = new AvaloniaPoint(dx, dy);
-                Canvas.SetLeft(_previewControl, minX + dx);
-                Canvas.SetTop(_previewControl, minY + dy);
-                ShowSnapGuides();
-            }
-            else
-            {
-                _previewSnapDelta = default;
-                HideSnapGuides();
-            }
-        }
+        // ISSUE_028 (stuttery shape creation): ApplyPreviewShapeSnap used to live here. While a
+        // NEW rect/ellipse/highlight/blur was being stretched it magnetically pulled the whole
+        // preview rect toward nearby edges/centers, which (a) made the rubberband visibly jump
+        // the moment an edge entered snap range and (b) shifted the entire preview - including
+        // the anchored corner - so the anchor never felt solid and the size kept changing on
+        // its own. Creation-time snapping was removed outright: the rubberband now tracks the
+        // pointer 1:1 (with ISSUE_021's anchor lock), and magnetic snapping + guide lines still
+        // apply when MOVING or RESIZING existing shapes and when placing stamps.
 
         private AvaloniaPoint ApplyStampSnap(EditorTool tool, AvaloniaPoint pos)
         {
@@ -3174,13 +3171,28 @@ namespace snapvox.editor.forms
 
                 case EditorTool.Line:
                 {
+                    // ISSUE_029 (line tool ghost): the old ghost was a single short diagonal
+                    // stroke trailing the cursor, which read as a stray pencil mark instead of a
+                    // tool preview. The ghost now shows what the tool actually draws: a solid
+                    // origin dot at the anchor point plus a HORIZONTAL and a DIAGONAL segment,
+                    // both real strokes at the current thickness in the current brush.
                     var host = CreateGhostIconHost();
+                    double thickness = Math.Max(2, _currentThickness);
+                    host.Children.Add(CreateGhostOriginDot(brush));
                     host.Children.Add(new Avalonia.Controls.Shapes.Line
                     {
-                        StartPoint = new AvaloniaPoint(-16, 16),
-                        EndPoint = new AvaloniaPoint(12, -12),
+                        StartPoint = new AvaloniaPoint(0, 0),
+                        EndPoint = new AvaloniaPoint(18, 0),
                         Stroke = brush,
-                        StrokeThickness = Math.Max(2, _currentThickness),
+                        StrokeThickness = thickness,
+                        StrokeLineCap = PenLineCap.Round
+                    });
+                    host.Children.Add(new Avalonia.Controls.Shapes.Line
+                    {
+                        StartPoint = new AvaloniaPoint(0, 0),
+                        EndPoint = new AvaloniaPoint(14, -14),
+                        Stroke = brush,
+                        StrokeThickness = thickness,
                         StrokeLineCap = PenLineCap.Round
                     });
                     _toolGhost = host;
@@ -3324,22 +3336,63 @@ namespace snapvox.editor.forms
 
         private Canvas CreateArrowGhostIcon(IBrush brush)
         {
-            // Mini 45° arrow whose tip sits at the pointer, mirroring the arrow tool visuals.
+            // ISSUE_030 (arrow ghost "trail"): the old ghost was a lone diagonal stroke with a
+            // crooked quadrilateral "head" floating beside its tip - it read as a small stray
+            // line trailing the cursor rather than an arrow preview. The ghost now mirrors the
+            // line ghost (origin dot + horizontal & diagonal segments) with each segment
+            // finished by a clean, proportionally sized arrowhead aligned to its direction.
             var host = CreateGhostIconHost();
-            host.Children.Add(new Avalonia.Controls.Shapes.Line
+            double thickness = Math.Max(2, _currentThickness);
+            host.Children.Add(CreateGhostOriginDot(brush));
+            host.Children.Add(CreateGhostArrowSegment(new AvaloniaPoint(0, 0), new AvaloniaPoint(18, 0), brush, thickness));
+            host.Children.Add(CreateGhostArrowSegment(new AvaloniaPoint(0, 0), new AvaloniaPoint(14, -14), brush, thickness));
+            return host;
+        }
+
+        private static AvaloniaControl CreateGhostOriginDot(IBrush brush)
+        {
+            // A solid dot marks the exact anchor point (0,0 = pointer) that the ghost's
+            // segments emanate from, so the glyph reads as a cursor overlay, never as a
+            // stray annotation left on the canvas.
+            var dot = new Avalonia.Controls.Shapes.Ellipse { Width = 5, Height = 5, Fill = brush, IsHitTestVisible = false };
+            Canvas.SetLeft(dot, -2.5);
+            Canvas.SetTop(dot, -2.5);
+            return dot;
+        }
+
+        private static Canvas CreateGhostArrowSegment(AvaloniaPoint start, AvaloniaPoint end, IBrush brush, double thickness)
+        {
+            var segment = new Canvas { IsHitTestVisible = false };
+            double dx = end.X - start.X, dy = end.Y - start.Y;
+            double length = Math.Sqrt(dx * dx + dy * dy);
+            if (length < 1) return segment;
+
+            double ux = dx / length, uy = dy / length;
+            double headLength = Math.Clamp(thickness * 3.0, 6, 10);
+            double headWidth = headLength * 0.55;
+
+            // The shaft stops just inside the head so the head's tip - not the line cap -
+            // forms the visible end point.
+            var shaftEnd = new AvaloniaPoint(end.X - headLength * 0.6 * ux, end.Y - headLength * 0.6 * uy);
+            segment.Children.Add(new Avalonia.Controls.Shapes.Line
             {
-                StartPoint = new AvaloniaPoint(-16, 16),
-                EndPoint = new AvaloniaPoint(6, -6),
+                StartPoint = start,
+                EndPoint = shaftEnd,
                 Stroke = brush,
-                StrokeThickness = Math.Max(2, _currentThickness),
+                StrokeThickness = thickness,
                 StrokeLineCap = PenLineCap.Round
             });
-            host.Children.Add(new Avalonia.Controls.Shapes.Polygon
+
+            var tip = end;
+            var wing1 = new AvaloniaPoint(end.X - headLength * ux + headWidth * uy, end.Y - headLength * uy - headWidth * ux);
+            var wing2 = new AvaloniaPoint(end.X - headLength * ux - headWidth * uy, end.Y - headLength * uy + headWidth * ux);
+            segment.Children.Add(new Avalonia.Controls.Shapes.Polygon
             {
-                Points = new List<AvaloniaPoint> { new(14, -14), new(9, -2), new(10.5, -10.5), new(2, -9) },
-                Fill = brush
+                Points = new List<AvaloniaPoint> { tip, wing1, wing2 },
+                Fill = brush,
+                IsHitTestVisible = false
             });
-            return host;
+            return segment;
         }
 
         private void OnCanvasPointerMoved(object sender, PointerEventArgs e)
@@ -3512,10 +3565,11 @@ namespace snapvox.editor.forms
                 var previewEnd = IsVectorTool(_currentTool) ? ApplyVectorConstraints(pos, _startPoint, e.KeyModifiers) : pos;
                 previewEnd = ClampRectDrawEnd(previewEnd); // ISSUE_021: never flip past the anchor while drawing
                 UpdatePreviewShape(previewEnd);
-                // FEATURE (shape snap guides): while stretching a new shape, magnetically align its
-                // edges/center with the other shapes and stretch gentle guide lines between them.
-                if (IsRectSnappableTool(_currentTool)) ApplyPreviewShapeSnap(previewEnd, e.KeyModifiers.HasFlag(KeyModifiers.Alt));
-                else { _previewSnapDelta = default; HideSnapGuides(); }
+                // ISSUE_028 (stuttery shape creation): no magnetic pull and no guide lines while
+                // STRETCHING a new shape - the rubberband tracks the pointer 1:1 so the anchored
+                // corner stays put and sizing feels smooth. Snapping/guides remain for moves,
+                // resizes and stamp placement.
+                HideSnapGuides();
                 if (IsVectorTool(_currentTool)) UpdateVectorInfo(_startPoint, previewEnd);
                 
                 RefreshSnapTargetsList();
@@ -3747,13 +3801,8 @@ namespace snapvox.editor.forms
             endPoint = ClampRectDrawEnd(endPoint); // ISSUE_021: the committed shape never flips past the anchor
             RemovePreviewShape();
             HideVectorInfo();
-            if (IsRectSnappableTool(_currentTool) && (_previewSnapDelta.X != 0 || _previewSnapDelta.Y != 0))
-            {
-                // FEATURE (shape snap guides): commit the shape exactly where the snapped preview was shown.
-                _startPoint = new AvaloniaPoint(_startPoint.X + _previewSnapDelta.X, _startPoint.Y + _previewSnapDelta.Y);
-                endPoint = new AvaloniaPoint(endPoint.X + _previewSnapDelta.X, endPoint.Y + _previewSnapDelta.Y);
-            }
-            _previewSnapDelta = default;
+            // ISSUE_028: creation is no longer snapped, so the shape lands exactly where the raw
+            // rubberband was drawn - anchor corner included.
             HideSnapGuides();
             if (_currentTool != EditorTool.FreeDraw) CommitShape(_startPoint, endPoint);
             _activePolyline = null;
@@ -4040,6 +4089,10 @@ namespace snapvox.editor.forms
                         await UpdateDisplayAsync().ConfigureAwait(true);
                         OverlayHelper.ShowLightToast("IMAGE RESIZED", this);
                         ShowUndoAvailableHint();
+                        // ISSUE_032 (resize should resize the editor): adopting the new pixel
+                        // size must also re-fit the window, exactly like a freshly taken
+                        // snapshot of those dimensions.
+                        RefitWindowToImage();
                     });
                 }
             }
