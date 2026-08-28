@@ -104,6 +104,13 @@ namespace snapvox.editor.forms
         private AvaloniaPoint _dragLastPoint;
         private double _dragUnsnappedLeft;
         private double _dragUnsnappedTop;
+        // FEATURE (magnet escape, resize edition): the raw, never-snapped bounds of the shape being
+        // resized - the resize twin of _dragUnsnappedLeft/_dragUnsnappedTop. The resize magnet
+        // computes from these instead of re-snapping its own output every frame.
+        private double _resizeUnsnappedLeft;
+        private double _resizeUnsnappedTop;
+        private double _resizeUnsnappedWidth;
+        private double _resizeUnsnappedHeight;
         private bool _isDraggingSelected;
         private bool _isResizing;
         private int _resizeHandleIndex = -1;
@@ -159,10 +166,6 @@ namespace snapvox.editor.forms
         private const int PixelateStrengthDefault = 25;
         private const double VectorHitTolerance = 12.0;
         private const double VectorSnapThreshold = 12.0;
-        // FEATURE (magnet escape): resize handles use a tighter capture zone than shape moves -
-        // while enlarging, the dragged edge sweeps across many other shapes' edge targets, and a
-        // wide zone there chains from one capture straight into the next, feeling unreleasable.
-        private const double ResizeSnapThreshold = 6.0;
         private const double VectorSnapGap = 12.0;
         private const double PastedSnapThreshold = 3.0;
         private const int SnapVoxFrameThickness = 3;
@@ -334,8 +337,17 @@ namespace snapvox.editor.forms
                     if (_selectedControl == _lastDraggedVectorControl && _lastDraggedHandleIndex == idx + 10) _disableSnappingForCurrentDrag = !_disableSnappingForCurrentDrag;
                     else _disableSnappingForCurrentDrag = false;
                     _lastDraggedVectorControl = _selectedControl; _lastDraggedHandleIndex = idx + 10;
-                    _resizeHandleIndex = idx; 
-                    _dragLastPoint = e.GetPosition(_canvas); 
+                    _resizeHandleIndex = idx;
+                    if (_selectedControl != null)
+                    {
+                        _resizeUnsnappedLeft = Canvas.GetLeft(_selectedControl);
+                        if (double.IsNaN(_resizeUnsnappedLeft)) _resizeUnsnappedLeft = _selectedControl.Bounds.X;
+                        _resizeUnsnappedTop = Canvas.GetTop(_selectedControl);
+                        if (double.IsNaN(_resizeUnsnappedTop)) _resizeUnsnappedTop = _selectedControl.Bounds.Y;
+                        _resizeUnsnappedWidth = double.IsNaN(_selectedControl.Width) ? _selectedControl.Bounds.Width : _selectedControl.Width;
+                        _resizeUnsnappedHeight = double.IsNaN(_selectedControl.Height) ? _selectedControl.Bounds.Height : _selectedControl.Height;
+                    }
+                    _dragLastPoint = e.GetPosition(_canvas);
                     e.Pointer.Capture(_canvas);
                     e.Handled = true; 
                 };
@@ -1939,50 +1951,69 @@ namespace snapvox.editor.forms
             return new AvaloniaPoint(left, top);
         }
 
-        private IEnumerable<double> GetMagneticSnapTargets(AvaloniaControl moving, bool horizontal)
+        // FEATURE (magnet escape, resize edition): resizing snaps through the same engine as
+        // dragging/placing whole shapes. The dragged edge aligns with any edge-or-center rail of
+        // every other shape plus the image frame (the identical candidate set TrySnapAxis uses for
+        // moves), the pull is capped at VectorSnapThreshold, and because the input rect is the RAW
+        // never-snapped bounds the magnet releases the instant the raw edge leaves the zone. The
+        // dashed guide rails from the move magnet appear here too, so the snap is felt, not a trap.
+        private Rect ApplyResizeMagneticSnap(AvaloniaControl control, Rect raw, bool altSnapBypass)
         {
-            if (_image != null)
+            var config = IniConfig.GetIniSection<CoreConfiguration>();
+            if (altSnapBypass || !config.MagneticSnappingEnabled || _disableSnappingForCurrentDrag || _image == null)
             {
-                yield return 0;
-                yield return horizontal ? _image.Width : _image.Height;
+                HideSnapGuides();
+                return raw;
             }
 
-            foreach (var control in GetUserAnnotations())
-            {
-                if (ReferenceEquals(control, moving) || !TryGetControlBounds(control, out var bounds))
-                {
-                    continue;
-                }
+            _activeSnapGuides.Clear();
+            var targets = GetShapeSnapTargets(control).ToList();
+            bool dragLeftEdge = _resizeHandleIndex == 0 || _resizeHandleIndex == 3;
+            bool dragTopEdge = _resizeHandleIndex == 0 || _resizeHandleIndex == 1;
 
-                if (horizontal)
-                {
-                    yield return bounds.Left;
-                    yield return bounds.Right;
-                }
-                else
-                {
-                    yield return bounds.Top;
-                    yield return bounds.Bottom;
-                }
+            double l = raw.Left, t = raw.Top, r = raw.Right, b = raw.Bottom;
+            if (TrySnapResizeEdge(dragLeftEdge ? l : r, targets, vertical: false, out double snapX))
+            {
+                if (dragLeftEdge) l = snapX; else r = snapX;
+                _activeSnapGuides.Add(new SnapGuideInfo(false, snapX, 0, _image.Height));
             }
+            if (TrySnapResizeEdge(dragTopEdge ? t : b, targets, vertical: true, out double snapY))
+            {
+                if (dragTopEdge) t = snapY; else b = snapY;
+                _activeSnapGuides.Add(new SnapGuideInfo(true, snapY, 0, _image.Width));
+            }
+
+            if (_activeSnapGuides.Count > 0) ShowSnapGuides(); else HideSnapGuides();
+
+            // A snap may never collapse the shape below the 10 DIP floor - clamp against the
+            // anchored (undragged) edge, never past it.
+            if (r - l < 10) { if (dragLeftEdge) l = r - 10; else r = l + 10; }
+            if (b - t < 10) { if (dragTopEdge) t = b - 10; else b = t + 10; }
+            return new Rect(l, t, r - l, b - t);
         }
 
-        private static double SnapAxisEdge(double position, IEnumerable<double> targets, double threshold)
+        private static bool TrySnapResizeEdge(double coordinate, List<ShapeSnapTarget> targets, bool vertical, out double snapped)
         {
-            double best = position;
-            double bestDistance = threshold + 0.001;
-
-            foreach (double target in targets)
+            snapped = coordinate;
+            double bestDistance = VectorSnapThreshold + 0.001;
+            bool found = false;
+            foreach (var target in targets)
             {
-                double distance = Math.Abs(position - target);
-                if (distance <= threshold && distance < bestDistance)
+                double a = vertical ? target.Bounds.Top : target.Bounds.Left;
+                double b = vertical ? target.Bounds.Center.Y : target.Bounds.Center.X;
+                double c = vertical ? target.Bounds.Bottom : target.Bounds.Right;
+                foreach (double candidate in new[] { a, b, c })
                 {
-                    bestDistance = distance;
-                    best = target;
+                    double distance = Math.Abs(coordinate - candidate);
+                    if (distance <= VectorSnapThreshold && distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        snapped = candidate;
+                        found = true;
+                    }
                 }
             }
-
-            return best;
+            return found;
         }
 
         // ===== FEATURE (shape snap guides) =================================================
@@ -3447,48 +3478,17 @@ namespace snapvox.editor.forms
             bool keepRatio = (_selectedControl is TextBlock) || (_selectedControl is Border b && b.Child is TextBlock);
             double newW = oldW; double newH = oldH;
 
-            double wDelta = 0, hDelta = 0;
-            switch (_resizeHandleIndex)
-            {
-                case 0: wDelta = -dx; hDelta = -dy; break;
-                case 1: wDelta = dx; hDelta = -dy; break;
-                case 2: wDelta = dx; hDelta = dy; break;
-                case 3: wDelta = -dx; hDelta = dy; break;
-            }
-
-            // FEATURE (magnet escape): holding ALT while dragging a handle is a live magnetic-snap
-            // override - the edge follows the pointer raw. Resizing also uses a tighter capture
-            // zone (ResizeSnapThreshold) than shape moves: while enlarging, the dragged edge
-            // sweeps across many other shapes' edge targets, and a wide zone chained from one
-            // capture straight into the next, which felt unreleasable.
-            var config = IniConfig.GetIniSection<CoreConfiguration>();
-            if (!altSnapBypass && config.MagneticSnappingEnabled && !_disableSnappingForCurrentDrag && !keepRatio)
-            {
-                if (_resizeHandleIndex == 0 || _resizeHandleIndex == 3)
-                {
-                    double snappedLeft = SnapAxisEdge(left - wDelta, GetMagneticSnapTargets(_selectedControl, true), ResizeSnapThreshold);
-                    wDelta = left - snappedLeft;
-                }
-                else
-                {
-                    double snappedRight = SnapAxisEdge(left + oldW + wDelta, GetMagneticSnapTargets(_selectedControl, true), ResizeSnapThreshold);
-                    wDelta = snappedRight - (left + oldW);
-                }
-
-                if (_resizeHandleIndex == 0 || _resizeHandleIndex == 1)
-                {
-                    double snappedTop = SnapAxisEdge(top - hDelta, GetMagneticSnapTargets(_selectedControl, false), ResizeSnapThreshold);
-                    hDelta = top - snappedTop;
-                }
-                else
-                {
-                    double snappedBottom = SnapAxisEdge(top + oldH + hDelta, GetMagneticSnapTargets(_selectedControl, false), ResizeSnapThreshold);
-                    hDelta = snappedBottom - (top + oldH);
-                }
-            }
-
             if (keepRatio)
             {
+                double wDelta = 0, hDelta = 0;
+                switch (_resizeHandleIndex)
+                {
+                    case 0: wDelta = -dx; hDelta = -dy; break;
+                    case 1: wDelta = dx; hDelta = -dy; break;
+                    case 2: wDelta = dx; hDelta = dy; break;
+                    case 3: wDelta = -dx; hDelta = dy; break;
+                }
+
                 double scale = ((oldW + wDelta) * oldW + (oldH + hDelta) * oldH) / (oldW * oldW + oldH * oldH);
                 scale = Math.Max(10 / oldW, Math.Max(10 / oldH, scale));
                 newW = oldW * scale; newH = oldH * scale;
@@ -3496,8 +3496,42 @@ namespace snapvox.editor.forms
             }
             else
             {
-                newW = Math.Max(10, oldW + wDelta); newH = Math.Max(10, oldH + hDelta);
-                switch (_resizeHandleIndex) { case 0: Canvas.SetLeft(_selectedControl, left + (oldW - newW)); Canvas.SetTop(_selectedControl, top + (oldH - newH)); break; case 1: Canvas.SetTop(_selectedControl, top + (oldH - newH)); break; case 3: Canvas.SetLeft(_selectedControl, left + (oldW - newW)); break; }
+                // FEATURE (magnet escape, resize edition): the resize magnet now runs through the
+                // exact same engine as dragging/placing whole shapes. The RAW, never-snapped bounds
+                // are advanced below (the twin of _dragUnsnappedLeft/_dragUnsnappedTop on moves) and
+                // only the APPLIED bounds get bent by the magnet, so the capture zone always stays
+                // centered on the true pointer position, the pull never exceeds the snap threshold
+                // and it releases the instant the raw edge leaves the zone. The previous version
+                // re-snapped its own output every frame, letting the snap baseline drift ahead of
+                // the cursor and chain captures into an unreleasable loop. ALT remains a live raw
+                // override and the toolbar magnet button (MagneticSnappingEnabled) is the setting.
+                switch (_resizeHandleIndex)
+                {
+                    // The opposite edge stays anchored; at the 10 DIP floor the dragged edge simply
+                    // freezes (no hysteresis - moving back the other way resumes immediately).
+                    case 0:
+                        if (_resizeUnsnappedWidth - dx >= 10) { _resizeUnsnappedWidth -= dx; _resizeUnsnappedLeft += dx; }
+                        if (_resizeUnsnappedHeight - dy >= 10) { _resizeUnsnappedHeight -= dy; _resizeUnsnappedTop += dy; }
+                        break;
+                    case 1:
+                        if (_resizeUnsnappedWidth + dx >= 10) _resizeUnsnappedWidth += dx;
+                        if (_resizeUnsnappedHeight - dy >= 10) { _resizeUnsnappedHeight -= dy; _resizeUnsnappedTop += dy; }
+                        break;
+                    case 2:
+                        if (_resizeUnsnappedWidth + dx >= 10) _resizeUnsnappedWidth += dx;
+                        if (_resizeUnsnappedHeight + dy >= 10) _resizeUnsnappedHeight += dy;
+                        break;
+                    case 3:
+                        if (_resizeUnsnappedWidth - dx >= 10) { _resizeUnsnappedWidth -= dx; _resizeUnsnappedLeft += dx; }
+                        if (_resizeUnsnappedHeight + dy >= 10) _resizeUnsnappedHeight += dy;
+                        break;
+                }
+
+                var raw = new Rect(_resizeUnsnappedLeft, _resizeUnsnappedTop, _resizeUnsnappedWidth, _resizeUnsnappedHeight);
+                var snapped = ApplyResizeMagneticSnap(_selectedControl, raw, altSnapBypass);
+                newW = snapped.Width; newH = snapped.Height;
+                Canvas.SetLeft(_selectedControl, snapped.Left);
+                Canvas.SetTop(_selectedControl, snapped.Top);
                 if (_selectedControl is Border borderCtrl && borderCtrl.Child is TextBlock txt && GetToolFromControl(_selectedControl) == EditorTool.Counter)
                 {
                     double avgSize = (newW + newH) / 2.0;
