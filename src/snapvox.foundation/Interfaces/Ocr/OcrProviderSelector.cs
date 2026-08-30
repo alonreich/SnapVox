@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -19,7 +19,19 @@ namespace snapvox.foundation.interfaces.Ocr
                 var configured = availableProviders.FirstOrDefault(provider =>
                     string.Equals(provider.DisplayName, configuredEngine, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(provider.EngineId, configuredEngine, StringComparison.OrdinalIgnoreCase));
-                if (configured != null && configured.HasRequiredLanguages())
+
+                if (configured == null)
+                {
+                    snapvox.foundation.core.LogHelper.GetLogger(typeof(OcrProviderSelector)).Warn(
+                        "[FAIL] Configured OCR engine '" + configuredEngine + "' matches no registered provider. Available: " +
+                        string.Join(", ", availableProviders.Select(provider => provider.DisplayName)) + ". Falling back.");
+                }
+                else if (!configured.HasRequiredLanguages())
+                {
+                    snapvox.foundation.core.LogHelper.GetLogger(typeof(OcrProviderSelector)).Warn(
+                        "[FAIL] Configured OCR engine '" + configuredEngine + "' is missing its required EN/HE language packs. Falling back.");
+                }
+                else
                 {
                     return configured;
                 }

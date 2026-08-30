@@ -1,7 +1,5 @@
-using snapvox.native;
+﻿using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -59,9 +57,7 @@ namespace snapvox.foundation.IniFile
             foreach (IniValue val in values.Values) val.Write(writer, onlyProperties);
         }
 
-        public virtual void BeforeSave() { }
         public virtual void AfterLoad() { }
-        public virtual void AfterSave() { }
         public virtual object GetDefault(string propertyName) => null;
         public virtual string PreCheckValue(string propertyName, string propertyValue) => propertyValue;
     }

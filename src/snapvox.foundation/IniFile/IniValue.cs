@@ -1,7 +1,5 @@
 using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -44,7 +42,6 @@ namespace snapvox.foundation.IniFile
 
         public bool IsFixed { get; set; }
         public bool IsExpert { get; set; }
-        public bool IsEditable => !IsFixed;
         public bool IsVisible => !IsExpert;
 
         public object Value

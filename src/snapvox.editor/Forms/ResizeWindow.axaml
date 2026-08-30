@@ -1,7 +1,8 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="snapvox.editor.forms.ResizeWindow"
         Title="Resize Image"
+        AutomationProperties.Name="Resize image"
         Width="390" Height="310"
         MinWidth="360" MinHeight="290"
         Background="{DynamicResource SnapVoxPanelDarkBrush}"
@@ -13,38 +14,38 @@
         <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,0">
             <StackPanel Grid.Column="0" Spacing="15">
                 <!-- ISSUE_016: two-way bound checkbox -->
-                <CheckBox Name="RatioCheckbox" Content="Maintain Aspect Ratio" IsChecked="True" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                <CheckBox Name="RatioCheckbox" Content="Maintain Aspect Ratio" AutomationProperties.Name="Maintain aspect ratio" Cursor="Hand" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" IsChecked="True" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                 <TextBlock Name="CurrentSizeText" Text="Current: 0 x 0" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="12" />
                 
                 <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto" VerticalAlignment="Center">
                     <TextBlock Text="Width:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" Margin="0,0,10,0"/>
                     <!-- ISSUE_016: text inputs kept in sync from the code-behind (result properties are read at OK time). -->
-                    <TextBox Name="WidthInput" Grid.Column="1" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"/>
+                    <TextBox Name="WidthInput" Grid.Column="1" MinWidth="80" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Watermark="px" AutomationProperties.Name="New width in pixels" ToolTip.Tip="New width in pixels" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"/>
                     
                     <TextBlock Text="Height:" Grid.Column="2" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" Margin="15,0,10,0"/>
-                    <TextBox Name="HeightInput" Grid.Column="3" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"/>
+                    <TextBox Name="HeightInput" Grid.Column="3" MinWidth="80" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Watermark="px" AutomationProperties.Name="New height in pixels" ToolTip.Tip="New height in pixels" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"/>
                 </Grid>
 
                 <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Button Content="50%" Width="58" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="50"/>
-                    <Button Content="100%" Width="58" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="100"/>
-                    <Button Content="200%" Width="58" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="200"/>
-                    <Button Content="Fit" Width="58" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="Fit"/>
+                    <Button Content="50%" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="50" AutomationProperties.Name="Scale to 50 percent"/>
+                    <Button Content="100%" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="100" AutomationProperties.Name="Scale to 100 percent"/>
+                    <Button Content="200%" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="200" AutomationProperties.Name="Scale to 200 percent"/>
+                    <Button Content="Fit" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="Fit" AutomationProperties.Name="Fit to screen"/>
                 </StackPanel>
             </StackPanel>
             
             <StackPanel Grid.Column="1" Margin="20,0,0,0" HorizontalAlignment="Center">
                 <TextBlock Name="PercentText" Text="100%" HorizontalAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" FontWeight="Bold" Margin="0,0,0,6"/>
                 <!-- ISSUE_008: slider constrained to safe 33%–300% range, magnetic snap at 100% handled in code-behind. -->
-                <Slider Name="SizeSlider" Orientation="Vertical" Height="100"
+                <Slider Name="SizeSlider" Orientation="Vertical" Height="100" Cursor="Hand" AutomationProperties.Name="Scale percentage"
                         Minimum="33" Maximum="300" Value="100" IsVisible="True" 
                         ToolTip.Tip="Scale smoothly from 33% to 300%" />
             </StackPanel>
         </Grid>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0">
-            <Button Name="OkButton" Content="OK" Width="80" HorizontalContentAlignment="Center" Click="OnOkClick" IsDefault="True" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
-            <Button Content="Cancel" Width="80" HorizontalContentAlignment="Center" Click="OnCancelClick" IsCancel="True" />
+            <Button Name="OkButton" Content="OK" MinWidth="80" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" AutomationProperties.Name="Apply new size" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnOkClick" IsDefault="True" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
+            <Button Content="Cancel" MinWidth="80" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" AutomationProperties.Name="Cancel resize" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnCancelClick" IsCancel="True" />
         </StackPanel>
     </StackPanel>
 </Window>

@@ -85,14 +85,6 @@ public class snapvoxMain
 
         try
         {
-            if (headlessInstaller && !DeploymentLifecycle.IsLifecycleCommand(args))
-            {
-                BootstrapDebug.Log("Headless deployment path (no Avalonia / no Skia preload).");
-                InstallHostContext.WriteEarlyTrace("Headless deployment branch");
-                Environment.Exit(await DeploymentLifecycle.RunHeadlessDeploymentCommandAsync(args).ConfigureAwait(false));
-                return;
-            }
-
             if (isAdminStartupCommand)
             {
                 Environment.Exit(await StartupTaskHelper.RunAdminStartupCommandAsync(args).ConfigureAwait(false));

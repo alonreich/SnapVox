@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -21,8 +21,6 @@ namespace snapvox.helpers
         private static Thread _msgLoopThread;
         private static volatile bool _running;
 
-        // Tracks which hotkeys failed to register during the last Start(), so the UI can tell the
-        // user (in plain English) when Windows or another program has taken the Print Screen key.
         private static volatile string[] _lastFailedHotkeys = Array.Empty<string>();
         private static volatile bool _registrationCompleted;
 
@@ -217,6 +215,11 @@ namespace snapvox.helpers
 
         public static void Stop()
         {
+            if (!_running)
+            {
+                return;
+            }
+
             _running = false;
             IntPtr hwnd = _hwnd;
             if (hwnd != IntPtr.Zero)
@@ -224,30 +227,11 @@ namespace snapvox.helpers
                 PostMessageW(hwnd, WM_APP_EXIT, IntPtr.Zero, IntPtr.Zero);
             }
 
-            var thread = _msgLoopThread;
-            if (thread != null && thread.IsAlive)
-            {
-                try
-                {
-                    thread.Join(TimeSpan.FromSeconds(3));
-                }
-                catch
-                {
-                }
-            }
+            _msgLoopThread = null;
         }
 
-        public static void TriggerHotkey(int id)
-        {
-            HandleHotkey(id);
-        }
-
-        /// <summary>True once the background thread finished registering all hotkeys for the current Start() call.</summary>
         public static bool RegistrationCompleted => _registrationCompleted;
 
-        public static string[] GetLastFailedHotkeys() => _lastFailedHotkeys ?? Array.Empty<string>();
-
-        /// <summary>True when one of the hotkeys that failed to register uses the Print Screen key.</summary>
         public static bool HasPrintScreenRegistrationFailure
         {
             get
@@ -265,6 +249,14 @@ namespace snapvox.helpers
         private static void RegisterAll()
         {
             var cfg = IniConfig.GetIniSection<CoreConfiguration>();
+            if (cfg.DisableHotkeys)
+            {
+                _lastFailedHotkeys = System.Array.Empty<string>();
+                _registrationCompleted = true;
+                BootstrapDebug.Log("HotkeyManager: DisableHotkeys is set. No global hotkeys registered.");
+                return;
+            }
+
             var failures = new System.Collections.Generic.List<string>();
 
             if (!RegisterOne(HOTKEY_REGION, cfg.RegionHotkey)) failures.Add(cfg.RegionHotkey);
@@ -281,8 +273,6 @@ namespace snapvox.helpers
                 string msg = "Failed to register: " + string.Join(", ", failures);
                 if (HasPrintScreenRegistrationFailure)
                     {
-                        // Windows (Snipping Tool / Snip & Sketch) or another program has taken the
-                        // Print Screen key - explain the real consequence in simple words.
                         PrintScreenConflictHelper.ShowConflictToast();
                     }
                     else

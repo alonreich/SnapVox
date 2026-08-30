@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -124,6 +124,7 @@ namespace snapvox.editor.forms
         private void InitializeComponent()
         {
             AvaloniaXamlLoader.Load(this);
+            snapvox.foundation.core.UiLayoutDirection.Apply(this);
         }
 
         private void OnWidthChanged(object sender, AvaloniaPropertyChangedEventArgs e)

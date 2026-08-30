@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -82,24 +82,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    public static async Task<int> RunHeadlessDeploymentCommandAsync(string[] args)
-    {
-        InstallHostContext.HeadlessInstallerActive = false;
-        try
-        {
-            if (IsUninstallLauncherCommand(args)) return await RunUninstallLauncherAsync(args, CancellationToken.None).ConfigureAwait(false);
-            if (args != null && args.Any(arg => arg.Equals("--cleanup-worker", StringComparison.OrdinalIgnoreCase)))
-                return await RunUninstallAsync(args, CancellationToken.None).ConfigureAwait(false);
-            
-            return await RunInstallAsync(CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            BootstrapDebug.Log("Headless deployment fatal: " + ex);
-            return 1;
-        }
-    }
-
     public static async Task<int> RunInstallAsync(CancellationToken ct = default)
     {
         bool isWorker = Environment.GetCommandLineArgs().Any(a => a.Equals("--install-worker", StringComparison.OrdinalIgnoreCase));
@@ -118,9 +100,9 @@ internal static class DeploymentLifecycle
         using var mutex = new Mutex(false, DeploymentFootprint.InstallerMutexName);
         if (!AcquireMutex(mutex))
         {
-            // ISSUE (silent second installer): when another setup instance already holds
-            // the installer mutex this worker used to exit silently, which looked like
-            // "nothing happened". Tell the user why instead of just vanishing.
+
+
+
             BootstrapDebug.Log("Install worker: another installer instance already holds the mutex, exiting.");
             InstallHostContext.WriteEarlyTrace("Install worker: installer mutex already held by another instance.");
             StartupTaskHelper.ShowForegroundMessageBox(
@@ -152,12 +134,12 @@ internal static class DeploymentLifecycle
                 throw new Exception($"Conflicting software detected: {conflict}");
             }
 
-            // ISSUE (upgrade data loss): every install/upgrade used to run the scorched-
-            // earth pre-install purge unconditionally, silently wiping the user's saved
-            // settings (snapvox.ini). An upgrade now asks what to do first:
-            //   Yes    - keep settings (backed up and restored around the purge)
-            //   No     - clean install (purge user artifacts too)
-            //   Cancel - abort the installation
+
+
+
+
+
+
             bool upgradeDetected = DetectExistingInstallation();
             bool keepUserSettings = false;
             bool cleanWipeRequested = false;
@@ -193,6 +175,7 @@ internal static class DeploymentLifecycle
 
                 await ReportAsync(progress, logger, 100, "SUCCESS", "COMPLETE", "Deployment finalized.", ct).ConfigureAwait(false);
                 await LaunchInstalledApplicationAsync();
+                await AwaitUserAcknowledgementAsync(progress, logger, "Installation complete. Click Finish to close.", ct).ConfigureAwait(false);
             }
             finally
             {
@@ -203,6 +186,7 @@ internal static class DeploymentLifecycle
         catch (Exception ex)
         {
             if (logger != null) await logger.LogAsync("CRITICAL", "ERROR", ex.Message, ct, ex).ConfigureAwait(false);
+            await AwaitUserAcknowledgementAsync(progress, logger, "Installation failed: " + ex.Message, CancellationToken.None).ConfigureAwait(false);
             return ex.HResult == 0 ? 1 : ex.HResult;
         }
         finally
@@ -246,21 +230,40 @@ internal static class DeploymentLifecycle
             await PerformFullHostCleanupAsync(progress, logger, "Uninstall", 10, 90, requireZeroFootprint: true, purgeUserArtifacts: true, ct).ConfigureAwait(false);
 
             await ReportAsync(progress, logger, 95, "UNINSTALL", "VERIFYING", "Confirming system state...", ct).ConfigureAwait(false);
-            bool clean = await VerifyZeroFootprintAsync(logger, verifyData: true, ct).ConfigureAwait(false);
-            
-            string status = (clean && Volatile.Read(ref _pendingRebootDeletes) == 0) ? "SUCCESS" : "PENDING REBOOT";
-            string detail = clean ? "All components removed successfully." : "Cleanup complete. Some items require a reboot for full removal.";
+            var residue = await CollectResidualFootprintAsync(logger, ct).ConfigureAwait(false);
+            int rebootPending = Volatile.Read(ref _pendingRebootDeletes);
+
+            foreach (string item in residue)
+                await ReportAsync(progress, logger, 97, "UNINSTALL", "REMAINING", item, ct).ConfigureAwait(false);
+
+            string status;
+            string detail;
+            if (residue.Count == 0 && rebootPending == 0)
+            {
+                status = "SUCCESS";
+                detail = "Verified: every installed component was removed.";
+            }
+            else if (rebootPending > 0)
+            {
+                status = "PENDING REBOOT";
+                detail = $"{rebootPending} locked item(s) are scheduled for deletion on the next restart." +
+                         (residue.Count > 0 ? $" {residue.Count} other item(s) still present - see the log." : string.Empty);
+            }
+            else
+            {
+                status = "INCOMPLETE";
+                detail = $"{residue.Count} item(s) could not be removed. The list is above and in the log.";
+            }
             
             await ReportAsync(progress, logger, 100, "UNINSTALL", status, detail, ct).ConfigureAwait(false);
-            
-            await Task.Delay(500, ct).ConfigureAwait(false);
+            await AwaitUserAcknowledgementAsync(progress, logger, detail + " Click Finish to close.", ct).ConfigureAwait(false);
             return 0;
         }
         catch (Exception ex)
         {
             BootstrapDebug.Log("Worker FATAL: " + ex);
             await ReportAsync(progress, logger, 100, "FAILURE", "ERROR", ex.Message, ct, ex).ConfigureAwait(false);
-            await Task.Delay(1000, ct).ConfigureAwait(false);
+            await AwaitUserAcknowledgementAsync(progress, logger, "Uninstall failed: " + ex.Message, CancellationToken.None).ConfigureAwait(false);
             return 1;
         }
         finally
@@ -311,8 +314,9 @@ internal static class DeploymentLifecycle
 
         if (requireZeroFootprint)
         {
-            bool clean = await VerifyZeroFootprintAsync(logger, true, ct).ConfigureAwait(false);
-            if (!clean) await logger.LogAsync("CLEANUP", "WARNING", "Residual items detected - some may require reboot.", ct).ConfigureAwait(false);
+            var residue = await CollectResidualFootprintAsync(logger, ct).ConfigureAwait(false);
+            foreach (string item in residue)
+                await ReportAsync(progress, logger, end, "CLEANUP", "REMAINING", item, ct).ConfigureAwait(false);
         }
     }
 
@@ -322,53 +326,67 @@ internal static class DeploymentLifecycle
 
         try
         {
-            try 
-            { 
-                Directory.Delete(dir, true); 
-                await logger.LogAsync("FILESYSTEM", "DELETE_DIR_FAST", dir, ct).ConfigureAwait(false);
-                return; 
-            } 
-            catch { }
+            await logger.LogAsync("FILESYSTEM", "PURGE_BEGIN", dir, ct).ConfigureAwait(false);
 
-            var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
-            var tasks = new System.Collections.Generic.List<Task>();
-            using var throttler = new SemaphoreSlim(20);
-
-            foreach (string file in files)
+            string[] files;
+            try
             {
-                await throttler.WaitAsync(ct).ConfigureAwait(false);
-                tasks.Add(Task.Run(async () =>
-                {
-                    try { await DeleteFileWithRetryAsync(file, logger, ct).ConfigureAwait(false); }
-                    finally { throttler.Release(); }
-                }, ct));
+                files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
             }
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-
-            var subDirs = Directory.GetDirectories(dir, "*", SearchOption.AllDirectories)
-                                   .OrderByDescending(d => d.Length);
-            foreach (string sub in subDirs)
+            catch (Exception enumEx)
             {
-                try 
-                { 
-                    if (Directory.Exists(sub))
+                await logger.LogAsync("FILESYSTEM", "ENUM_FAIL", $"{dir} :: {enumEx.Message}", ct).ConfigureAwait(false);
+                files = Array.Empty<string>();
+            }
+
+            int deleted = 0;
+            var throttler = new SemaphoreSlim(20);
+            var tasks = new List<Task>(files.Length);
+            try
+            {
+                foreach (string file in files)
+                {
+                    await throttler.WaitAsync(ct).ConfigureAwait(false);
+                    string capture = file;
+                    tasks.Add(Task.Run(async () =>
                     {
-                        Directory.Delete(sub, true); 
-                        await logger.LogAsync("FILESYSTEM", "DELETE_DIR", sub, ct).ConfigureAwait(false); 
-                    }
-                } 
-                catch { }
+                        try
+                        {
+                            if (await DeleteFileWithRetryAsync(capture, logger, ct).ConfigureAwait(false)) Interlocked.Increment(ref deleted);
+                        }
+                        finally
+                        {
+                            throttler.Release();
+                        }
+                    }, ct));
+                }
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+            }
+            finally
+            {
+                throttler.Dispose();
             }
 
-            try 
-            { 
-                if (Directory.Exists(dir))
-                {
-                    Directory.Delete(dir, true); 
-                    await logger.LogAsync("FILESYSTEM", "DELETE_ROOT", dir, ct).ConfigureAwait(false); 
-                }
-            } 
-            catch { }
+            await logger.LogAsync("FILESYSTEM", "FILES_REMOVED", $"{dir} :: {deleted}/{files.Length}", ct).ConfigureAwait(false);
+
+            string[] subDirs;
+            try
+            {
+                subDirs = Directory.GetDirectories(dir, "*", SearchOption.AllDirectories);
+            }
+            catch (Exception enumEx)
+            {
+                await logger.LogAsync("FILESYSTEM", "ENUM_FAIL", $"{dir} :: {enumEx.Message}", ct).ConfigureAwait(false);
+                subDirs = Array.Empty<string>();
+            }
+
+            foreach (string sub in subDirs.OrderByDescending(d => d.Length))
+            {
+                await DeleteDirectoryWithRetryAsync(sub, logger, ct).ConfigureAwait(false);
+            }
+
+            await DeleteDirectoryWithRetryAsync(dir, logger, ct).ConfigureAwait(false);
+            await logger.LogAsync("FILESYSTEM", "PURGE_END", dir, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -376,9 +394,77 @@ internal static class DeploymentLifecycle
         }
     }
 
-    private static async Task DeleteFileWithRetryAsync(string path, DeploymentLogger logger, CancellationToken ct)
+    private static async Task DeleteDirectoryWithRetryAsync(string path, DeploymentLogger logger, CancellationToken ct)
     {
-        if (!File.Exists(path)) return;
+        if (!Directory.Exists(path)) return;
+
+        for (int i = 0; i < DeleteRetries; i++)
+        {
+            try
+            {
+                File.SetAttributes(path, FileAttributes.Normal);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                Directory.Delete(path, true);
+                await logger.LogAsync("FILESYSTEM", "DELETE_DIR", path, ct).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex)
+            {
+                if (i < DeleteRetries - 1)
+                {
+                    await logger.LogAsync("FILESYSTEM", "DELETE_DIR_RETRY", $"{path} :: {ex.Message}", ct).ConfigureAwait(false);
+                    await Task.Delay(250, ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                await ScheduleDirectoryForRebootDeleteAsync(path, logger, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task ScheduleDirectoryForRebootDeleteAsync(string path, DeploymentLogger logger, CancellationToken ct)
+    {
+        try
+        {
+            foreach (string file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+            {
+                if (!MoveFileEx(file, null, MoveFileFlags.DelayUntilReboot)) continue;
+                Interlocked.Increment(ref _pendingRebootDeletes);
+                await logger.LogAsync("FILESYSTEM", "REBOOT_DELETE", file, ct).ConfigureAwait(false);
+            }
+
+            foreach (string sub in Directory.GetDirectories(path, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+            {
+                if (!MoveFileEx(sub, null, MoveFileFlags.DelayUntilReboot)) continue;
+                Interlocked.Increment(ref _pendingRebootDeletes);
+                await logger.LogAsync("FILESYSTEM", "REBOOT_DELETE_DIR", sub, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            await logger.LogAsync("FILESYSTEM", "REBOOT_SCAN_FAIL", $"{path} :: {ex.Message}", ct).ConfigureAwait(false);
+        }
+
+        if (MoveFileEx(path, null, MoveFileFlags.DelayUntilReboot))
+        {
+            Interlocked.Increment(ref _pendingRebootDeletes);
+            await logger.LogAsync("FILESYSTEM", "REBOOT_DELETE_DIR", path, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await logger.LogAsync("FILESYSTEM", "DELETE_DIR_FAIL", $"{path} :: could not be removed or scheduled", ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<bool> DeleteFileWithRetryAsync(string path, DeploymentLogger logger, CancellationToken ct)
+    {
+        if (!File.Exists(path)) return false;
 
         for (int i = 0; i < DeleteRetries; i++)
         {
@@ -387,21 +473,30 @@ internal static class DeploymentLifecycle
                 File.SetAttributes(path, FileAttributes.Normal);
                 File.Delete(path);
                 await logger.LogAsync("FILESYSTEM", "DELETE", path, ct).ConfigureAwait(false);
-                return;
+                return true;
             }
-            catch 
-            { 
-                if (i == DeleteRetries - 1)
+            catch (Exception ex)
+            {
+                if (i < DeleteRetries - 1)
                 {
-                    if (MoveFileEx(path, null, MoveFileFlags.DelayUntilReboot))
-                    {
-                        Interlocked.Increment(ref _pendingRebootDeletes);
-                        await logger.LogAsync("FILESYSTEM", "REBOOT_DELETE", path, ct).ConfigureAwait(false);
-                    }
+                    await logger.LogAsync("FILESYSTEM", "DELETE_RETRY", $"{path} :: {ex.Message}", ct).ConfigureAwait(false);
+                    await Task.Delay(250, ct).ConfigureAwait(false);
+                    continue;
                 }
-                await Task.Delay(250, ct).ConfigureAwait(false); 
+
+                if (MoveFileEx(path, null, MoveFileFlags.DelayUntilReboot))
+                {
+                    Interlocked.Increment(ref _pendingRebootDeletes);
+                    await logger.LogAsync("FILESYSTEM", "REBOOT_DELETE", path, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await logger.LogAsync("FILESYSTEM", "DELETE_FAIL", $"{path} :: {ex.Message}", ct).ConfigureAwait(false);
+                }
             }
         }
+
+        return false;
     }
 
     private static async Task DeleteRegistryFootprintAsync(DeploymentLogger logger, CancellationToken ct)
@@ -437,7 +532,56 @@ internal static class DeploymentLifecycle
             }
         }
 
+        await DeleteRunRegistryValuesAsync(logger, ct).ConfigureAwait(false);
         await DeleteFileAssociationsRegistryAsync(logger, ct).ConfigureAwait(false);
+    }
+
+    private static async Task DeleteRunRegistryValuesAsync(DeploymentLogger logger, CancellationToken ct)
+    {
+        string installFolder = StartupTaskHelper.InstallFolder.TrimEnd(Path.DirectorySeparatorChar);
+
+        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
+        {
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                foreach (string runPath in DeploymentFootprint.RunKeyRelativePaths)
+                {
+                    try
+                    {
+                        using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                        using var key = baseKey.OpenSubKey(runPath, true);
+                        if (key == null) continue;
+
+                        foreach (string name in key.GetValueNames())
+                        {
+                            bool nameMatch = DeploymentFootprint.RunValueNames.Any(candidate => string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase));
+                            bool dataMatch = false;
+                            if (!nameMatch)
+                            {
+                                string data = key.GetValue(name)?.ToString() ?? string.Empty;
+                                dataMatch = data.IndexOf(installFolder, StringComparison.OrdinalIgnoreCase) >= 0;
+                            }
+
+                            if (!nameMatch && !dataMatch) continue;
+
+                            try
+                            {
+                                key.DeleteValue(name, false);
+                                await logger.LogAsync("REGISTRY", "DELETE_RUN_VALUE", $"{hive}\\{runPath}\\{name}", ct).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                await logger.LogAsync("REGISTRY", "DELETE_RUN_VALUE_FAIL", $"{hive}\\{runPath}\\{name} :: {ex.Message}", ct).ConfigureAwait(false);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await logger.LogAsync("REGISTRY", "RUN_KEY_SKIP", $"{hive}\\{runPath} :: {ex.Message}", ct).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
     }
 
     private static async Task DeleteSubKeyTreeAsync(RegistryHive hive, RegistryView view, string path, DeploymentLogger logger, CancellationToken ct)
@@ -492,6 +636,7 @@ internal static class DeploymentLifecycle
 
         if (PayloadExtractor.HasEmbeddedPayload())
         {
+            await CopyFileAggressiveAsync(RuntimePathHelper.ExecutablePath, StartupTaskHelper.InstallPath, logger, ct).ConfigureAwait(false);
             await Task.Run(() => PayloadExtractor.ExtractTo(installFolder), ct).ConfigureAwait(false);
             await CopyFileAggressiveAsync(StartupTaskHelper.InstallPath, StartupTaskHelper.UninstallExePath, logger, ct).ConfigureAwait(false);
         }
@@ -590,27 +735,109 @@ internal static class DeploymentLifecycle
         return 0;
     }
 
-    private static async Task<bool> VerifyZeroFootprintAsync(DeploymentLogger logger, bool verifyData, CancellationToken ct)
+    private static async Task<List<string>> CollectResidualFootprintAsync(DeploymentLogger logger, CancellationToken ct)
     {
         await Task.Delay(1000, ct).ConfigureAwait(false);
-        bool clean = true;
+        var residue = new List<string>();
 
-        foreach (string target in DeploymentFootprint.GetVerificationTargets())
+        foreach (string target in DeploymentFootprint.GetFullVerificationTargets())
         {
-            if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
-            {
-                await logger.LogAsync("VERIFY", "FAIL", $"Residue in: {target}", ct).ConfigureAwait(false);
-                clean = false;
-            }
+            if (!Directory.Exists(target)) continue;
+            var survivors = EnumerateSurvivingEntries(target).ToList();
+            if (survivors.Count == 0) continue;
+            residue.Add($"Folder: {target} ({survivors.Count} item(s))");
+            foreach (string survivor in survivors.Take(20))
+                await logger.LogAsync("VERIFY", "RESIDUE_FILE", survivor, ct).ConfigureAwait(false);
         }
 
         foreach (var reg in DeploymentFootprint.GetUninstallRegistryPurgeTargets())
         {
-            using var key = RegistryKey.OpenBaseKey(reg.Hive, reg.View).OpenSubKey(reg.SubKeyPath);
-            if (key != null) { await logger.LogAsync("VERIFY", "FAIL", $"Registry: {reg.Hive}\\{reg.SubKeyPath}", ct).ConfigureAwait(false); clean = false; }
+            using var baseKey = RegistryKey.OpenBaseKey(reg.Hive, reg.View);
+            using var key = baseKey.OpenSubKey(reg.SubKeyPath);
+            if (key != null) residue.Add($"Registry key: {reg.Hive}\\{reg.SubKeyPath}");
         }
 
-        return clean;
+        foreach (var reg in DeploymentFootprint.GetAppRegistryPurgeTargets())
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(reg.Hive, reg.View);
+            using var key = baseKey.OpenSubKey(reg.Path);
+            if (key != null) residue.Add($"Registry key: {reg.Hive}\\{reg.Path}");
+        }
+
+        foreach (var reg in DeploymentFootprint.GetFileAssociationVerificationTargets())
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(reg.Hive, reg.View);
+            using var key = baseKey.OpenSubKey(reg.SubKeyPath);
+            if (key != null) residue.Add($"File association: {reg.SubKeyPath}");
+        }
+
+        string installFolder = StartupTaskHelper.InstallFolder.TrimEnd(Path.DirectorySeparatorChar);
+        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
+        {
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                foreach (string runPath in DeploymentFootprint.RunKeyRelativePaths)
+                {
+                    try
+                    {
+                        using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                        using var key = baseKey.OpenSubKey(runPath);
+                        if (key == null) continue;
+                        foreach (string name in key.GetValueNames())
+                        {
+                            bool nameMatch = DeploymentFootprint.RunValueNames.Any(candidate => string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase));
+                            string data = key.GetValue(name)?.ToString() ?? string.Empty;
+                            if (nameMatch || data.IndexOf(installFolder, StringComparison.OrdinalIgnoreCase) >= 0)
+                                residue.Add($"Autostart value: {hive}\\{runPath}\\{name}");
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+        foreach (string dir in DeploymentFootprint.GetShortcutSearchFolders())
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (string name in DeploymentFootprint.ShortcutFileNames)
+            {
+                string path = Path.Combine(dir, name);
+                if (File.Exists(path)) residue.Add($"Shortcut: {path}");
+            }
+        }
+
+        if (await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(false))
+            residue.Add($"Scheduled task: {DeploymentFootprint.ScheduledTaskName}");
+
+        foreach (string item in residue)
+            await logger.LogAsync("VERIFY", "RESIDUE", item, ct).ConfigureAwait(false);
+
+        await logger.LogAsync("VERIFY", residue.Count == 0 ? "CLEAN" : "INCOMPLETE", $"{residue.Count} residual item(s)", ct).ConfigureAwait(false);
+        return residue;
+    }
+
+    private static IEnumerable<string> EnumerateSurvivingEntries(string root)
+    {
+        string live = SessionTempFolder.TrimEnd(Path.DirectorySeparatorChar);
+        string lifecycle = DeploymentFootprint.DeploymentTempRoot.TrimEnd(Path.DirectorySeparatorChar);
+        IEnumerable<string> entries;
+        try
+        {
+            entries = Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories);
+        }
+        catch
+        {
+            yield break;
+        }
+
+        foreach (string entry in entries)
+        {
+            if (entry.StartsWith(live, StringComparison.OrdinalIgnoreCase)) continue;
+            if (entry.StartsWith(lifecycle, StringComparison.OrdinalIgnoreCase)) continue;
+            yield return entry;
+        }
     }
 
     private static async Task WriteUninstallRegistryAsync(DeploymentLogger logger, CancellationToken ct)
@@ -626,7 +853,6 @@ internal static class DeploymentLifecycle
         
         key.SetValue("DisplayName", DeploymentFootprint.DisplayName);
         key.SetValue("UninstallString", $"\"{StartupTaskHelper.UninstallExePath}\" --uninstall");
-        key.SetValue("QuietUninstallString", $"\"{StartupTaskHelper.UninstallExePath}\" --uninstall --cleanup-worker");
         key.SetValue("DisplayIcon", StartupTaskHelper.InstallPath);
         key.SetValue("InstallLocation", StartupTaskHelper.InstallFolder);
         key.SetValue("DisplayVersion", RuntimePathHelper.ProductVersion);
@@ -815,12 +1041,12 @@ internal static class DeploymentLifecycle
         Process.Start(new ProcessStartInfo { FileName = "cmd.exe", Arguments = $"/c ping 127.0.0.1 -n 3 > nul & rmdir /s /q \"{dir}\"", CreateNoWindow = true, UseShellExecute = false });
     }
 
-    // ===== ISSUE (upgrade data loss) helpers ============================================
-    // Detection / backup / restore of user settings around the scorched-earth pre-install
-    // purge. Depending on layout the snapvox.ini lives next to the executable, in
-    // <InstallFolder>\Data\Settings (portable mode) or in %AppData%\snapvox - all of which
-    // are purge targets, so the file is copied out to %Temp% before the purge and copied
-    // back to its original location once InstallFreshAsync has finished.
+
+
+
+
+
+
 
     private static bool DetectExistingInstallation()
     {
@@ -924,25 +1150,43 @@ internal static class DeploymentLifecycle
 
     private static DeploymentProgress CreateDeploymentProgress(string title, string log) => InstallHostContext.HeadlessInstallerActive ? null : new DeploymentProgress(title, log);
 
+    private static async Task AwaitUserAcknowledgementAsync(DeploymentProgress progress, DeploymentLogger logger, string finalStatus, CancellationToken ct)
+    {
+        if (progress == null) return;
+        try
+        {
+            await progress.WaitForAcknowledgementAsync(finalStatus, ct).ConfigureAwait(false);
+            if (logger != null) await logger.LogAsync("UI", "ACKNOWLEDGED", finalStatus, ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            if (logger != null) await logger.LogAsync("UI", "ACK_TIMEOUT", "Result window closed automatically after 30 minutes.", ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            if (logger != null) await logger.LogAsync("UI", "ACK_ERROR", ex.Message, ct).ConfigureAwait(false);
+        }
+    }
+
     private static async Task ReportAsync(DeploymentProgress p, DeploymentLogger l, int pct, string phase, string status, string detail, CancellationToken ct, Exception ex = null)
     {
         p?.Update(pct, $"[{phase}] {status}: {detail}");
         if (l != null) await l.LogAsync(phase, status, detail, ct, ex).ConfigureAwait(false);
     }
 
-    // ISSUE (installer prompts behind the setup window): native prompts are shown from
-    // a background continuation while the topmost Avalonia setup window owns the
-    // activation, so they used to appear (and wait, invisibly) BEHIND it. The progress
-    // window is temporarily dropped from the topmost band before each prompt so the
-    // dialog — itself MB_TOPMOST|MB_SETFOREGROUND — is guaranteed to be the front-most
-    // window, and the install flow only resumes once the user has actually answered.
+
+
+
+
+
+
     private static async Task<DialogResult> ShowBlockingPromptAsync(DeploymentProgress progress, string message, string title, MessageBoxButtons buttons, MessageBoxIcon icon)
     {
         progress?.SuppressTopmost();
         try
         {
-            // Give the UI thread a beat to apply the topmost change before the native
-            // dialog is created on this thread.
+
+
             await Task.Delay(120, CancellationToken.None).ConfigureAwait(false);
             return StartupTaskHelper.ShowForegroundMessageBox(message, title, buttons, icon);
         }
@@ -971,6 +1215,8 @@ internal static class DeploymentLifecycle
 
     private sealed class DeploymentProgress : IDisposable
     {
+        private static readonly TimeSpan AcknowledgementBackstop = TimeSpan.FromMinutes(30);
+
         private forms.DeploymentProgressWindow _window;
         public DeploymentProgress(string title, string log) 
         { 
@@ -987,9 +1233,23 @@ internal static class DeploymentLifecycle
             });
         }
 
-        // ISSUE (installer prompts behind the setup window): see ShowBlockingPromptAsync.
-        // Temporarily leave the topmost band so a native prompt is guaranteed to be the
-        // front-most, activated window while it waits for the user's answer.
+
+
+
+        public Task WaitForAcknowledgementAsync(string finalStatus, CancellationToken ct)
+        {
+            var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Dispatcher.UIThread.Post(() =>
+            {
+                var window = _window;
+                if (window == null) { gate.TrySetResult(true); return; }
+                window.EnableFinish(finalStatus);
+                window.Acknowledged.ContinueWith(_ => gate.TrySetResult(true), TaskScheduler.Default);
+            });
+
+            return gate.Task.WaitAsync(AcknowledgementBackstop, ct);
+        }
+
         public void SuppressTopmost()
         {
             Dispatcher.UIThread.Post(() => {

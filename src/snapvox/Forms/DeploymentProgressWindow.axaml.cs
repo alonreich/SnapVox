@@ -1,7 +1,8 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using System;
+using System.Threading.Tasks;
 
 namespace snapvox.forms
 {
@@ -17,6 +18,9 @@ namespace snapvox.forms
         private Button _cancelButton;
         private Border _errorBanner;
         private TextBlock _errorText;
+        private readonly TaskCompletionSource<bool> _acknowledged = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Acknowledged => _acknowledged.Task;
 
         public DeploymentProgressWindow()
         {
@@ -43,6 +47,7 @@ namespace snapvox.forms
         private void InitializeComponent()
         {
             AvaloniaXamlLoader.Load(this);
+            snapvox.foundation.core.UiLayoutDirection.Apply(this);
             _progressBar = this.FindControl<ProgressBar>("ProgressBar");
             _phaseText = this.FindControl<TextBlock>("PhaseText");
             _percentageText = this.FindControl<TextBlock>("PercentageText");
@@ -62,7 +67,31 @@ namespace snapvox.forms
             Topmost = true;
         }
 
-        // ISSUE_015: cancel handler — aborts a stalled install.
+        protected override void OnClosed(EventArgs e)
+        {
+            _acknowledged.TrySetResult(true);
+            base.OnClosed(e);
+        }
+
+        public void EnableFinish(string finalStatus)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(finalStatus) && _phaseText != null) _phaseText.Text = finalStatus;
+                if (_progressBar != null) _progressBar.IsVisible = false;
+                if (_cancelButton != null) _cancelButton.IsVisible = false;
+                if (_finishButton != null)
+                {
+                    _finishButton.IsVisible = true;
+                    _finishButton.IsEnabled = true;
+                    _finishButton.Focus();
+                }
+
+                Topmost = true;
+                Activate();
+            });
+        }
+
         private void OnCancelClick(object sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             UpdateStatus("Installation cancelled by user.");
@@ -70,7 +99,6 @@ namespace snapvox.forms
             if (_cancelButton != null) _cancelButton.IsEnabled = false;
         }
 
-        // ISSUE_015: surfaces a clear error banner when deployment fails.
         public void ShowError(string message)
         {
             Dispatcher.UIThread.Post(() =>

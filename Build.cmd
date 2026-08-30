@@ -25,7 +25,7 @@ rem  Success is silent so a clean run needs no keypress.
 
 if /I "%~1"=="__BUILD_LOGGED__" goto :run_logged
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File ".\developer_tools\BuildLog.ps1" %*
+  powershell -NoProfile -ExecutionPolicy Bypass -File ".\developer_tools\BuildLog.ps1" %* <nul
 
   set "BUILD_EXIT=%ERRORLEVEL%"
 
@@ -53,6 +53,8 @@ if /I "%~1"=="__BUILD_LOGGED__" goto :run_logged
   )
 
   popd >nul
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%developer_tools\SetConsoleFont.ps1" <nul
 
   exit /b %BUILD_EXIT%
 
@@ -136,7 +138,7 @@ if not errorlevel 1 (
   echo NOTE: link.exe not on PATH - the .NET SDK will locate the MSVC toolchain itself.
 )
 
-call :BUILD_STANDALONE "Branch1" "SnapVox" "USE_TESSERACT=false" "-p:PublishAot=true"
+call :BUILD_STANDALONE "Branch1" "SnapVox" "USE_TESSERACT=false" "-p:PublishAot=true" "1"
 
 if errorlevel 1 exit /b 1
 
@@ -150,7 +152,7 @@ echo BUILDING BRANCH 2: Tesseract (Standard Deployment)
 
 echo ###########################################################
 
-call :BUILD_STANDALONE "Branch2" "SnapVox_tesseract" "USE_TESSERACT=true" "-p:PublishAot=false -p:SelfContained=true"
+call :BUILD_STANDALONE "Branch2" "SnapVox_tesseract" "USE_TESSERACT=true" "-p:PublishAot=false -p:SelfContained=true" "0"
 
 if errorlevel 1 exit /b 1
 
@@ -209,6 +211,7 @@ set "OUTPUT_NAME=%~2"
 
 set "EXTRA_ARGS=%~3"
 set "AOT_ARGS=%~4"
+set "DROP_STAGED_EXE=%~5"
 
 set "STAGING_DIR=.\obj\StandaloneTemp\%BRANCH_NAME%_staging"
 
@@ -234,15 +237,19 @@ if errorlevel 1 exit /b 1
 
 
 
+echo [%BRANCH_NAME%] 2b. Stripping non-shipping runtime artifacts from payload...
+
+call :STRIP_STAGING_BLOAT "%STAGING_DIR%" "%DROP_STAGED_EXE%"
+
 echo [%BRANCH_NAME%] 3. Zipping payload...
 
-powershell -NoProfile -Command "Compress-Archive -Path '%STAGING_DIR%\*' -DestinationPath 'src\SnapVox\payload.zip' -Force"
+powershell -NoProfile -Command "Compress-Archive -Path '%STAGING_DIR%\*' -DestinationPath 'src\SnapVox\payload.zip' -Force" <nul
 
 
 
 echo [%BRANCH_NAME%] 4. Publishing standalone installer...
 
-dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% -p:PublishAot=true -p:%EXTRA_ARGS% !VERSION_ARGS! -o "%FINAL_DIR%" %DOTNET_LOG_ARGS%
+dotnet publish "%PROJECT_FILE%" -c Release -r win-x64 %PUBLISH_BASE_ARGS% -p:PublishAot=true -p:EmbedOcrPayload=false -p:%EXTRA_ARGS% !VERSION_ARGS! -o "%FINAL_DIR%" %DOTNET_LOG_ARGS%
 
 if errorlevel 1 exit /b 1
 
@@ -279,6 +286,34 @@ if exist "src\SnapVox\payload.zip" del /f /q "src\SnapVox\payload.zip"
 exit /b 0
 
 
+
+:STRIP_STAGING_BLOAT
+set "STRIP_DIR=%~1"
+set "STRIP_EXE=%~2"
+for %%D in (
+  "Microsoft.DiaSymReader.Native.amd64.dll"
+  "mscordaccore.dll"
+  "mscordbi.dll"
+  "createdump.exe"
+  "clrgcexp.dll"
+  "msquic.dll"
+) do (
+  if exist "%STRIP_DIR%\%%~D" (
+    echo   [strip] %%~D
+    del /f /q "%STRIP_DIR%\%%~D" >nul 2>&1
+  )
+)
+for %%D in ("%STRIP_DIR%\mscordaccore_*.dll") do (
+  echo   [strip] %%~nxD
+  del /f /q "%%~fD" >nul 2>&1
+)
+if "%STRIP_EXE%"=="1" (
+  if exist "%STRIP_DIR%\SnapVox.exe" (
+    echo   [strip] SnapVox.exe ^(the installer already carries this build^)
+    del /f /q "%STRIP_DIR%\SnapVox.exe" >nul 2>&1
+  )
+)
+exit /b 0
 
 :PURGE_COMPILED_EXTRAS
 for %%F in (".\compiled\*") do (
@@ -508,7 +543,7 @@ rem  when the asset that ends up attached is not the file you meant to send.
 rem  The check below compares the SHA256 digests GitHub reports for BOTH exes
 rem  against the freshly built files. The whole pipeline lives inside one
 rem  quoted powershell -Command string, so no cmd for /f escaping games.
-powershell -NoProfile -Command "$assets = (gh release view !TAG! --repo !REPO! --json assets | ConvertFrom-Json).assets; $assets | ForEach-Object { Write-Host ('[PUBLISH]     remote: ' + $_.name + ' ' + $_.digest) }; $n = $assets | Where-Object name -eq 'SnapVox.exe'; $t = $assets | Where-Object name -eq 'SnapVox_tesseract.exe'; if (-not $n -or -not $t -or $n.digest.ToLower() -ne ('sha256:!HASH_NATIVE!').ToLower() -or $t.digest.ToLower() -ne ('sha256:!HASH_TESS!').ToLower()) { exit 1 }; exit 0"
+powershell -NoProfile -Command "$assets = (gh release view !TAG! --repo !REPO! --json assets | ConvertFrom-Json).assets; $assets | ForEach-Object { Write-Host ('[PUBLISH]     remote: ' + $_.name + ' ' + $_.digest) }; $n = $assets | Where-Object name -eq 'SnapVox.exe'; $t = $assets | Where-Object name -eq 'SnapVox_tesseract.exe'; if (-not $n -or -not $t -or $n.digest.ToLower() -ne ('sha256:!HASH_NATIVE!').ToLower() -or $t.digest.ToLower() -ne ('sha256:!HASH_TESS!').ToLower()) { exit 1 }; exit 0" <nul
 if errorlevel 1 (
   echo [PUBLISH] STOPPED: an uploaded asset does NOT match the file that was just built.
   echo [PUBLISH]     SnapVox.exe built        sha256:!HASH_NATIVE!

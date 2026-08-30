@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -167,8 +167,8 @@ namespace snapvox.foundation.core
 
                 if (captureMouse)
                 {
-                    CURSORINFO ci = new CURSORINFO();
-                    ci.cbSize = Marshal.SizeOf(ci);
+                    CURSORINFO ci = default;
+                    ci.cbSize = Marshal.SizeOf<CURSORINFO>();
                     if (GetCursorInfo(out ci) && ci.flags == 0x00000001)
                     {
                         if (GetIconInfo(ci.hCursor, out ICONINFO ii))
@@ -181,12 +181,10 @@ namespace snapvox.foundation.core
                 }
 
                 int length = checked(region.Width * region.Height);
-                using var image = Image.LoadPixelData<Bgra32>(
+                return Image.LoadPixelData<Bgra32>(
                     new ReadOnlySpan<Bgra32>(pBits.ToPointer(), length),
                     region.Width,
                     region.Height);
-
-                return image.Clone(ctx => { });
             }
             catch (Exception ex)
             {
@@ -214,10 +212,6 @@ namespace snapvox.foundation.core
         private const int DwmwaExtendedFrameBounds = 9;
         private const uint PwRenderFullContent = 0x00000002;
 
-        // Renders the window itself into an offscreen bitmap via PrintWindow, which works even
-        // when other windows cover it: the result looks like the window was brought to the
-        // front and contains only that window's own content. Returns null when the window
-        // cannot be rendered this way, so callers can fall back to a region capture.
         public static unsafe Image<Bgra32> CaptureWindow(IntPtr hWnd, RECT? visibleBounds = null)
         {
             if (hWnd == IntPtr.Zero) return null;
@@ -231,17 +225,12 @@ namespace snapvox.foundation.core
                     return null;
                 }
 
-                // PrintWindow renders relative to the full window rect (which includes the
-                // invisible resize borders); the visible content aligns with the DWM extended
-                // frame bounds, so capture the full rect and crop the frame offset afterwards.
                 RECT frameBounds = windowRect;
                 if (DwmGetWindowAttribute(hWnd, DwmwaExtendedFrameBounds, out RECT dwmBounds, Marshal.SizeOf<RECT>()) == 0 && dwmBounds.Width > 0 && dwmBounds.Height > 0)
                 {
                     frameBounds = dwmBounds;
                 }
 
-                // ISSUE_024: callers pass the exact on-screen bounds they highlighted; trim the
-                // crop to them so maximized windows cannot include the off-screen overhang.
                 if (visibleBounds.HasValue)
                 {
                     RECT visible = visibleBounds.Value;
@@ -289,8 +278,6 @@ namespace snapvox.foundation.core
                     }
 
                     hOldBitmap = SelectObject(hdcDest, hBitmap);
-                    // PW_RENDERFULLCONTENT also renders DirectComposition/hardware-accelerated
-                    // content (browsers, VS, etc.) on Windows 8.1 and newer.
                     if (!PrintWindow(hWnd, hdcDest, PwRenderFullContent))
                     {
                         return null;
@@ -303,17 +290,24 @@ namespace snapvox.foundation.core
                     if (cropWidth <= 0 || cropHeight <= 0) return null;
 
                     int length = checked(windowRect.Width * windowRect.Height);
-                    using var image = Image.LoadPixelData<Bgra32>(
+                    Image<Bgra32> image = Image.LoadPixelData<Bgra32>(
                         new ReadOnlySpan<Bgra32>(pBits.ToPointer(), length),
                         windowRect.Width,
                         windowRect.Height);
 
-                    var cropRectangle = new Rectangle(offsetX, offsetY, cropWidth, cropHeight);
-                    if (cropRectangle.X == 0 && cropRectangle.Y == 0 && cropRectangle.Width == windowRect.Width && cropRectangle.Height == windowRect.Height)
+                    if (offsetX == 0 && offsetY == 0 && cropWidth == windowRect.Width && cropHeight == windowRect.Height)
                     {
-                        return image.Clone(ctx => { });
+                        return image;
                     }
-                    return image.Clone(ctx => ctx.Crop(cropRectangle));
+
+                    try
+                    {
+                        return image.Clone(ctx => ctx.Crop(new Rectangle(offsetX, offsetY, cropWidth, cropHeight)));
+                    }
+                    finally
+                    {
+                        image.Dispose();
+                    }
                 }
                 finally
                 {
@@ -330,16 +324,8 @@ namespace snapvox.foundation.core
             }
         }
 
-        // ISSUE_033 (whole-display snap captured black): some DWM/composition surface windows
-        // "succeed" at PrintWindow yet produce a solid black frame. Callers use this sampled
-        // luminance check to detect that failure and fall back to the frozen screen crop.
-        // A legitimately dark window still has >0.1% of samples above luminance 24 (text,
-        // cursors, borders), while a failed render is uniformly ~0.
         public static bool IsLikelyBlankBlackFrame(Image image)
         {
-            // Callers hold the non-generic Image base type; the capture pipeline always
-            // produces Bgra32 frames, so dispatch on the runtime pixel type and let any
-            // other layout pass through untouched (treat as "not black").
             if (image is Image<Bgra32> bgra) return IsLikelyBlankBlackFrameCore(bgra);
             return false;
         }

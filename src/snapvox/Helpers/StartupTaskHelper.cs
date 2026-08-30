@@ -1,7 +1,5 @@
 ﻿using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -21,7 +19,6 @@ namespace snapvox.helpers;
 public static class StartupTaskHelper
 {
     private static ILog Log => LogHelper.IsInitialized ? snapvox.foundation.core.LogHelper.GetLogger(typeof(StartupTaskHelper)) : null;
-    private const string MsiMutexName = @"Global\_MSIExecute";
     private const string ScheduledTaskName = "snapvox";
     private const string ConfigureAdminStartupArgument = "--configure-admin-startup";
     private const string RemoveAdminStartupArgument = "--remove-admin-startup";
@@ -30,9 +27,6 @@ public static class StartupTaskHelper
     public static readonly string ConfigurationFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "snapvox");
     public static readonly string InstallPath = Path.Combine(InstallFolder, "snapvox.exe");
     public static readonly string UninstallExePath = Path.Combine(InstallFolder, "Uninstall.exe");
-
-    [DllImport("kernel32.dll")]
-    private static extern void ExitProcess(uint uExitCode);
 
     private static void LogSuppressedException(string operation, Exception ex)
     {
@@ -57,38 +51,6 @@ public static class StartupTaskHelper
             var principal = new WindowsPrincipal(identity);
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
-    }
-
-    public static bool IsMsiBusy()
-    {
-        try { using (var mutex = Mutex.OpenExisting(MsiMutexName)) return true; }
-        catch (WaitHandleCannotBeOpenedException) { }
-        catch (Exception ex) { LogSuppressedException("IsMsiBusy.OpenMutex", ex); }
-
-        try
-        {
-            using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Updates"))
-            {
-                if (key?.GetValue("UpdateExeVolatile") != null) return true;
-            }
-        }
-        catch (Exception ex) { LogSuppressedException("IsMsiBusy.Registry", ex); }
-        return false;
-    }
-
-    public static void RestartElevated(string args = "")
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = RuntimePathHelper.ExecutablePath,
-                Arguments = args,
-                UseShellExecute = true,
-                Verb = "runas"
-            });
-        }
-        catch (Exception ex) { LogSuppressedException("RestartElevated", ex); }
     }
 
     private static async Task<int> RunHiddenProcessAsync(string fileName, string arguments, int timeoutMilliseconds)
@@ -362,19 +324,12 @@ public static class StartupTaskHelper
         }
     }
 
-    public static bool ShouldSkipForcedInstallRedirect()
-    {
-        if (string.Equals(Environment.GetEnvironmentVariable("snapvox_SKIP_INSTALL_GUARD"), "1", StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
-    }
-
     public static async Task KillAllProcessesAsync(Action<string> updateStatus = null, CancellationToken cancellationToken = default)
     {
-        string[] processNames = { 
-            "snapvox", 
-            "Uninstall", 
-            "snapvox_Cleanup", 
+        string[] processNames = {
+            "snapvox",
+            "Uninstall",
+            "snapvox_Cleanup",
             "snapvox_tesseract",
             "snapvox",
             "snapvoxImgEditor"
@@ -385,7 +340,7 @@ public static class StartupTaskHelper
         for (int retry = 0; retry < 5; retry++)
         {
             bool foundAny = false;
-            
+
             foreach (string name in processNames)
             {
                 foreach (var process in Process.GetProcessesByName(name))
@@ -452,32 +407,10 @@ public static class StartupTaskHelper
         }
     }
 
-    public static async Task<int> PerformInstallAsync()
-    {
-        return await DeploymentLifecycle.RunInstallAsync().ConfigureAwait(false);
-    }
-
-    public static async Task<int> PerformUninstallAsync(string[] args)
-    {
-        return await DeploymentLifecycle.RunUninstallAsync(args).ConfigureAwait(false);
-    }
-
-    private static void ExitCurrentProcess(int exitCode)
-    {
-        try
-        {
-            ExitProcess(unchecked((uint)exitCode));
-        }
-        finally
-        {
-            Environment.Exit(exitCode);
-        }
-    }
-
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int MessageBox(IntPtr hWnd, string lpText, string lpCaption, uint uType);
 
-    // Win32 MessageBox button / icon / behaviour flags.
+
     private const uint MbOk = 0x00000000;
     private const uint MbOkCancel = 0x00000001;
     private const uint MbAbortRetryIgnore = 0x00000002;
@@ -488,12 +421,11 @@ public static class StartupTaskHelper
     private const uint MbIconQuestion = 0x00000020;
     private const uint MbIconWarning = 0x00000030;
     private const uint MbIconInformation = 0x00000040;
-    private const uint MbSetForeground = 0x00010000; // forces the dialog into the foreground
-    private const uint MbTopmost = 0x00040000;       // places it in the topmost window band
+    private const uint MbSetForeground = 0x00010000;
+    private const uint MbTopmost = 0x00040000;
 
-    // Win32 MessageBox return codes. These intentionally match the DialogResult
-    // shim values (None=0, OK=1, Cancel=2, Abort=3, Retry=4, Ignore=5, Yes=6, No=7).
-    private const int IdOk = 1;
+
+
     private const int IdCancel = 2;
     private const int IdAbort = 3;
     private const int IdRetry = 4;
@@ -505,13 +437,13 @@ public static class StartupTaskHelper
     {
         try
         {
-            // ISSUE (installer prompts invisible + never answered): the requested button
-            // set was previously ignored, so every dialog rendered as plain MB_OK and
-            // always returned "OK" — the Yes/No/Cancel upgrade decision could never be
-            // made by the user and the install silently proceeded on its own. The button
-            // set and icon are now honoured, and MB_SETFOREGROUND makes the dialog the
-            // active foreground window instead of sitting deactivated behind the
-            // installer's own topmost progress window.
+
+
+
+
+
+
+
             uint type = MbOk;
             if (buttons == MessageBoxButtons.OKCancel) type = MbOkCancel;
             else if (buttons == MessageBoxButtons.AbortRetryIgnore) type = MbAbortRetryIgnore;
@@ -522,12 +454,12 @@ public static class StartupTaskHelper
             if (icon == MessageBoxIcon.Hand || icon == MessageBoxIcon.Stop || icon == MessageBoxIcon.Error) type |= MbIconError;
             else if (icon == MessageBoxIcon.Question) type |= MbIconQuestion;
             else if (icon == MessageBoxIcon.Exclamation || icon == MessageBoxIcon.Warning) type |= MbIconWarning;
-            else if (icon == MessageBoxIcon.None) { /* no icon */ }
-            else type |= MbIconInformation; // Asterisk / Information
+            else if (icon == MessageBoxIcon.None) {  }
+            else type |= MbIconInformation;
 
-            // Bring the dialog above every other window (including the setup window,
-            // which is itself topmost) and make it the active window so the calling
-            // flow truly halts until the user has answered.
+
+
+
             type |= MbSetForeground | MbTopmost;
 
             int result = MessageBox(IntPtr.Zero, message, title, type);
@@ -542,9 +474,9 @@ public static class StartupTaskHelper
         }
         catch
         {
-            // Fallback for non-windows or other issues. Never let the non-interactive
-            // shim silently answer a question the user never saw: any dialog offering
-            // a choice defaults to the safe "cancel" outcome instead of "OK".
+
+
+
             return buttons == MessageBoxButtons.OK ? DialogResult.OK : DialogResult.Cancel;
         }
     }

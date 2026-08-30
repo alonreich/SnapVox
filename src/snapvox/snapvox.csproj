@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>SnapVox</RootNamespace>
@@ -27,10 +27,6 @@
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(USE_TESSERACT)' == 'true'">
-    <DefineConstants>$(DefineConstants);USE_TESSERACT</DefineConstants>
-  </PropertyGroup>
-
   <PropertyGroup>
     <EmojiDataTaskOutputDir>..\SnapVox.BuildTasks\bin\$(Configuration)\$(TargetFramework)\</EmojiDataTaskOutputDir>
     <EmojiDataTaskHostDir>$(BaseIntermediateOutputPath)EmojiDataTaskHost\$(Configuration)\$(TargetFramework)\</EmojiDataTaskHostDir>
@@ -48,7 +44,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
-    <PackageReference Condition="'$(USE_TESSERACT)' == 'true'" Include="Tesseract" Version="5.2.0" />
+    <PackageReference Condition="'$(USE_TESSERACT)' == 'true'" Include="Tesseract" Version="5.2.0" ExcludeAssets="build;buildTransitive" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\snapvox.foundation\snapvox.foundation.csproj" />
@@ -59,11 +55,7 @@
     <TrimmerRootAssembly Include="log4net" />
   </ItemGroup>
 
-  <PropertyGroup Condition="'$(USE_TESSERACT)' == 'true'">
-    <DefineConstants>$(DefineConstants);USE_TESSERACT</DefineConstants>
-  </PropertyGroup>
-
-  <ItemGroup Condition="'$(USE_TESSERACT)' == 'true'">
+  <ItemGroup Condition="'$(USE_TESSERACT)' == 'true' And '$(EmbedOcrPayload)' != 'false'">
     <EmbeddedResource Include="tessdata\**\*.*" />
     <EmbeddedResource Include="Native\x64\*.dll" Exclude="Native\x64\vcruntime140_cor3.dll" />
   </ItemGroup>

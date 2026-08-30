@@ -56,6 +56,17 @@ CORE MANDATES (THE "GHOST" RULES)
    - Any successful download or OCR action MUST trigger a **blinking Red/White/Blue overlay** for 1.0 seconds (4x 250ms cycles).
    - Text variants: "IMAGE SAVED TO DOWNLOADS", "IMAGE SAVED TO CLIPBOARD", "TEXT COPIED", and "TEXT COPIED & SAVED".
 
+UI/UX ACCESSIBILITY & LAYOUT MANDATES
+-------------------------------------
+1. **Named For Assistive Tech:** Every interactive control carries `AutomationProperties.Name`. Icon-only buttons must never ship unnamed.
+2. **Minimum Target Size:** No interactive control is smaller than 24x24 (`SnapVoxMinTouchTarget`), per WCAG 2.2 SC 2.5.8.
+3. **Single Dialog Implementation:** All confirmations go through `snapvox.editor.helpers.ConfirmDialog` - design-system colours, Escape to cancel, focus starting on the safe option. In-window prompts must disable the content behind them and move focus inside.
+4. **Destructive Actions Confirm:** Clear All, Reset All Hotkeys and discarding unsaved Settings or editor changes all confirm first, stating what is lost.
+5. **Tokens Only:** Colours, fonts and sizes come from `DesignSystem.axaml`. Brush properties bind to `*Brush` keys, never to `*Color` keys. No literal hex in window markup.
+6. **Elastic Layout:** Labels, inputs and buttons use `MinWidth`/`MinHeight`, never fixed `Width`/`Height`, so DPI scaling and longer strings cannot clip text. Every resizable window declares `MinWidth`/`MinHeight`.
+7. **RTL Ready:** Every window calls `UiLayoutDirection.Apply(this)`, which mirrors the chrome when `CoreConfiguration.Language` is a right-to-left locale. String translation still requires `language_*.xml` catalogues for `snapvox.foundation.core.Language`; none ship today, so the chrome is English-only until they are authored.
+8. **One Icon, One Meaning:** No icon asset is reused for two different actions, and icons within a row share one size (24px in toolbars, 16px in the tray).
+
 TELEMETRY & LOGGING MANDATE (SINGLE SOURCE OF TRUTH)
 ----------------------------------------------------
 1. **Comprehensive User Action Audit:** User interactions are captured by the application logger. Internal `ExecutionTrace` diagnostics may record thread id, memory, GDI/USER counts, queue depth, and elapsed timing for local troubleshooting.
@@ -90,7 +101,7 @@ FUNCTIONAL SPECIFICATIONS (THE USER EXPERIENCE)
    - **Preemptive Background Execution:** Toggling the mode instantly triggers silent OCR across the entire virtual desktop before the region is drawn, guaranteeing zero-latency text extraction upon selection release.
 6. **In-Editor OCR:** Clicking OCR symbol extracts text, copies to clipboard, opens Notepad, and saves `.txt` to `%TMP%\SnapVox\`.
 7. **Intelligent Editor Display:** Implements parallelSniplets, Cascading Positioning, Majority Monitor Centering, and Adaptive Sizing to ensure non-overlapping, context-aware window placement across multiple displays.
-8. **Download Workflow:** Clicking "Download" saves 100% JPG to `Downloads`, copies to Clipboard as `CF_DIB`, saves a temp backup only when backup is enabled, shows overlay, and closes window sequentially.
+8. **Save Workflow (single vocabulary):** The action is named "Save" everywhere - button, tooltip, Settings and accessibility name; only the completion overlay names the destination ("IMAGE SAVED TO DOWNLOADS"). Clicking "Save" writes a 100% JPG to `Downloads`, copies to Clipboard as `CF_DIB`, saves a temp backup only when backup is enabled, shows the overlay, and closes the window sequentially. Canvas items are called "objects" in every surface (tooltip, confirmation, delete button).
 9. **Shell "Open With" Integration (Secondary Instance Routing):** Right-clicking any image format in File Explorer and choosing "Open with SnapVox" launches the Editor directly, bypassing Tray Icon initialization. All outputs from this workflow will be strictly saved/converted to `.jpg`.
 
 V3.0 FINAL UI/UX ENHANCEMENTS (COMPLETED)
@@ -193,6 +204,7 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |           
 +---icons
 |       arrow.svg
+|       check.svg
 |       circle.svg
 |       copy.svg
 |       counter.svg
@@ -200,10 +212,14 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |       custom-color.svg
 |       delete.svg
 |       download.svg
+|       duplicate.svg
+|       email.svg
 |       emoji.svg
 |       fill.svg
 |       highlight.svg
 |       line.svg
+|       link.svg
+|       magnet.svg
 |       nuclear-sharp.svg
 |       ocr.svg
 |       pencil.svg
@@ -215,6 +231,9 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |       square.svg
 |       text.svg
 |       undo.svg
+|       zoom-in.svg
+|       zoom-out.svg
+|       zoom-reset.svg
 |       
 +---obj
 |   \---StandaloneTemp
@@ -483,14 +502,15 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |                       leptonica-1.82.0.dll
 |   |   |                       tesseract50.dll
 |   |   |                       
-|   |   +---Configuration
-|   |   |       LanguageKeys.cs
-|   |   |       
 |   |   +---Forms
 |   |   |       CaptureWindow.axaml
 |   |   |       CaptureWindow.axaml.cs
 |   |   |       DeploymentProgressWindow.axaml
 |   |   |       DeploymentProgressWindow.axaml.cs
+|   |   |       DeploymentPromptWindow.axaml
+|   |   |       DeploymentPromptWindow.axaml.cs
+|   |   |       ScrollCaptureWindow.axaml
+|   |   |       ScrollCaptureWindow.axaml.cs
 |   |   |       SettingsWindow.axaml
 |   |   |       SettingsWindow.axaml.cs
 |   |   |       

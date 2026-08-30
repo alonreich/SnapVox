@@ -1,7 +1,5 @@
-using snapvox.native;
+﻿using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -9,6 +7,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using log4net;
 
 namespace snapvox.foundation.IniFile
@@ -53,8 +52,6 @@ namespace snapvox.foundation.IniFile
             else throw new InvalidOperationException("Assembly ProductName not set.");
         }
 
-        public static string ConfigLocation => IsInitialized ? CreateIniLocation(_configName + IniExtension, false) : throw new InvalidOperationException("Ini configuration was not initialized!");
-
         private static string CreateIniLocation(string configFilename, bool isReadOnly)
         {
             if (_applicationName == null || _configName == null) throw new InvalidOperationException("IniConfig.Init not called!");
@@ -93,6 +90,7 @@ namespace snapvox.foundation.IniFile
 
         public static void Reload()
         {
+            Interlocked.Increment(ref _sectionEpoch);
             lock (IniLock)
             {
                 _sections = new Dictionary<string, IDictionary<string, string>>();
@@ -166,8 +164,24 @@ namespace snapvox.foundation.IniFile
 
         public static T GetIniSection<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)] T>() where T : IniSection => GetIniSection<T>(true);
 
+        private static int _sectionEpoch;
+
+        private static class SectionCache<T> where T : IniSection
+        {
+            public static T Instance;
+            public static int Epoch = -1;
+        }
+
         public static T GetIniSection<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)] T>(bool allowSave) where T : IniSection
         {
+            int epoch = Volatile.Read(ref _sectionEpoch);
+            T cached = SectionCache<T>.Instance;
+            if (cached != null && SectionCache<T>.Epoch == epoch)
+            {
+                if (allowSave && cached.IsDirty) Save();
+                return cached;
+            }
+
             Type type = typeof(T);
             string name = IniSection.GetIniSectionAttribute(type).Name;
             T section;
@@ -176,6 +190,10 @@ namespace snapvox.foundation.IniFile
                 if (SectionMap.TryGetValue(name, out var s)) section = (T)s;
                 else { section = Activator.CreateInstance<T>(); SectionMap.Add(name, section); section.Fill(PropertiesForSection(section)); FixProperties(section); }
             }
+
+            SectionCache<T>.Instance = section;
+            SectionCache<T>.Epoch = epoch;
+
             if (allowSave && section.IsDirty) { Log.DebugFormat("Section {0} dirty, saving!", name); Save(); }
             return section;
         }
@@ -187,15 +205,7 @@ namespace snapvox.foundation.IniFile
             return props;
         }
 
-        public static void Save()
-        {
-            if (Monitor.TryEnter(IniLock, TimeSpan.FromMilliseconds(200)))
-            {
-                try { SaveInternally(CreateIniLocation(_configName + IniExtension, false)); }
-                catch (Exception ex) { Log.Error("Failed to save ini", ex); }
-                finally { Monitor.Exit(IniLock); }
-            }
-        }
+        public static void Save() { _ = Task.Run(() => { if (Monitor.TryEnter(IniLock, TimeSpan.FromMilliseconds(200))) { try { SaveInternally(CreateIniLocation(_configName + IniExtension, false)); } catch (Exception ex) { Log.Error("Failed to save ini", ex); } finally { Monitor.Exit(IniLock); } } }); }
 
         public static void SaveTo(string path)
         {

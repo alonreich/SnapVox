@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -92,14 +92,14 @@ namespace snapvox
 #if USE_TESSERACT
                     log.Info("Using Tesseract OCR Provider with Windows OCR fallback.");
                     var tesseractProvider = new native.TesseractOcrProvider();
-                    ocrProviders.Add(tesseractProvider);
                     ocrProviders.Add(new native.MixedLanguageOcrProvider(tesseractProvider));
+                    ocrProviders.Add(tesseractProvider);
 #else
                     log.Info("Using Windows 10 OCR Provider.");
                     ocrProviders.Add(new native.Win10OcrProvider());
 #endif
                     SimpleServiceProvider.Current.AddService<IOcrProvider>(ocrProviders);
-                    _ = Task.Run(OcrInstallationHelper.InstallHebrewOcr);
+                    await OcrInstallationHelper.InstallHebrewOcrAsync();
                     RetentionHelper.Start();
                     if (!IsNoTrayMode) 
                     { 
@@ -107,17 +107,18 @@ namespace snapvox
                         await InitializeTrayIconAsync(); 
                         HotkeyManager.Start(); 
                         log.Info("Tray Icon and Hotkeys initialized successfully.");
-                        // Boot check: if Windows (Snipping Tool / Snip &amp; Sketch) or another program has taken
-                        // the Print Screen key, tell the user right away in very simple English.
-                        _ = PrintScreenConflictHelper.NotifyOnBootAsync();
+                        if (!IniConfig.GetIniSection<CoreConfiguration>().DisableHotkeys)
+                        {
+                            _ = PrintScreenConflictHelper.NotifyOnBootAsync();
+                        }
                     }
                     foreach (var file in options.Files)
                     {
                         if (!File.Exists(file)) { log.Warn($"File not found: {file}"); continue; }
                         log.Info($"Opening file for editing: {file}");
                         using SixLabors.ImageSharp.Image loaded = SixLabors.ImageSharp.Image.Load(file);
-                        SixLabors.ImageSharp.Image owned = loaded.Clone();
-                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        SixLabors.ImageSharp.Image owned = loaded.Clone(x => { });
+                        await Dispatcher.UIThread.InvokeAsync(async () =>
                         {
                             SixLabors.ImageSharp.Image imageForEditor = owned;
                             snapvox.editor.forms.ImageEditorWindow editor = null;
@@ -126,7 +127,7 @@ namespace snapvox
                                 editor = new snapvox.editor.forms.ImageEditorWindow();
                                 var screen = editor.Screens.Primary;
                                 var rect = RECT.FromXYWH(screen.Bounds.X + (screen.Bounds.Width - imageForEditor.Width) / 2, screen.Bounds.Y + (screen.Bounds.Height - imageForEditor.Height) / 2, imageForEditor.Width, imageForEditor.Height);
-                                editor.SetImage(imageForEditor, rect);
+                                await editor.SetImageAsync(imageForEditor, rect).ConfigureAwait(true);
                                 owned = null;
                                 imageForEditor = null;
                                 editor.Show();
@@ -213,12 +214,6 @@ namespace snapvox
                     blueBytes = ms.ToArray();
                 }
 
-                // BUGFIX (red tray eye): the .ico asset used to be handed straight to
-                // Avalonia.Media.Imaging.Bitmap, which cannot decode ICO containers. That threw,
-                // the catch below swallowed it, _redIcon stayed null, and every red-state request
-                // silently fell back to the blue icon - the eye never turned red no matter what
-                // the state machine did. The ICO is now decoded manually: the largest sub-image is
-                // extracted (embedded PNG or 32bpp DIB) and converted to PNG bytes first.
                 byte[] pngBytes = TryDecodeIcoToPng(blueBytes);
 
                 if (pngBytes != null)
@@ -290,10 +285,6 @@ namespace snapvox
             });
         }
 
-        /// <summary>
-        /// Decodes an ICO container into PNG bytes for the largest sub-image it contains.
-        /// Supports both PNG-compressed entries and classic 32bpp BMP (DIB) entries.
-        /// </summary>
         private static byte[] TryDecodeIcoToPng(byte[] icoBytes)
         {
             try
@@ -327,7 +318,6 @@ namespace snapvox
                 byte[] subImage = new byte[bestLength];
                 Array.Copy(icoBytes, bestOffset, subImage, 0, bestLength);
 
-                // PNG-compressed entry: usable as-is.
                 if (subImage.Length > 8 && subImage[0] == 0x89 && subImage[1] == 0x50 && subImage[2] == 0x4E && subImage[3] == 0x47)
                 {
                     return subImage;
@@ -341,11 +331,6 @@ namespace snapvox
             }
         }
 
-        /// <summary>
-        /// Converts a 32bpp BITMAPINFOHEADER entry (bottom-up BGRA rows) from an ICO into PNG
-        /// bytes. Modern Windows icons are 32bpp with a real alpha channel, so the AND mask is
-        /// ignored.
-        /// </summary>
         private static byte[] DibEntryToPng(byte[] dib, int width, int height)
         {
             if (dib == null || dib.Length < 40 || width <= 0 || height <= 0) return null;
@@ -360,7 +345,7 @@ namespace snapvox
 
             using var image = SixLabors.ImageSharp.Image.LoadPixelData<Bgra32>(
                 new ReadOnlySpan<byte>(dib, headerSize, pixelBytes), width, height);
-            image.Mutate(x => x.Flip(FlipMode.Vertical)); // DIB rows are stored bottom-up.
+            image.Mutate(x => x.Flip(FlipMode.Vertical));
 
             using var ms = new MemoryStream();
             image.Save(ms, new PngEncoder());
@@ -382,26 +367,11 @@ namespace snapvox
 
                 if (wasRed != isRed)
                 {
-                    // Trace every red/blue transition so any future drift between capture
-                    // components is diagnosable from the log instead of guesswork.
                     LogHelper.GetLogger(typeof(App)).Info(
                         $"Tray eye -> {(isRed ? "RED (capture active)" : "BLUE (idle)")} [holds={_redStateRequestCount}]{(string.IsNullOrEmpty(reason) ? "" : " " + reason)}");
                 }
 
                 SetTrayIconStateInternal(isRed);
-            }
-        }
-
-        public static void SetTrayIconState(bool active)
-        {
-            lock (_iconLock)
-            {
-                if (_redStateRequestCount > 0)
-                {
-                    SetTrayIconStateInternal(true);
-                    return;
-                }
-                SetTrayIconStateInternal(active);
             }
         }
 

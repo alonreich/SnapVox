@@ -1,9 +1,12 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="snapvox.Forms.SettingsWindow"
         Title="SnapVox Settings"
         Width="850" Height="650"
+        MinWidth="720" MinHeight="520"
+        AutomationProperties.Name="SnapVox settings"
         Background="{DynamicResource SnapVoxCanvasBrush}"
+        Closing="OnSettingsClosing"
         WindowStartupLocation="CenterScreen">
     <!-- ISSUE_012: RequestedThemeVariant is set once at the Application level (App.axaml). -->
     <Window.Styles>
@@ -15,115 +18,155 @@
         </Style>
         <Style Selector="CheckBox">
             <Setter Property="Margin" Value="0,5"/>
+            <Setter Property="MinHeight" Value="{DynamicResource SnapVoxMinTouchTarget}"/>
+            <Setter Property="Cursor" Value="Hand"/>
         </Style>
         <Style Selector="ComboBox">
             <Setter Property="Margin" Value="0,5"/>
+            <Setter Property="MinHeight" Value="{DynamicResource SnapVoxMinTouchTarget}"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
         </Style>
-        <!-- ISSUE_007: conflicting hotkey box highlight style -->
+        <Style Selector="TabItem">
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="TextBlock.field-label">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="MinWidth" Value="80"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
+        </Style>
+        <Style Selector="TextBox.hotkey">
+            <Setter Property="MinWidth" Value="110"/>
+            <Setter Property="MinHeight" Value="{DynamicResource SnapVoxMinTouchTarget}"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
         <Style Selector="TextBox.hotkey-conflict">
-            <Setter Property="Background" Value="#55FF0000"/>
-            <Setter Property="BorderBrush" Value="#FF5555"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveSurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxDestructiveHoverBrush}"/>
+            <Setter Property="BorderThickness" Value="2"/>
         </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
         <TextBlock Text="SnapVox Configuration" FontSize="{DynamicResource SnapVoxDialogTitleFontSize}" FontWeight="Bold" Margin="0,0,0,10" Grid.Row="0" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
         
         <TabControl Grid.Row="1">
-            <TabItem Header="General Settings">
+            <TabItem Header="General Settings" AutomationProperties.Name="General settings tab">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="10">
                         <TextBlock Text="Application Behavior" Classes="header"/>
-                        <CheckBox Name="ChkKeepBackup" Content="Keep 24 Hours Backup of Snips/Text" />
-                        <CheckBox Name="ChkCloseEditor" Content="Close Image Editor on Copy/Download" />
-                        <CheckBox Name="ChkWarnClose" Content="Warn before closing the image editor" />
-                        <CheckBox Name="ChkAddBorder" Content="Add Frame Borders to Snips" />
-                        <CheckBox Name="ChkLeavePictureAsIs" Content="Leave Picture As Is While Text Extracting (OCR)" />
+                        <CheckBox Name="ChkKeepBackup" Content="Keep a 24-hour backup of captures and extracted text" AutomationProperties.Name="Keep a 24 hour backup of captures and extracted text" />
+                        <CheckBox Name="ChkCloseEditor" Content="Close the image editor after Save, Copy or OCR" AutomationProperties.Name="Close the image editor after Save, Copy or OCR" />
+                        <CheckBox Name="ChkWarnClose" Content="Warn before closing the image editor with unsaved changes" AutomationProperties.Name="Warn before closing the image editor with unsaved changes" />
+                        <CheckBox Name="ChkAddBorder" Content="Add a frame border to captures" AutomationProperties.Name="Add a frame border to captures" />
+                        <CheckBox Name="ChkLeavePictureAsIs" Content="Leave the picture as-is while extracting text (OCR)" AutomationProperties.Name="Leave the picture as-is while extracting text" />
                         
                         <TextBlock Text="Notification Overlay" Classes="header"/>
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,5,0,0"
                                     ToolTip.Tip="How long the notification overlay keeps blinking when an action completes (copy, download, OCR...).">
                             <TextBlock Text="Blink cycle duration:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}"/>
-                            <ComboBox Name="CboOverlayDuration" Width="170"/>
+                            <ComboBox Name="CboOverlayDuration" MinWidth="170" HorizontalAlignment="Left" AutomationProperties.Name="Notification blink duration"/>
                         </StackPanel>
                         
                         <StackPanel Name="OcrEnginePanel">
-                            <TextBlock Text="English OCR Engine Selection" Classes="header"/>
-                            <ComboBox Name="CboOcrEngine"/>
+                            <TextBlock Text="Text Recognition (OCR) Engine" Classes="header"/>
+                            <ComboBox Name="CboOcrEngine" AutomationProperties.Name="Text recognition engine"/>
+                            <CheckBox Name="ChkOcrAdaptiveThreshold" IsVisible="False"
+                                      Content="Adaptive black-and-white conversion (better on gradient or dark backgrounds)"
+                                      AutomationProperties.Name="Adaptive black and white conversion for text recognition"
+                                      ToolTip.Tip="Helps when text sits on a gradient, a translucent panel or a dark-mode window. Can be slightly worse on plain flat backgrounds - test it on your own captures."/>
+                            <Border Name="OcrEngineEmptyState" IsVisible="False"
+                                    Background="{DynamicResource SnapVoxDestructiveSurfaceBrush}"
+                                    BorderBrush="{DynamicResource SnapVoxDestructiveHoverBrush}"
+                                    BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,6,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="&#9888;" Foreground="{DynamicResource SnapVoxWarningBrush}" FontSize="14" VerticalAlignment="Top"/>
+                                    <TextBlock Name="OcrEngineEmptyText"
+                                               Text="No text-recognition engine is available. Install the English and Hebrew language packs in Windows Settings, then restart SnapVox."
+                                               Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
+                                               TextWrapping="Wrap" MaxWidth="620"/>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                         
                         <TextBlock Text="System Integration" Classes="header"/>
                         <!-- ISSUE_017: warning icon + tooltip explaining the security risk -->
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0"
                                     ToolTip.Tip="⚠ Running as Administrator grants elevated privileges to every capture and OCR action. Enable only if you fully trust the environment.">
-                            <TextBlock Text="⚠" Foreground="#FFB400" FontSize="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="&#9888;" Foreground="{DynamicResource SnapVoxWarningBrush}" FontSize="16" VerticalAlignment="Center"/>
                             <TextBlock Text="Requires elevated privileges — use with care." Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Button Name="BtnToggleAdmin"
                                 Content="Run This App As an Administrator (Highest Privileges)"
                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                Click="OnToggleAdminClick" Margin="0,5,0,0" Padding="10"/>
+                                Click="OnToggleAdminClick" Margin="0,5,0,0" Padding="10" Cursor="Hand"
+                                AutomationProperties.Name="Toggle running SnapVox as administrator"/>
                         <!-- ISSUE_017: explicit current on/off state -->
                         <TextBlock Name="AdminStateLabel" Text="Status: Not configured" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" Margin="0,5,0,0"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
             
-            <TabItem Header="HotKeys">
+            <TabItem Header="Hotkeys" AutomationProperties.Name="Hotkeys tab">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="15" Spacing="10">
                         <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
                             <TextBlock Text="Click a text box and press a key combination to rebind." Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="Reset All Hotkeys to Default" Click="OnResetHotkeysClick" Background="#88FF3333" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" FontWeight="Bold" Padding="15,10" Cursor="Hand" />
+                            <Button Grid.Column="1" Content="Reset All Hotkeys to Default" Click="OnResetHotkeysClick"
+                                    AutomationProperties.Name="Reset all hotkeys to default"
+                                    ToolTip.Tip="Replaces every custom shortcut below with the factory default. Asks first."
+                                    Background="{DynamicResource SnapVoxDestructiveBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
+                                    FontWeight="Bold" Padding="15,10" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" />
                         </Grid>
                         <!-- ISSUE_007: a general banner is still kept, but precise per-box highlighting drives the user to the exact clash. -->
-                        <TextBlock Name="TxtHotkeyWarning" Foreground="#FF5555" FontWeight="Bold" IsVisible="False" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBlock Name="TxtHotkeyWarning" Foreground="{DynamicResource SnapVoxDestructiveHoverBrush}" FontWeight="Bold" IsVisible="False" TextWrapping="Wrap" Margin="0,0,0,10"/>
 
                         <!-- PrintScreen conflict: bright red and impossible to miss when Windows or another app steals the Print Screen key. -->
                         <Border Name="PrintScreenConflictPanel" IsVisible="False"
-                                Background="#2EFF0000" BorderBrush="#FFFF3B3B" BorderThickness="2"
+                                Background="{DynamicResource SnapVoxDestructiveSurfaceBrush}" BorderBrush="{DynamicResource SnapVoxDestructiveHoverBrush}" BorderThickness="2"
                                 CornerRadius="6" Padding="12,10" Margin="0,0,0,10">
                             <StackPanel>
                                 <TextBlock Text="&#9888; PROBLEM: WINDOWS IS TAKING THE PRINT SCREEN KEY"
-                                           Foreground="#FFFF5252" FontWeight="Bold" FontSize="14" TextWrapping="Wrap"/>
+                                           Foreground="{DynamicResource SnapVoxDestructiveHoverBrush}" FontWeight="Bold" FontSize="14" TextWrapping="Wrap"/>
                                 <TextBlock Name="TxtPrintScreenConflictDetail"
-                                           Foreground="#FFFF9E9E" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                           Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/>
                             </StackPanel>
                         </Border>
                         
-                        <Grid ColumnDefinitions="300,*" RowDefinitions="Auto">
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto">
                             <StackPanel Grid.Column="0" Spacing="15">
                                 <TextBlock Text="Capture Hotkeys" Classes="header" Margin="0,0,0,5"/>
                                 
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Region:" VerticalAlignment="Center" Width="80"/>
-                                    <TextBox Name="TxtRegionKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                    <TextBlock Text="Region:" Classes="field-label"/>
+                                    <TextBox Name="TxtRegionKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Region capture hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                 </StackPanel>
                                 
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Window:" VerticalAlignment="Center" Width="80"/>
-                                    <TextBox Name="TxtWindowKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                    <TextBlock Text="Window:" Classes="field-label"/>
+                                    <TextBox Name="TxtWindowKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Active window capture hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Fullscreen:" VerticalAlignment="Center" Width="80"/>
-                                    <TextBox Name="TxtFullscreenKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                    <TextBlock Text="Fullscreen:" Classes="field-label"/>
+                                    <TextBox Name="TxtFullscreenKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Fullscreen capture hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Last Region:" VerticalAlignment="Center" Width="80"/>
-                                    <TextBox Name="TxtLastRegionKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                    <TextBlock Text="Last Region:" Classes="field-label"/>
+                                    <TextBox Name="TxtLastRegionKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Repeat last region hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Clipboard:" VerticalAlignment="Center" Width="80"/>
-                                    <TextBox Name="TxtClipboardKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                    <TextBlock Text="Clipboard:" Classes="field-label"/>
+                                    <TextBox Name="TxtClipboardKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Open from clipboard hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Scroll:" VerticalAlignment="Center" Width="80"/>
-                                    <TextBox Name="TxtScrollCaptureDelimiterKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="120" TextAlignment="Center"/>
+                                    <TextBlock Text="Scroll:" Classes="field-label"/>
+                                    <TextBox Name="TxtScrollCaptureDelimiterKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Scroll capture hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                 </StackPanel>
 
                             </StackPanel>
@@ -133,28 +176,28 @@
                                     <TextBlock Text="Drawing Tools" Classes="header" Margin="0,0,0,5"/>
                                     <WrapPanel Orientation="Horizontal">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Arrow:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtArrowKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Arrow:" Classes="field-label"/>
+                                            <TextBox Name="TxtArrowKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Arrow tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Line:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtLineKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Line:" Classes="field-label"/>
+                                            <TextBox Name="TxtLineKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Line tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Freehand:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtFreehandKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Freehand:" Classes="field-label"/>
+                                            <TextBox Name="TxtFreehandKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Freehand tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Highlight:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtHighlightKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Highlight:" Classes="field-label"/>
+                                            <TextBox Name="TxtHighlightKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Highlight tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Pixelate 1:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtPixelate1Key" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Pixelate 1:" Classes="field-label"/>
+                                            <TextBox Name="TxtPixelate1Key" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="First pixelate tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Pixelate 2:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtPixelate2Key" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Pixelate 2:" Classes="field-label"/>
+                                            <TextBox Name="TxtPixelate2Key" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Second pixelate tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                     </WrapPanel>
                                 </StackPanel>
@@ -163,16 +206,16 @@
                                     <TextBlock Text="Insert Tools" Classes="header" Margin="0,0,0,5"/>
                                     <WrapPanel Orientation="Horizontal">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Text Box:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtTextKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Text Box:" Classes="field-label"/>
+                                            <TextBox Name="TxtTextKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Text tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Emoji:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtEmojiKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Emoji:" Classes="field-label"/>
+                                            <TextBox Name="TxtEmojiKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Emoji tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Counter:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtCounterKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Counter:" Classes="field-label"/>
+                                            <TextBox Name="TxtCounterKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Counter tool hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                     </WrapPanel>
                                 </StackPanel>
@@ -181,20 +224,20 @@
                                     <TextBlock Text="Image Actions" Classes="header" Margin="0,0,0,5"/>
                                     <WrapPanel Orientation="Horizontal">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Resize:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtResizeKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Resize:" Classes="field-label"/>
+                                            <TextBox Name="TxtResizeKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Resize image hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Crop:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtCropKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Crop:" Classes="field-label"/>
+                                            <TextBox Name="TxtCropKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Crop image hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Rotate CW:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtRotateCwKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Rotate CW:" Classes="field-label"/>
+                                            <TextBox Name="TxtRotateCwKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Rotate clockwise hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Rotate CCW:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtRotateCcwKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Rotate CCW:" Classes="field-label"/>
+                                            <TextBox Name="TxtRotateCcwKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Rotate counter-clockwise hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                     </WrapPanel>
                                 </StackPanel>
@@ -203,12 +246,12 @@
                                     <TextBlock Text="Object Actions" Classes="header" Margin="0,0,0,5"/>
                                     <WrapPanel Orientation="Horizontal">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Duplicate:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtDuplicateObjectKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Duplicate:" Classes="field-label"/>
+                                            <TextBox Name="TxtDuplicateObjectKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Duplicate object hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,15,10">
-                                            <TextBlock Text="Delete:" VerticalAlignment="Center" Width="85"/>
-                                            <TextBox Name="TxtDeleteObjectKey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" Width="90" TextAlignment="Center"/>
+                                            <TextBlock Text="Delete:" Classes="field-label"/>
+                                            <TextBox Name="TxtDeleteObjectKey" Classes="hotkey" IsReadOnly="True" KeyDown="OnHotkeyTextBoxKeyDown" AutomationProperties.Name="Delete object hotkey" ToolTip.Tip="Click, then press the key combination you want."/>
                                         </StackPanel>
                                     </WrapPanel>
                                 </StackPanel>
@@ -221,8 +264,8 @@
         
         <!-- ISSUE_006: Cancel button sits next to Save so users can discard changes confidently. -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0" Spacing="10">
-            <Button Content="Cancel" Click="OnCancelClick" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Padding="15,7" Cursor="Hand" />
-            <Button Content="Save and Close" Click="OnSaveClick" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Padding="15,7" Cursor="Hand" />
+            <Button Content="Cancel" Click="OnCancelClick" IsCancel="True" AutomationProperties.Name="Cancel and close without saving" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" MinWidth="110" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" HorizontalContentAlignment="Center" Padding="15,7" Cursor="Hand" />
+            <Button Content="Save and Close" Click="OnSaveClick" IsDefault="True" AutomationProperties.Name="Save settings and close" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" MinWidth="130" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" HorizontalContentAlignment="Center" Padding="15,7" Cursor="Hand" />
         </StackPanel>
     </Grid>
 </Window>

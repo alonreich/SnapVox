@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="https://github.com/avaloniaui"
+﻿<ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- ═════════════════════════════════════════════════════════════════
          SnapVox Shared Design System
@@ -31,6 +31,15 @@
     <SolidColorBrush x:Key="SnapVoxSecondaryButtonBrush" Color="{StaticResource SnapVoxSecondaryButtonColor}" />
 
     <!-- ── Borders & separators ── -->
+    <Color x:Key="SnapVoxSelectedSurfaceColor">#402D2D30</Color>
+    <SolidColorBrush x:Key="SnapVoxSelectedSurfaceBrush" Color="{StaticResource SnapVoxSelectedSurfaceColor}" />
+
+    <Color x:Key="SnapVoxSliderTrackColor">#4A4A4A</Color>
+    <SolidColorBrush x:Key="SnapVoxSliderTrackBrush" Color="{StaticResource SnapVoxSliderTrackColor}" />
+
+    <Color x:Key="SnapVoxScrimColor">#99000000</Color>
+    <SolidColorBrush x:Key="SnapVoxScrimBrush" Color="{StaticResource SnapVoxScrimColor}" />
+
     <Color x:Key="SnapVoxSeparatorColor">#555555</Color>
     <SolidColorBrush x:Key="SnapVoxSeparatorBrush" Color="{StaticResource SnapVoxSeparatorColor}" />
 
@@ -53,16 +62,29 @@
 
     <!-- ── Interactive states ── -->
     <Color x:Key="SnapVoxHoverColor">#757575</Color>
+    <SolidColorBrush x:Key="SnapVoxHoverBrush" Color="{StaticResource SnapVoxHoverColor}" />
+
     <Color x:Key="SnapVoxPressedColor">#5A5A5A</Color>
+    <SolidColorBrush x:Key="SnapVoxPressedBrush" Color="{StaticResource SnapVoxPressedColor}" />
 
     <!-- ── Status colors ── -->
     <Color x:Key="SnapVoxDestructiveColor">#A51D2D</Color>
     <SolidColorBrush x:Key="SnapVoxDestructiveBrush" Color="{StaticResource SnapVoxDestructiveColor}" />
 
     <Color x:Key="SnapVoxDestructiveHoverColor">#C42B3D</Color>
+    <SolidColorBrush x:Key="SnapVoxDestructiveHoverBrush" Color="{StaticResource SnapVoxDestructiveHoverColor}" />
+
+    <Color x:Key="SnapVoxDestructiveSurfaceColor">#3A1218</Color>
+    <SolidColorBrush x:Key="SnapVoxDestructiveSurfaceBrush" Color="{StaticResource SnapVoxDestructiveSurfaceColor}" />
+
+    <Color x:Key="SnapVoxWarningColor">#FFB400</Color>
+    <SolidColorBrush x:Key="SnapVoxWarningBrush" Color="{StaticResource SnapVoxWarningColor}" />
 
     <Color x:Key="SnapVoxSuccessColor">#107C10</Color>
     <SolidColorBrush x:Key="SnapVoxSuccessBrush" Color="{StaticResource SnapVoxSuccessColor}" />
+
+    <Color x:Key="SnapVoxSuccessHoverColor">#1F8B24</Color>
+    <SolidColorBrush x:Key="SnapVoxSuccessHoverBrush" Color="{StaticResource SnapVoxSuccessHoverColor}" />
 
     <!-- ── Snip frame (ISSUE_009: mandated #000080 navy) ── -->
     <Color x:Key="SnapVoxFrameBorderColor">#000080</Color>
@@ -70,7 +92,10 @@
 
     <!-- ── Checkerboard tile colors ── -->
     <Color x:Key="SnapVoxCheckerDarkColor">#333333</Color>
+    <SolidColorBrush x:Key="SnapVoxCheckerDarkBrush" Color="{StaticResource SnapVoxCheckerDarkColor}" />
+
     <Color x:Key="SnapVoxCheckerLightColor">#3A3A3A</Color>
+    <SolidColorBrush x:Key="SnapVoxCheckerLightBrush" Color="{StaticResource SnapVoxCheckerLightColor}" />
 
     <!-- ── Capture overlay accent ── -->
     <Color x:Key="SnapVoxScrollAccentColor">#00AEEF</Color>
@@ -193,6 +218,7 @@
     </ControlTheme>
 
     <!-- ── Font sizes ── -->
+    <x:Double x:Key="SnapVoxMinTouchTarget">24</x:Double>
     <x:Double x:Key="SnapVoxToolbarFontSize">11</x:Double>
     <x:Double x:Key="SnapVoxTitleFontSize">12</x:Double>
     <x:Double x:Key="SnapVoxHeaderFontSize">14</x:Double>

@@ -1,7 +1,8 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="snapvox.forms.DeploymentProgressWindow"
         Title="SnapVox Setup"
+        AutomationProperties.Name="SnapVox setup progress"
         Width="720" Height="480"
         MinWidth="640" MinHeight="420"
         WindowStartupLocation="CenterScreen"
@@ -31,7 +32,7 @@
             <!-- ISSUE_015: dedicated error banner shown when deployment fails. -->
             <Border Name="ErrorBanner"
                     Grid.Row="2"
-                    Background="#55FF0000"
+                    Background="{DynamicResource SnapVoxDestructiveSurfaceBrush}"
                     BorderBrush="{DynamicResource SnapVoxDestructiveBrush}"
                     BorderThickness="1"
                     CornerRadius="4"
@@ -39,7 +40,7 @@
                     Margin="0,0,0,8"
                     IsVisible="False">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="⚠" Foreground="{DynamicResource SnapVoxDestructiveHoverColor}" FontSize="14" VerticalAlignment="Center"/>
+                    <TextBlock Text="&#9888;" Foreground="{DynamicResource SnapVoxWarningBrush}" FontSize="14" VerticalAlignment="Center"/>
                     <TextBlock Name="ErrorText" Text="Deployment failed." Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                 </StackPanel>
             </Border>
@@ -60,7 +61,8 @@
             </Grid>
             <ListBox Name="LogList"
                      Grid.Row="4"
-                     Background="{DynamicResource SnapVoxCanvasColor}"
+                     AutomationProperties.Name="Installation log"
+                     Background="{DynamicResource SnapVoxCanvasBrush}"
                      BorderThickness="0"
                      Foreground="{DynamicResource SnapVoxLogTextBrush}"
                      FontFamily="Consolas,Courier New,monospace"
@@ -68,6 +70,7 @@
                      Padding="8"/>
             <ProgressBar Name="ProgressBar"
                          Grid.Row="5"
+                         AutomationProperties.Name="Installation progress"
                          Height="16"
                          Minimum="0"
                          Maximum="100"
@@ -79,8 +82,11 @@
                 <!-- ISSUE_015: cancel button lets users abort a stalled install. -->
                 <Button Name="CancelButton"
                         Content="Cancel"
-                        Width="120"
+                        AutomationProperties.Name="Cancel installation"
+                        MinWidth="120"
                         Height="32"
+                        Cursor="Hand"
+                        HorizontalContentAlignment="Center"
                         Background="{DynamicResource SnapVoxSecondaryButtonBrush}"
                         Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
                         Click="OnCancelClick"/>
@@ -88,9 +94,12 @@
             <Button Name="FinishButton"
                     Grid.Row="7"
                     Content="Finish"
+                    AutomationProperties.Name="Finish and close setup"
                     HorizontalAlignment="Center"
-                    Width="120"
+                    HorizontalContentAlignment="Center"
+                    MinWidth="120"
                     Height="32"
+                    Cursor="Hand"
                     IsVisible="False"
                     Background="{DynamicResource SnapVoxAccentBrush}"
                     Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"

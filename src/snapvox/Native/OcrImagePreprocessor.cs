@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using snapvox.native.foundation;
 using SixLabors.ImageSharp;
@@ -24,15 +24,18 @@ namespace snapvox.native
         private readonly int _processedHeight;
         private readonly double _deskewDegrees;
 
-        public OcrPreparedImage(Image<Bgra32> image, int sourceWidth, int sourceHeight, int resizedWidth, int resizedHeight, double deskewDegrees)
+        private readonly int _padding;
+
+        public OcrPreparedImage(Image<Bgra32> image, int sourceWidth, int sourceHeight, int resizedWidth, int resizedHeight, double deskewDegrees, int padding = 0)
         {
             Image = image;
+            _padding = Math.Max(0, padding);
             _sourceWidth = Math.Max(1, sourceWidth);
             _sourceHeight = Math.Max(1, sourceHeight);
             _resizedWidth = Math.Max(1, resizedWidth);
             _resizedHeight = Math.Max(1, resizedHeight);
-            _processedWidth = Math.Max(1, image?.Width ?? resizedWidth);
-            _processedHeight = Math.Max(1, image?.Height ?? resizedHeight);
+            _processedWidth = Math.Max(1, (image?.Width ?? resizedWidth) - (_padding * 2));
+            _processedHeight = Math.Max(1, (image?.Height ?? resizedHeight) - (_padding * 2));
             _deskewDegrees = deskewDegrees;
         }
 
@@ -44,6 +47,9 @@ namespace snapvox.native
             {
                 return RECT.Empty;
             }
+
+            x -= _padding;
+            y -= _padding;
 
             if (Math.Abs(_deskewDegrees) < 0.05)
             {
@@ -94,6 +100,8 @@ namespace snapvox.native
     {
         private const int MaxDimension = 3840;
         private const int MinimumTextDimension = 1400;
+        private const int WindowsMinimumShortSide = 320;
+        private const int BorderPadding = 12;
 
         public static OcrPreparedImage Prepare(Image source, OcrPreprocessingProfile profile)
         {
@@ -106,7 +114,7 @@ namespace snapvox.native
             try
             {
                 working = source is Image<Bgra32> bgra ? bgra.Clone(x => { }) : source.CloneAs<Bgra32>();
-                double scale = GetScale(source.Width, source.Height);
+                double scale = GetScale(source.Width, source.Height, profile);
                 int targetWidth = Math.Max(1, (int)Math.Round(source.Width * scale));
                 int targetHeight = Math.Max(1, (int)Math.Round(source.Height * scale));
 
@@ -115,35 +123,37 @@ namespace snapvox.native
                     working.Mutate(ctx => ctx.Resize(targetWidth, targetHeight, KnownResamplers.Lanczos3));
                 }
 
+                working.Mutate(ctx => ctx.Grayscale());
+                if (IsMostlyDark(working))
+                {
+                    working.Mutate(ctx => ctx.Invert());
+                }
+
                 if (profile == OcrPreprocessingProfile.Windows)
                 {
-                    working.Mutate(ctx => ctx.Grayscale().Contrast(1.12f).GaussianBlur(0.25f).GaussianSharpen(0.65f));
+                    working.Mutate(ctx => ctx.Contrast(1.12f).GaussianBlur(0.25f).GaussianSharpen(0.65f));
                 }
                 else
                 {
-                    working.Mutate(ctx => ctx.Grayscale());
-                    if (IsMostlyDark(working))
-                    {
-                        working.Mutate(ctx => ctx.Invert());
-                    }
-                    working.Mutate(ctx => ctx.Contrast(1.35f).GaussianBlur(0.25f).GaussianSharpen(0.75f).BinaryThreshold(0.6f));
+                    working.Mutate(ctx => ctx.Contrast(1.20f).GaussianBlur(0.25f).GaussianSharpen(0.75f));
                 }
 
                 double skew = EstimateDeskewDegrees(working);
                 if (Math.Abs(skew) >= 0.25 && Math.Abs(skew) <= 3.0)
                 {
                     working.Mutate(ctx => ctx.Rotate((float)(-skew), KnownResamplers.Bicubic).BackgroundColor(Color.White));
-                    if (profile == OcrPreprocessingProfile.Tesseract)
-                    {
-                        working.Mutate(ctx => ctx.BinaryThreshold(0.6f));
-                    }
                 }
                 else
                 {
                     skew = 0;
                 }
 
-                var result = new OcrPreparedImage(working, source.Width, source.Height, targetWidth, targetHeight, skew);
+                Color padColor = EstimateBorderColor(working);
+                int paddedWidth = working.Width + (BorderPadding * 2);
+                int paddedHeight = working.Height + (BorderPadding * 2);
+                working.Mutate(ctx => ctx.Pad(paddedWidth, paddedHeight, padColor));
+
+                var result = new OcrPreparedImage(working, source.Width, source.Height, targetWidth, targetHeight, skew, BorderPadding);
                 working = null;
                 return result;
             }
@@ -178,7 +188,7 @@ namespace snapvox.native
             return count > 0 && (totalLuminance / count) < 110;
         }
 
-        private static double GetScale(int width, int height)
+        private static double GetScale(int width, int height, OcrPreprocessingProfile profile)
         {
             int maxSide = Math.Max(width, height);
             int minSide = Math.Min(width, height);
@@ -194,12 +204,47 @@ namespace snapvox.native
                 scale = 3.0;
             }
 
+            if (profile == OcrPreprocessingProfile.Windows && minSide > 0 && minSide * scale < WindowsMinimumShortSide)
+            {
+                scale = WindowsMinimumShortSide / (double)minSide;
+            }
+
             if (maxSide * scale > MaxDimension)
             {
                 scale = MaxDimension / (double)Math.Max(1, maxSide);
             }
 
             return Math.Max(1.0, scale);
+        }
+
+        private static Color EstimateBorderColor(Image<Bgra32> image)
+        {
+            long r = 0, g = 0, b = 0;
+            int count = 0;
+
+            image.ProcessPixelRows(accessor =>
+            {
+                int lastRow = accessor.Height - 1;
+                for (int y = 0; y <= lastRow; y += Math.Max(1, lastRow))
+                {
+                    Span<Bgra32> row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x++)
+                    {
+                        r += row[x].R; g += row[x].G; b += row[x].B; count++;
+                    }
+                }
+
+                for (int y = 0; y < accessor.Height; y++)
+                {
+                    Span<Bgra32> row = accessor.GetRowSpan(y);
+                    if (row.Length == 0) continue;
+                    r += row[0].R; g += row[0].G; b += row[0].B; count++;
+                    r += row[row.Length - 1].R; g += row[row.Length - 1].G; b += row[row.Length - 1].B; count++;
+                }
+            });
+
+            if (count == 0) return Color.White;
+            return Color.FromRgb((byte)(r / count), (byte)(g / count), (byte)(b / count));
         }
 
         private static double EstimateDeskewDegrees(Image<Bgra32> image)

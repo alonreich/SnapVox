@@ -18,19 +18,5 @@ namespace snapvox.editor.helpers
                 return new Bitmap(ms);
             }
         }
-
-        public static Task<Bitmap> ToAvaloniaBitmapAsync(this Image image)
-        {
-            if (image == null) return Task.FromResult<Bitmap>(null);
-            return Task.Run(() =>
-            {
-                using (var ms = new MemoryStream())
-                {
-                    image.Save(ms, new BmpEncoder());
-                    ms.Position = 0;
-                    return new Bitmap(ms);
-                }
-            });
-        }
     }
 }

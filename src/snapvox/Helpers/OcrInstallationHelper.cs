@@ -1,7 +1,5 @@
 using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -43,7 +41,8 @@ namespace snapvox.helpers
         [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern IntPtr LoadLibrary(string lpFileName);
 
-        private static readonly object SyncRoot = new object();
+        private static readonly SemaphoreSlim InitializationGate = new SemaphoreSlim(1, 1);
+        private static int _initialized;
 
         private static bool HasTessData(string fileName)
         {
@@ -56,7 +55,32 @@ namespace snapvox.helpers
             catch { return false; }
         }
 
-        public static void EnsureBinariesExtracted(string installFolder = null)
+        public static async Task EnsureTesseractReadyAsync(CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _initialized) != 0)
+            {
+                return;
+            }
+
+            await InitializationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (Volatile.Read(ref _initialized) != 0)
+                {
+                    return;
+                }
+
+                await EnsureBinariesExtractedAsync(null, cancellationToken).ConfigureAwait(false);
+                await EnsureOfflineTessDataExtractedAsync(null, cancellationToken).ConfigureAwait(false);
+                Volatile.Write(ref _initialized, 1);
+            }
+            finally
+            {
+                InitializationGate.Release();
+            }
+        }
+
+        private static async Task EnsureBinariesExtractedAsync(string installFolder, CancellationToken cancellationToken)
         {
             try
             {
@@ -69,6 +93,7 @@ namespace snapvox.helpers
                 if (!Directory.Exists(targetPath)) Directory.CreateDirectory(targetPath);
                 foreach (var lib in libs)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     string destPath = Path.Combine(targetPath, lib);
                     if (File.Exists(destPath)) continue;
 
@@ -77,109 +102,87 @@ namespace snapvox.helpers
                     if (resName != null)
                     {
                         using var s = asm.GetManifestResourceStream(resName);
-                        if (s != null) { using var fs = new FileStream(destPath, FileMode.Create); s.CopyTo(fs); }
+                        if (s != null)
+                        {
+                            using var fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.Read, 81920, FileOptions.Asynchronous);
+                            await s.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
+                        }
                     }
                 }
                 foreach (var lib in libs)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     LoadLibrary(Path.Combine(targetPath, lib));
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex) { Log.Error("Binary extraction failed", ex); }
         }
 
-        public static void EnsureOfflineTessDataExtracted(string installFolder = null)
+        private static async Task EnsureOfflineTessDataExtractedAsync(string installFolder, CancellationToken cancellationToken)
         {
-            lock (SyncRoot)
+            string tessDataPath = null;
+            try
             {
-                string tessDataPath = null;
-                try
+                tessDataPath = Path.Combine(ResolveOcrStorageRoot(installFolder), "tessdata");
+                Directory.CreateDirectory(tessDataPath);
+                var assembly = System.Reflection.Assembly.GetEntryAssembly();
+                if (assembly == null) assembly = typeof(OcrInstallationHelper).Assembly;
+                var resources = assembly.GetManifestResourceNames();
+                foreach (var languageFile in new[] { "heb.traineddata", "eng.traineddata" })
                 {
-                    tessDataPath = Path.Combine(ResolveOcrStorageRoot(installFolder), "tessdata");
-                    Directory.CreateDirectory(tessDataPath);
-                    var assembly = System.Reflection.Assembly.GetEntryAssembly();
-                    if (assembly == null) assembly = typeof(OcrInstallationHelper).Assembly;
-                    var resources = assembly.GetManifestResourceNames();
-                    foreach (var languageFile in new[] { "heb.traineddata", "eng.traineddata" })
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string destinationPath = Path.Combine(tessDataPath, languageFile);
+                    if (File.Exists(destinationPath) && new FileInfo(destinationPath).Length >= 128 * 1024)
                     {
-                        string destinationPath = Path.Combine(tessDataPath, languageFile);
-                        if (File.Exists(destinationPath) && new FileInfo(destinationPath).Length >= 128 * 1024)
-                        {
-                            continue;
-                        }
-
-                        string resourceName = resources.FirstOrDefault(resource => resource.EndsWith(languageFile, StringComparison.OrdinalIgnoreCase));
-                        if (string.IsNullOrEmpty(resourceName))
-                        {
-                            ExecutionTrace.LogEvent("TesseractOcr", "MissingEmbeddedData", languageFile);
-                            continue;
-                        }
-
-                        using (var resourceStream = assembly.GetManifestResourceStream(resourceName))
-                        {
-                            if (resourceStream == null)
-                            {
-                                ExecutionTrace.LogEvent("TesseractOcr", "MissingResourceStream", languageFile);
-                                continue;
-                            }
-
-                            using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.Read))
-                            {
-                                resourceStream.CopyTo(fileStream);
-                            }
-                        }
-
-                        ExecutionTrace.LogEvent("TesseractOcr", "ExtractedData", destinationPath);
+                        continue;
                     }
+
+                    string resourceName = resources.FirstOrDefault(resource => resource.EndsWith(languageFile, StringComparison.OrdinalIgnoreCase));
+                    if (string.IsNullOrEmpty(resourceName))
+                    {
+                        ExecutionTrace.LogEvent("TesseractOcr", "MissingEmbeddedData", languageFile);
+                        continue;
+                    }
+
+                    using (var resourceStream = assembly.GetManifestResourceStream(resourceName))
+                    {
+                        if (resourceStream == null)
+                        {
+                            ExecutionTrace.LogEvent("TesseractOcr", "MissingResourceStream", languageFile);
+                            continue;
+                        }
+
+                        using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.Read, 81920, FileOptions.Asynchronous))
+                        {
+                            await resourceStream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+                        }
+                    }
+
+                    ExecutionTrace.LogEvent("TesseractOcr", "ExtractedData", destinationPath);
                 }
-                catch (Exception ex)
-                {
-                    Log.Error("Offline OCR data extraction failed", ex);
-                    ExecutionTrace.LogException("TesseractOcr.ExtractData", ex, tessDataPath);
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Offline OCR data extraction failed", ex);
+                ExecutionTrace.LogException("TesseractOcr.ExtractData", ex, tessDataPath);
             }
         }
 #endif
 
-        public static bool IsHebrewOcrInstalled()
+        public static Task InstallHebrewOcrAsync(CancellationToken cancellationToken = default)
         {
 #if USE_TESSERACT
-            return HasTessData("heb.traineddata") && HasTessData("eng.traineddata");
+            return EnsureTesseractReadyAsync(cancellationToken);
 #else
-            return native.Win10OcrProvider.IsHebrewLanguageAvailable();
-#endif
-        }
-
-        public static bool IsOcrUsable()
-        {
-#if USE_TESSERACT
-            return HasTessData("eng.traineddata") && HasTessData("heb.traineddata");
-#else
-            return native.Win10OcrProvider.AreRequiredLanguagesAvailable();
-#endif
-        }
-
-        public static string GetMissingOcrMessage()
-        {
-#if USE_TESSERACT
-            bool hasHebrew = HasTessData("heb.traineddata");
-            bool hasEnglish = HasTessData("eng.traineddata");
-            if (hasHebrew && hasEnglish) return string.Empty;
-            if (hasEnglish) return "Hebrew offline OCR data is missing. English OCR is available.";
-            if (hasHebrew) return "English offline OCR data is missing. Hebrew OCR is available.";
-            return "Offline OCR data missing. heb.traineddata and eng.traineddata needed.";
-#else
-            return native.Win10OcrProvider.GetAvailabilityMessage();
-#endif
-        }
-
-        public static void InstallHebrewOcr()
-        {
-#if USE_TESSERACT
-            EnsureBinariesExtracted();
-            EnsureOfflineTessDataExtracted();
-#else
-            native.Win10OcrProvider.EnsureWindowsOcrInstalled();
+            return native.Win10OcrProvider.EnsureWindowsOcrInstalled();
 #endif
         }
     }

@@ -1,7 +1,5 @@
 using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using snapvox.foundation.core.AvaloniaShims;
 using log4net;
@@ -24,18 +22,6 @@ namespace snapvox.helpers
             string quotedPath = "\"" + resolvedPath + "\"";
             if (string.IsNullOrWhiteSpace(arguments)) return quotedPath;
             return quotedPath + " " + arguments.Trim();
-        }
-
-        public static bool CanWriteRunAll()
-        {
-            try { using (RegistryKey key = Registry.LocalMachine.OpenSubKey(RunKey, true)) { } return true; }
-            catch { return false; }
-        }
-
-        public static bool CanWriteRunUser()
-        {
-            try { using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKey, true)) { } return true; }
-            catch { return false; }
         }
 
         public static object GetRunAllValue()
@@ -119,18 +105,5 @@ namespace snapvox.helpers
             catch (Exception e) { Log.Error("Error deleting startup shortcut.", e); }
         }
 
-        public static bool IsInStartupFolder()
-        {
-            try
-            {
-                string lnkName = Path.GetFileNameWithoutExtension(RuntimePathHelper.ExecutablePath) + ".lnk";
-                string startupPath = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-                if (Directory.Exists(startupPath) && File.Exists(Path.Combine(startupPath, lnkName))) return true;
-                string startupAll = Environment.GetEnvironmentVariable("ALLUSERSPROFILE") + @"\Microsoft\Windows\Start Menu\Programs\Startup";
-                if (Directory.Exists(startupAll) && File.Exists(Path.Combine(startupAll, lnkName))) return true;
-            }
-            catch { }
-            return false;
-        }
     }
 }

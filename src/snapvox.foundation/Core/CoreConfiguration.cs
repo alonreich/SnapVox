@@ -1,18 +1,10 @@
-/*
- * Portions of this file, specifically the configuration schema and 
- * INI property bindings, were adapted from the Greenshot project, 
- * which is licensed under the GNU General Public License (GPL).
- * SnapVox acknowledges and complies with this license.
- */
+﻿
 using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using snapvox.foundation.core.AvaloniaShims;
-using System.IO;
 using System.Reflection;
 using snapvox.foundation.core.Enums;
 using snapvox.foundation.IniFile;
@@ -53,9 +45,6 @@ namespace snapvox.foundation.core
         [IniProperty("IsFirstLaunch", Description = "Is this the first time launch?", DefaultValue = "true")]
         public bool IsFirstLaunch { get; set; } = true;
 
-        [IniProperty("IsBetaTester", Description = "Is the user a beta tester?", DefaultValue = "false")]
-        public bool IsBetaTester { get; set; } = false;
-
         [IniProperty("ClipboardFormats", Separator = ",", Description = "Specify which formats we copy on the clipboard? Options are: PNG, HTML, HTMLDATAURL and DIB", DefaultValue = "PNG,DIB")]
         public List<ClipboardFormat> ClipboardFormats { get; set; } = new List<ClipboardFormat>();
 
@@ -71,12 +60,6 @@ namespace snapvox.foundation.core
         [IniProperty("RunAsAdministratorOnStartup", Description = "Run snapvox elevated when it starts automatically.", DefaultValue = "false")]
         public bool RunAsAdministratorOnStartup { get; set; } = false;
 
-        [IniProperty("OutputFilePath", Description = "Output file path.")]
-        public string OutputFilePath { get; set; } = Path.Combine(Path.GetTempPath(), "snapvox");
-
-        [IniProperty("OutputFileFilenamePattern", Description = "Filename pattern for screenshot.", DefaultValue = "${capturetime:d\"yyyy-MM-dd HH_mm_ss\"}-${title}")]
-        public string OutputFileFilenamePattern { get; set; }
-
         [IniProperty("OutputFileFormat", Description = "Default file type for writing screenshots. (Always jpg in v3.0)", DefaultValue = "jpg")]
         public OutputFormat OutputFileFormat { get; set; } = OutputFormat.jpg;
 
@@ -85,12 +68,6 @@ namespace snapvox.foundation.core
 
         [IniProperty("OutputFileAllowPng", Description = "Allow saving screenshots as PNG (Higher Quality, lossless). When false, always save as JPG.", DefaultValue = "false")]
         public bool OutputFileAllowPng { get; set; } = false;
-
-        [IniProperty("LogFile", Description = "The path to the log file.")]
-        public string LogFile { get; set; }
-
-        [IniProperty("LogLevel", Description = "The log level (OFF, FATAL, ERROR, WARN, INFO, DEBUG, ALL).", DefaultValue = "INFO")]
-        public string LogLevel { get; set; } = "INFO";
 
         [IniProperty("DisableHotkeys", Description = "Disable hotkeys.", DefaultValue = "False")]
         public bool DisableHotkeys { get; set; } = false;
@@ -116,8 +93,18 @@ namespace snapvox.foundation.core
         [IniProperty("LastPixelateStrength", DefaultValue = "25")]
         public int LastPixelateStrength { get; set; } = 25;
 
-        [IniProperty("OcrEngine", Description = "English Language Default OCR Engine", DefaultValue = "Tesseract (External OCR Engine)")]
-        public string OcrEngine { get; set; } = "Tesseract (External OCR Engine)";
+#if USE_TESSERACT
+        [IniProperty("OcrEngine", Description = "Default OCR Engine", DefaultValue = "Tesseract + Windows (Mixed EN/HE)")]
+        public string OcrEngine { get; set; } = "Tesseract + Windows (Mixed EN/HE)";
+#else
+        [IniProperty("OcrEngine", Description = "Default OCR Engine", DefaultValue = "Windows Native OCR Engine")]
+        public string OcrEngine { get; set; } = "Windows Native OCR Engine";
+#endif
+
+#if USE_TESSERACT
+        [IniProperty("OcrAdaptiveThreshold", Description = "Use adaptive (Sauvola) black-and-white conversion for the external OCR engine. Better on gradient or dark-mode backgrounds, sometimes worse on flat ones.", DefaultValue = "false")]
+        public bool OcrAdaptiveThreshold { get; set; } = false;
+#endif
 
         [IniProperty("LeavePictureAsIsDuringOcr", Description = "Should the picture remain as is during OCR?", DefaultValue = "false")]
         public bool LeavePictureAsIsDuringOcr { get; set; } = false;
@@ -200,19 +187,13 @@ namespace snapvox.foundation.core
         [IniProperty("LastToolThicknesses", DefaultValue = "")]
         public string LastToolThicknesses { get; set; } = "";
 
-        public override object GetDefault(string property) => property switch
-        {
-            nameof(OutputFilePath) => Path.Combine(Path.GetTempPath(), "snapvox"),
-            _ => null
-        };
+        public override object GetDefault(string property) => null;
 
         public override void AfterLoad()
         {
-            if (string.IsNullOrWhiteSpace(OutputFileFilenamePattern)) OutputFileFilenamePattern = "${capturetime:d\"yyyy-MM-dd HH_mm_ss\"}-${title}";
             if (ClipboardFormats == null || ClipboardFormats.Count == 0) ClipboardFormats = new List<ClipboardFormat> { ClipboardFormat.DIB };
             OutputFileFormat = OutputFormat.jpg;
             OutputFileJpegQuality = 100;
-            OutputFilePath = Path.Combine(Path.GetTempPath(), "snapvox");
         }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -19,12 +19,44 @@ namespace snapvox.Forms
     public partial class SettingsWindow : Window
     {
         private CoreConfiguration _config;
+        private string _loadedFingerprint = string.Empty;
+        private bool _savedAndClosing;
+        private bool _saveInProgress;
 
         public SettingsWindow()
         {
             InitializeComponent();
+            UiLayoutDirection.Apply(this);
             _config = IniConfig.GetIniSection<CoreConfiguration>();
             LoadSettings();
+            _loadedFingerprint = BuildFingerprint();
+        }
+
+        private string BuildFingerprint()
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            foreach (var box in this.GetVisualDescendants().OfType<TextBox>())
+            {
+                parts.Add((box.Name ?? string.Empty) + "=" + (box.Text ?? string.Empty));
+            }
+
+            foreach (var check in this.GetVisualDescendants().OfType<CheckBox>())
+            {
+                parts.Add((check.Name ?? string.Empty) + "=" + (check.IsChecked ?? false));
+            }
+
+            foreach (var combo in this.GetVisualDescendants().OfType<ComboBox>())
+            {
+                parts.Add((combo.Name ?? string.Empty) + "=" + (combo.SelectedItem?.ToString() ?? string.Empty));
+            }
+
+            parts.Sort(System.StringComparer.Ordinal);
+            return string.Join("|", parts);
+        }
+
+        private bool HasUnsavedChanges()
+        {
+            return !string.Equals(_loadedFingerprint, BuildFingerprint(), System.StringComparison.Ordinal);
         }
 
         private void InitializeComponent()
@@ -65,12 +97,47 @@ namespace snapvox.Forms
 
             var ocrPanel = this.FindControl<StackPanel>("OcrEnginePanel");
             var cboOcrEngine = this.FindControl<ComboBox>("CboOcrEngine");
+            var ocrEmptyState = this.FindControl<Border>("OcrEngineEmptyState");
+            var ocrEmptyText = this.FindControl<TextBlock>("OcrEngineEmptyText");
             if (cboOcrEngine != null)
             {
                 var providers = SimpleServiceProvider.Current.GetAllInstances<IOcrProvider>().ToList();
                 var providerNames = providers.Select(provider => provider.DisplayName).Distinct().ToList();
                 cboOcrEngine.ItemsSource = providerNames;
                 cboOcrEngine.SelectedItem = providerNames.Contains(_config.OcrEngine) ? _config.OcrEngine : providerNames.FirstOrDefault();
+
+                bool hasProviders = providerNames.Count > 0;
+                bool hasUsableProvider = providers.Any(provider => SafeHasLanguages(provider));
+
+                var chkAdaptive = this.FindControl<CheckBox>("ChkOcrAdaptiveThreshold");
+                if (chkAdaptive != null)
+                {
+#if USE_TESSERACT
+                    chkAdaptive.IsVisible = providers.Any(provider =>
+                        provider != null && provider.EngineId != null &&
+                        provider.EngineId.IndexOf("tesseract", System.StringComparison.OrdinalIgnoreCase) >= 0);
+                    chkAdaptive.IsChecked = _config.OcrAdaptiveThreshold;
+#else
+                    chkAdaptive.IsVisible = false;
+#endif
+                }
+                cboOcrEngine.IsVisible = hasProviders;
+                cboOcrEngine.IsEnabled = hasProviders;
+
+                if (ocrEmptyState != null)
+                {
+                    ocrEmptyState.IsVisible = !hasProviders || !hasUsableProvider;
+                    if (ocrEmptyState.IsVisible && ocrEmptyText != null)
+                    {
+                        ocrEmptyText.Text = !hasProviders
+                            ? "No text-recognition engine is registered, so OCR is unavailable. Restart SnapVox; if it persists, reinstall the application."
+                            : "The installed engine is missing its English or Hebrew language pack, so OCR will fail. Add both languages in Windows Settings > Time & language > Language & region, then restart SnapVox.";
+                    }
+                }
+            }
+            else if (ocrEmptyState != null)
+            {
+                ocrEmptyState.IsVisible = false;
             }
 
             _ = UpdateAdminButtonStateAsync();
@@ -99,8 +166,6 @@ namespace snapvox.Forms
             SetHotkeyTextBox("TxtScrollCaptureDelimiterKey", _config.ScrollCaptureDelimiterHotkey);
 
             UpdatePrintScreenConflictWarning();
-            // Hotkey registration runs on a background thread at startup; re-check once it settles so the
-            // red Print Screen warning appears even if Settings was opened immediately after launch.
             _ = Task.Run(async () =>
             {
                 await PrintScreenConflictHelper.WaitForHotkeyRegistrationAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
@@ -115,11 +180,6 @@ namespace snapvox.Forms
             if (txt != null) txt.Text = value;
         }
 
-        /// <summary>
-        /// Shows a big red, plain-English warning on the HotKeys tab when Windows (Snipping Tool /
-        /// Snip &amp; Sketch) or another program has taken the Print Screen key, because every
-        /// capture hotkey that uses Print Screen will simply not work in that case.
-        /// </summary>
         private void UpdatePrintScreenConflictWarning()
         {
             var panel = this.FindControl<Border>("PrintScreenConflictPanel");
@@ -137,8 +197,18 @@ namespace snapvox.Forms
             }
         }
 
-        private void OnResetHotkeysClick(object sender, RoutedEventArgs e)
+        private async void OnResetHotkeysClick(object sender, RoutedEventArgs e)
         {
+            bool confirmed = await ConfirmDialog.ShowAsync(
+                this,
+                "Reset all hotkeys?",
+                "Every shortcut on this tab goes back to the SnapVox factory default. Any key combinations you set yourself are replaced and cannot be recovered.",
+                "Reset All Hotkeys",
+                "Keep My Hotkeys",
+                true).ConfigureAwait(true);
+
+            if (!confirmed) return;
+
             SetHotkeyTextBox("TxtRegionKey", "PrintScreen");
             SetHotkeyTextBox("TxtWindowKey", "Alt + PrintScreen");
             SetHotkeyTextBox("TxtFullscreenKey", "Ctrl + PrintScreen");
@@ -210,7 +280,6 @@ namespace snapvox.Forms
             }
             catch { conflict = true; }
 
-            // ISSUE_007: highlight the exact conflicting box red and show a message beside it.
             textBox.Classes.Remove("hotkey-conflict");
             if (conflict)
             {
@@ -241,16 +310,59 @@ namespace snapvox.Forms
             }
         }
 
-        // ISSUE_006: discard changes and close without saving.
-        private void OnCancelClick(object sender, RoutedEventArgs e)
+        private async void OnCancelClick(object sender, RoutedEventArgs e)
         {
+            if (HasUnsavedChanges())
+            {
+                bool discard = await ConfirmDialog.ShowAsync(
+                    this,
+                    "Discard your changes?",
+                    "You changed settings but did not save them. Closing now throws those changes away.",
+                    "Discard Changes",
+                    "Keep Editing",
+                    true).ConfigureAwait(true);
+
+                if (!discard) return;
+            }
+
+            _savedAndClosing = true;
             Close();
+        }
+
+        private async void OnSettingsClosing(object sender, WindowClosingEventArgs e)
+        {
+            if (_savedAndClosing || !HasUnsavedChanges()) return;
+
+            e.Cancel = true;
+            bool discard = await ConfirmDialog.ShowAsync(
+                this,
+                "Discard your changes?",
+                "You changed settings but did not save them. Closing now throws those changes away.",
+                "Discard Changes",
+                "Keep Editing",
+                true).ConfigureAwait(true);
+
+            if (!discard) return;
+
+            _savedAndClosing = true;
+            Close();
+        }
+
+        private static bool SafeHasLanguages(IOcrProvider provider)
+        {
+            try
+            {
+                return provider != null && provider.HasRequiredLanguages();
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private async Task UpdateAdminButtonStateAsync()
         {
             var btn = this.FindControl<Button>("BtnToggleAdmin");
-            // ISSUE_017: surface the current on/off state in the dedicated status label.
             var stateLabel = this.FindControl<TextBlock>("AdminStateLabel");
             bool isAdmin = await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true);
 
@@ -315,8 +427,10 @@ namespace snapvox.Forms
             await UpdateAdminButtonStateAsync().ConfigureAwait(true);
         }
 
-        private void OnSaveClick(object sender, RoutedEventArgs e)
+        private async void OnSaveClick(object sender, RoutedEventArgs e)
         {
+            if (_saveInProgress) return;
+            _saveInProgress = true;
             try
             {
                 var globalKeys = new[] { "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey", "TxtLastRegionKey", "TxtClipboardKey" };
@@ -325,11 +439,12 @@ namespace snapvox.Forms
                     var tb = this.FindControl<TextBox>(name);
                     if (tb != null && tb.Tag is string tag && tag == "conflict")
                     {
-                        StartupTaskHelper.ShowForegroundMessageBox(
+                        await ConfirmDialog.ShowAlertAsync(
+                            this,
+                            "Hotkey Conflict",
                             $"The shortcut key of {tb.Text} is already taken by another app. Please release this key from the other app or select a different key and try again.",
-                            "Hotkey Conflict", 
-                            MessageBoxButtons.OK, 
-                            MessageBoxIcon.Error);
+                            "OK",
+                            true).ConfigureAwait(true);
                         return;
                     }
                 }
@@ -348,6 +463,11 @@ namespace snapvox.Forms
 
                 var chkLeavePictureAsIs = this.FindControl<CheckBox>("ChkLeavePictureAsIs");
                 if (chkLeavePictureAsIs != null) _config.LeavePictureAsIsDuringOcr = chkLeavePictureAsIs.IsChecked ?? false;
+
+#if USE_TESSERACT
+                var chkAdaptiveSave = this.FindControl<CheckBox>("ChkOcrAdaptiveThreshold");
+                if (chkAdaptiveSave != null && chkAdaptiveSave.IsVisible) _config.OcrAdaptiveThreshold = chkAdaptiveSave.IsChecked ?? false;
+#endif
 
                 var cboOverlayDuration = this.FindControl<ComboBox>("CboOverlayDuration");
                 if (cboOverlayDuration?.SelectedItem is string overlayChoice)
@@ -377,8 +497,6 @@ namespace snapvox.Forms
                 _config.PixelateHotkey1 = this.FindControl<TextBox>("TxtPixelate1Key")?.Text ?? _config.PixelateHotkey1;
                 _config.PixelateHotkey2 = this.FindControl<TextBox>("TxtPixelate2Key")?.Text ?? _config.PixelateHotkey2;
                 _config.CropHotkey = this.FindControl<TextBox>("TxtCropKey")?.Text ?? _config.CropHotkey;
-                // ISSUE_002: rotate hotkeys were loaded and reset but never persisted - the editor kept
-                // falling back to the defaults because these two assignments were missing on save.
                 _config.RotateCwHotkey = this.FindControl<TextBox>("TxtRotateCwKey")?.Text ?? _config.RotateCwHotkey;
                 _config.RotateCcwHotkey = this.FindControl<TextBox>("TxtRotateCcwKey")?.Text ?? _config.RotateCcwHotkey;
                 _config.DuplicateObjectHotkey = this.FindControl<TextBox>("TxtDuplicateObjectKey")?.Text ?? _config.DuplicateObjectHotkey;
@@ -405,12 +523,18 @@ namespace snapvox.Forms
                     HotkeyManager.Start();
                 }
                 
+                _loadedFingerprint = BuildFingerprint();
+                _savedAndClosing = true;
                 OverlayHelper.ShowNotification("Settings Saved Successfully", this);
                 Close();
             }
             catch (System.Exception ex)
             {
-                StartupTaskHelper.ShowForegroundMessageBox($"Error saving settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                await ConfirmDialog.ShowAlertAsync(this, "Error", $"Error saving settings: {ex.Message}", "OK", true).ConfigureAwait(true);
+            }
+            finally
+            {
+                _saveInProgress = false;
             }
         }
     }

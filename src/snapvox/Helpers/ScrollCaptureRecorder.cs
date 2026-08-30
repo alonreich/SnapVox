@@ -38,8 +38,6 @@ namespace snapvox.helpers
 
         public int AcceptedFrames => _stitcher.AcceptedFrames;
 
-        public bool TrackingFailed => _trackingFailed;
-
         public void Start()
         {
             _producer = Task.Run(ProduceAsync);
@@ -82,11 +80,6 @@ namespace snapvox.helpers
                     Image<Bgra32> frame = NativeCapture.CaptureRegion(_target, false);
                     if (frame != null)
                     {
-                        // ISSUE_025 (scroll capture distortion): frames grabbed mid
-                        // smooth-scroll animation are half-rendered intermediate states, and
-                        // stitching them duplicated/skewed rows. Re-capture after a short
-                        // settle gap and only feed frames whose content has stopped moving
-                        // into the stitcher.
                         await Task.Delay(35, _cts.Token).ConfigureAwait(false);
                         using Image<Bgra32> confirm = NativeCapture.CaptureRegion(_target, false);
                         if (confirm != null && !IsFrameSettled(frame, confirm))
@@ -124,8 +117,6 @@ namespace snapvox.helpers
             }
         }
 
-        // ISSUE_025: two captures taken ~35ms apart must be virtually identical before the
-        // first one is considered a settled (fully rendered) frame worth stitching.
         private static bool IsFrameSettled(Image<Bgra32> first, Image<Bgra32> second)
         {
             if (first.Width != second.Width || first.Height != second.Height) return false;
@@ -183,27 +174,8 @@ namespace snapvox.helpers
 
         private async Task WaitForTasksAsync()
         {
-            try
-            {
-                if (_producer != null)
-                {
-                    await _producer.ConfigureAwait(false);
-                }
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                if (_consumer != null)
-                {
-                    await _consumer.ConfigureAwait(false);
-                }
-            }
-            catch
-            {
-            }
+            try { if (_producer != null) await _producer.ConfigureAwait(false); } catch { }
+            try { if (_consumer != null) await _consumer.ConfigureAwait(false); } catch { }
         }
     }
 
@@ -218,18 +190,13 @@ namespace snapvox.helpers
     {
         private static readonly ILog Log = LogHelper.GetLogger(typeof(ScrollFrameStitcher));
         private const int MinMovementPixels = 12;
-        // ISSUE_025 (scroll capture distortion): the coarse gate used to accept almost any
-        // match (50 mean-abs-diff on sparse samples), so badly misaligned frames were still
-        // stitched. Tightened here, and the full-resolution refinement below enforces the
-        // real per-pixel alignment quality.
         private const double MaxAverageDiff = 30.0;
         private const double MaxRefinedDiff = 16.0;
         private const int BandHeightPixels = 257;
         private const long MaxCompositePixels = 180L * 1024L * 1024L;
+
         private readonly List<ScrollSegment> _segments = new List<ScrollSegment>();
         private SampleFrame _previousSample;
-        // ISSUE_025: full-resolution grayscale band of the last accepted frame, used to
-        // refine the coarse (sample-grid-quantized) motion estimate to exact pixels.
         private byte[] _previousBand;
         private int _bandWidth;
         private int _bandHeight;
@@ -239,48 +206,46 @@ namespace snapvox.helpers
         private int _frameHeight;
         private bool _disposed;
 
+        private Image<Bgra32> _firstFrame;
+        private Image<Bgra32> _lastFrame;
+        private bool _viewportDetected;
+        private Rectangle _viewport;
+
         public int AcceptedFrames { get; private set; }
 
         public ScrollFrameStatus AddFrame(Image<Bgra32> frame)
         {
-            if (frame == null)
-            {
-                return ScrollFrameStatus.Rejected;
-            }
+            if (frame == null) return ScrollFrameStatus.Rejected;
 
             try
             {
-                if (_segments.Count == 0)
+                if (AcceptedFrames == 0)
                 {
                     _frameWidth = frame.Width;
                     _frameHeight = frame.Height;
-                    _previousSample = SampleFrame.Create(frame);
-                    _previousBand = BuildBand(frame);
-                    _segments.Add(new ScrollSegment(frame.Clone(), 0, 0));
+                    _firstFrame = frame.Clone(x => { });
+                    _lastFrame = frame.Clone(x => { });
+                    _previousSample = SampleFrame.Create(frame, new Rectangle(0, 0, frame.Width, frame.Height));
+                    _previousBand = BuildBand(frame, new Rectangle(0, 0, frame.Width, frame.Height));
                     AcceptedFrames = 1;
                     return ScrollFrameStatus.Accepted;
                 }
 
-                if (frame.Width != _frameWidth || frame.Height != _frameHeight)
-                {
-                    return ScrollFrameStatus.Rejected;
-                }
+                if (frame.Width != _frameWidth || frame.Height != _frameHeight) return ScrollFrameStatus.Rejected;
 
-                SampleFrame currentSample = SampleFrame.Create(frame);
+                Rectangle safeSearchArea = _viewportDetected ? _viewport : new Rectangle(0, 0, _frameWidth, _frameHeight);
+                SampleFrame currentSample = SampleFrame.Create(frame, safeSearchArea);
                 MovementEstimate estimate = EstimateMovement(_previousSample, currentSample);
+
                 if (!estimate.IsReliable)
                 {
                     currentSample.Dispose();
                     return ScrollFrameStatus.Rejected;
                 }
 
-                // ISSUE_025: the coarse estimate lives on the downsampled grid, so its deltas
-                // are quantized to whole sample-steps (~4-11 real pixels). Real scroll deltas
-                // are rarely exact multiples of that, and the accumulated error showed up as
-                // smeared/wavy rows in the stitched image. Refine against a full-resolution
-                // band so every accepted frame locks to the exact pixel row.
-                byte[] currentBand = BuildBand(frame);
+                byte[] currentBand = BuildBand(frame, safeSearchArea);
                 estimate = RefineMovement(_previousBand, currentBand, estimate);
+                
                 if (!estimate.IsReliable)
                 {
                     currentSample.Dispose();
@@ -293,12 +258,35 @@ namespace snapvox.helpers
                     return ScrollFrameStatus.Duplicate;
                 }
 
+                if (!_viewportDetected)
+                {
+                    _viewport = DetectViewport(_firstFrame, frame);
+                    _viewportDetected = true;
+                    _segments.Clear();
+                    _segments.Add(new ScrollSegment(_firstFrame.Clone(ctx => ctx.Crop(_viewport)), 0, 0));
+                    
+                    currentSample.Dispose();
+                    currentSample = SampleFrame.Create(frame, _viewport);
+                    currentBand = BuildBand(frame, _viewport);
+                    
+                    _previousSample.Dispose();
+                    _previousSample = SampleFrame.Create(_firstFrame, _viewport);
+                    _previousBand = BuildBand(_firstFrame, _viewport);
+                    estimate = EstimateMovement(_previousSample, currentSample);
+                    estimate = RefineMovement(_previousBand, currentBand, estimate);
+                }
+
                 _offsetX += estimate.DeltaX;
                 _offsetY += estimate.DeltaY;
                 AddVisibleStrips(frame, _offsetX, _offsetY, estimate.DeltaX, estimate.DeltaY);
+
                 _previousSample.Dispose();
                 _previousSample = currentSample;
                 _previousBand = currentBand;
+
+                _lastFrame?.Dispose();
+                _lastFrame = frame.Clone(x => { });
+
                 AcceptedFrames++;
                 return ScrollFrameStatus.Accepted;
             }
@@ -308,22 +296,60 @@ namespace snapvox.helpers
             }
         }
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GetPhysicallyInstalledSystemMemory(out long TotalMemoryInKilobytes);
+        private Rectangle DetectViewport(Image<Bgra32> a, Image<Bgra32> b)
+        {
+            int top = 0, bottom = a.Height - 1;
+            int left = 0, right = a.Width - 1;
+
+            bool RowMatch(int y)
+            {
+                long diff = 0;
+                a.ProcessPixelRows(b, (aa, bb) =>
+                {
+                    var spanA = aa.GetRowSpan(y);
+                    var spanB = bb.GetRowSpan(y);
+                    for (int x = 0; x < a.Width; x += 4)
+                        diff += Math.Abs(spanA[x].R - spanB[x].R);
+                });
+                return diff < a.Width * 2;
+            }
+
+            bool ColMatch(int x, int t, int bot)
+            {
+                long diff = 0;
+                a.ProcessPixelRows(b, (aa, bb) =>
+                {
+                    for (int y = t; y <= bot; y += 4)
+                    {
+                        diff += Math.Abs(aa.GetRowSpan(y)[x].R - bb.GetRowSpan(y)[x].R);
+                    }
+                });
+                return diff < (bot - t) * 2;
+            }
+
+            for (int y = 0; y < a.Height; y++) if (!RowMatch(y)) { top = y; break; }
+            for (int y = a.Height - 1; y > top; y--) if (!RowMatch(y)) { bottom = y; break; }
+            for (int x = 0; x < a.Width; x++) if (!ColMatch(x, top, bottom)) { left = x; break; }
+            for (int x = a.Width - 1; x > left; x--) if (!ColMatch(x, top, bottom)) { right = x; break; }
+
+            int safeTop = a.Height / 5;
+            int safeBottom = a.Height - a.Height / 10 - 1;
+            int safeLeft = a.Width / 10;
+            int safeRight = a.Width - a.Width / 10 - 1;
+
+            if (bottom - top < a.Height / 3) { top = safeTop; bottom = safeBottom; }
+            if (right - left < a.Width / 3) { left = safeLeft; right = safeRight; }
+
+            return new Rectangle(left, top, right - left + 1, bottom - top + 1);
+        }
 
         public Image<Bgra32> BuildImage(IProgress<double> progress = null)
         {
-            if (_segments.Count < 2)
-            {
-                return null;
-            }
+            if (AcceptedFrames < 2 || !_viewportDetected) return null;
 
-            int minX = int.MaxValue;
-            int minY = int.MaxValue;
-            int maxX = int.MinValue;
-            int maxY = int.MinValue;
-            foreach (ScrollSegment segment in _segments)
+            int minX = int.MaxValue, minY = int.MaxValue;
+            int maxX = int.MinValue, maxY = int.MinValue;
+            foreach (var segment in _segments)
             {
                 minX = Math.Min(minX, segment.X);
                 minY = Math.Min(minY, segment.Y);
@@ -331,51 +357,55 @@ namespace snapvox.helpers
                 maxY = Math.Max(maxY, segment.Y + segment.Image.Height);
             }
 
-            int width = maxX - minX;
-            int height = maxY - minY;
-            long totalPixels = (long)width * height;
-            
-            if (width <= 0 || height <= 0 || totalPixels > MaxCompositePixels)
-            {
-                Log.Error($"Scroll capture exceeds memory limits: {width}x{height} ({totalPixels} pixels)");
-                return null;
-            }
+            int vpW = maxX - minX;
+            int vpH = maxY - minY;
+            int width = _frameWidth;
+            int height = vpH + _viewport.Top + (_frameHeight - _viewport.Bottom);
 
-            if (GetPhysicallyInstalledSystemMemory(out long ramKb))
-            {
-                long availableBytes = ramKb * 1024 / 4; // Safety margin
-                if (totalPixels * 4 > availableBytes)
-                {
-                    Log.Error("Insufficient physical memory to composite elongated image.");
-                    return null;
-                }
-            }
+            long totalPixels = (long)width * height;
+            if (width <= 0 || height <= 0 || totalPixels > MaxCompositePixels) return null;
 
             var result = new Image<Bgra32>(width, height);
-            int count = 0;
-            foreach (ScrollSegment segment in _segments)
+
+            var header = _firstFrame.Clone(c => c.Crop(new Rectangle(0, 0, _frameWidth, _viewport.Top)));
+            var footer = _lastFrame.Clone(c => c.Crop(new Rectangle(0, _viewport.Bottom, _frameWidth, _frameHeight - _viewport.Bottom)));
+            var leftBar = _firstFrame.Clone(c => c.Crop(new Rectangle(0, _viewport.Top, _viewport.Left, _viewport.Height)));
+            var rightBar = _firstFrame.Clone(c => c.Crop(new Rectangle(_viewport.Right, _viewport.Top, _frameWidth - _viewport.Right, _viewport.Height)));
+
+            result.Mutate(ctx => 
             {
-                result.Mutate(ctx => ctx.DrawImage(segment.Image, new Point(segment.X - minX, segment.Y - minY), 1f));
+                ctx.DrawImage(header, new Point(0, 0), 1f);
+                ctx.DrawImage(footer, new Point(0, height - footer.Height), 1f);
+            });
+
+            int currentY = _viewport.Top;
+            while (currentY < height - footer.Height)
+            {
+                result.Mutate(ctx => ctx.DrawImage(leftBar, new Point(0, currentY), 1f));
+                result.Mutate(ctx => ctx.DrawImage(rightBar, new Point(_viewport.Right, currentY), 1f));
+                currentY += _viewport.Height;
+            }
+
+            int count = 0;
+            foreach (var segment in _segments)
+            {
+                result.Mutate(ctx => ctx.DrawImage(segment.Image, new Point(segment.X - minX + _viewport.Left, segment.Y - minY + _viewport.Top), 1f));
                 count++;
                 progress?.Report((double)count / _segments.Count);
             }
+
+            header.Dispose(); footer.Dispose(); leftBar.Dispose(); rightBar.Dispose();
             return result;
         }
 
         public void Dispose()
         {
-            if (_disposed)
-            {
-                return;
-            }
-
+            if (_disposed) return;
             _disposed = true;
             _previousSample?.Dispose();
-            foreach (ScrollSegment segment in _segments)
-            {
-                segment.Image.Dispose();
-            }
-
+            _firstFrame?.Dispose();
+            _lastFrame?.Dispose();
+            foreach (var segment in _segments) segment.Image.Dispose();
             _segments.Clear();
         }
 
@@ -386,34 +416,28 @@ namespace snapvox.helpers
 
             if (absY >= absX && absY >= MinMovementPixels)
             {
-                int h = Math.Min(absY, frame.Height);
+                int h = Math.Min(absY, _viewport.Height);
                 Rectangle crop = deltaY > 0
-                    ? new Rectangle(0, frame.Height - h, frame.Width, h)
-                    : new Rectangle(0, 0, frame.Width, h);
-                int y = deltaY > 0 ? offsetY + frame.Height - h : offsetY;
+                    ? new Rectangle(_viewport.X, _viewport.Bottom - h, _viewport.Width, h)
+                    : new Rectangle(_viewport.X, _viewport.Top, _viewport.Width, h);
+                int y = deltaY > 0 ? offsetY + _viewport.Height - h : offsetY;
                 _segments.Add(new ScrollSegment(frame.Clone(ctx => ctx.Crop(crop)), offsetX, y));
             }
             else if (absX > absY && absX >= MinMovementPixels)
             {
-                int w = Math.Min(absX, frame.Width);
+                int w = Math.Min(absX, _viewport.Width);
                 Rectangle crop = deltaX > 0
-                    ? new Rectangle(frame.Width - w, 0, w, frame.Height)
-                    : new Rectangle(0, 0, w, frame.Height);
-                int x = deltaX > 0 ? offsetX + frame.Width - w : offsetX;
+                    ? new Rectangle(_viewport.Right - w, _viewport.Top, w, _viewport.Height)
+                    : new Rectangle(_viewport.X, _viewport.Top, w, _viewport.Height);
+                int x = deltaX > 0 ? offsetX + _viewport.Width - w : offsetX;
                 _segments.Add(new ScrollSegment(frame.Clone(ctx => ctx.Crop(crop)), x, offsetY));
-            }
-            else
-            {
-                _segments.Add(new ScrollSegment(frame.Clone(), offsetX, offsetY));
             }
         }
 
         private static MovementEstimate EstimateMovement(SampleFrame previous, SampleFrame current)
         {
             if (previous == null || current == null || previous.Width != current.Width || previous.Height != current.Height)
-            {
                 return MovementEstimate.Failed;
-            }
 
             int width = previous.Width;
             int height = previous.Height;
@@ -421,31 +445,19 @@ namespace snapvox.helpers
             int maxDy = Math.Max(1, (int)(height * 0.85));
             int minOverlap = Math.Max(32, (width * height) / 10);
             double bestScore = double.MaxValue;
-            int bestDx = 0;
-            int bestDy = 0;
+            int bestDx = 0, bestDy = 0;
 
             for (int dy = -maxDy; dy <= maxDy; dy++)
             {
                 for (int dx = -maxDx; dx <= maxDx; dx++)
                 {
-                    int xStart = Math.Max(0, -dx);
-                    int yStart = Math.Max(0, -dy);
-                    int xEnd = Math.Min(width, width - dx);
-                    int yEnd = Math.Min(height, height - dy);
-                    int overlapW = xEnd - xStart;
-                    int overlapH = yEnd - yStart;
-                    if (overlapW <= 0 || overlapH <= 0 || overlapW * overlapH < minOverlap)
-                    {
-                        continue;
-                    }
+                    int xStart = Math.Max(0, -dx), yStart = Math.Max(0, -dy);
+                    int xEnd = Math.Min(width, width - dx), yEnd = Math.Min(height, height - dy);
+                    int overlapW = xEnd - xStart, overlapH = yEnd - yStart;
+                    if (overlapW <= 0 || overlapH <= 0 || overlapW * overlapH < minOverlap) continue;
 
                     double score = AverageDiff(previous, current, dx, dy, xStart, yStart, xEnd, yEnd);
-                    if (score < bestScore)
-                    {
-                        bestScore = score;
-                        bestDx = dx;
-                        bestDy = dy;
-                    }
+                    if (score < bestScore) { bestScore = score; bestDx = dx; bestDy = dy; }
                 }
             }
 
@@ -456,8 +468,7 @@ namespace snapvox.helpers
 
         private static double AverageDiff(SampleFrame previous, SampleFrame current, int dx, int dy, int xStart, int yStart, int xEnd, int yEnd)
         {
-            long diff = 0;
-            int count = 0;
+            long diff = 0; int count = 0;
             int stride = Math.Max(1, Math.Min(xEnd - xStart, yEnd - yStart) / 40);
             for (int y = yStart; y < yEnd; y += stride)
             {
@@ -469,18 +480,15 @@ namespace snapvox.helpers
                     count++;
                 }
             }
-
             return count == 0 ? double.MaxValue : (double)diff / count;
         }
 
-        // ISSUE_025: extracts a full-resolution grayscale band (centered rows) from a frame
-        // for exact per-pixel motion refinement.
-        private byte[] BuildBand(Image<Bgra32> frame)
+        private byte[] BuildBand(Image<Bgra32> frame, Rectangle area)
         {
-            _bandWidth = frame.Width;
-            _bandHeight = Math.Min(BandHeightPixels, frame.Height);
+            _bandWidth = area.Width;
+            _bandHeight = Math.Min(BandHeightPixels, area.Height);
             byte[] band = new byte[_bandWidth * _bandHeight];
-            int top = (frame.Height - _bandHeight) / 2;
+            int top = area.Top + (area.Height - _bandHeight) / 2;
             frame.ProcessPixelRows(accessor =>
             {
                 for (int y = 0; y < _bandHeight; y++)
@@ -489,7 +497,7 @@ namespace snapvox.helpers
                     int target = y * _bandWidth;
                     for (int x = 0; x < _bandWidth; x++)
                     {
-                        Bgra32 px = row[x];
+                        Bgra32 px = row[area.Left + x];
                         band[target + x] = (byte)((px.R * 30 + px.G * 59 + px.B * 11) / 100);
                     }
                 }
@@ -497,22 +505,15 @@ namespace snapvox.helpers
             return band;
         }
 
-        // ISSUE_025: local full-resolution search around the coarse (quantized) estimate.
-        // Uses exactly the same alignment convention as the coarse AverageDiff: previous
-        // pixel (x + dx, y + dy) matching current pixel (x, y).
         private MovementEstimate RefineMovement(byte[] previous, byte[] current, MovementEstimate coarse)
         {
             if (previous == null || current == null || previous.Length != current.Length || _bandWidth <= 0 || _bandHeight <= 0)
-            {
                 return coarse;
-            }
 
-            // Cover at least one full sample-step of quantization error in each direction.
             int yRadius = Math.Min(24, Math.Max(8, _bandWidth / 160 + 4));
             int xRadius = 4;
             const int stride = 3;
-            int bestDx = coarse.DeltaX;
-            int bestDy = coarse.DeltaY;
+            int bestDx = coarse.DeltaX, bestDy = coarse.DeltaY;
             double bestScore = double.MaxValue;
 
             for (int dy = coarse.DeltaY - yRadius; dy <= coarse.DeltaY + yRadius; dy++)
@@ -520,12 +521,7 @@ namespace snapvox.helpers
                 for (int dx = coarse.DeltaX - xRadius; dx <= coarse.DeltaX + xRadius; dx++)
                 {
                     double score = BandDiff(previous, current, dx, dy, stride);
-                    if (score < bestScore)
-                    {
-                        bestScore = score;
-                        bestDx = dx;
-                        bestDy = dy;
-                    }
+                    if (score < bestScore) { bestScore = score; bestDx = dx; bestDy = dy; }
                 }
             }
 
@@ -534,14 +530,11 @@ namespace snapvox.helpers
 
         private double BandDiff(byte[] previous, byte[] current, int dx, int dy, int stride)
         {
-            int xStart = Math.Max(0, -dx);
-            int yStart = Math.Max(0, -dy);
-            int xEnd = Math.Min(_bandWidth, _bandWidth - dx);
-            int yEnd = Math.Min(_bandHeight, _bandHeight - dy);
+            int xStart = Math.Max(0, -dx), yStart = Math.Max(0, -dy);
+            int xEnd = Math.Min(_bandWidth, _bandWidth - dx), yEnd = Math.Min(_bandHeight, _bandHeight - dy);
             if (xEnd - xStart < 8 || yEnd - yStart < 8) return double.MaxValue;
 
-            long diff = 0;
-            long count = 0;
+            long diff = 0; int count = 0;
             for (int y = yStart; y < yEnd; y += stride)
             {
                 int previousRow = (y + dy) * _bandWidth;
@@ -552,20 +545,13 @@ namespace snapvox.helpers
                     count++;
                 }
             }
-
             return count == 0 ? double.MaxValue : (double)diff / count;
         }
     }
 
     internal sealed class ScrollSegment
     {
-        public ScrollSegment(Image<Bgra32> image, int x, int y)
-        {
-            Image = image;
-            X = x;
-            Y = y;
-        }
-
+        public ScrollSegment(Image<Bgra32> image, int x, int y) { Image = image; X = x; Y = y; }
         public Image<Bgra32> Image { get; }
         public int X { get; }
         public int Y { get; }
@@ -573,13 +559,7 @@ namespace snapvox.helpers
 
     internal readonly struct MovementEstimate
     {
-        public MovementEstimate(int deltaX, int deltaY, bool reliable)
-        {
-            DeltaX = deltaX;
-            DeltaY = deltaY;
-            IsReliable = reliable;
-        }
-
+        public MovementEstimate(int deltaX, int deltaY, bool reliable) { DeltaX = deltaX; DeltaY = deltaY; IsReliable = reliable; }
         public int DeltaX { get; }
         public int DeltaY { get; }
         public bool IsReliable { get; }
@@ -588,26 +568,27 @@ namespace snapvox.helpers
 
     internal sealed class SampleFrame : IDisposable
     {
-        private SampleFrame(byte[] gray, int width, int height, int step)
-        {
-            Gray = gray;
-            Width = width;
-            Height = height;
-            Step = step;
-        }
-
+        private SampleFrame(byte[] gray, int width, int height, int step) { Gray = gray; Width = width; Height = height; Step = step; }
         public byte[] Gray { get; private set; }
         public int Width { get; }
         public int Height { get; }
         public int Step { get; }
 
-        public static SampleFrame Create(Image<Bgra32> image)
+        public static SampleFrame Create(Image<Bgra32> image, Rectangle area)
         {
-            int marginX = Math.Max(0, image.Width / 10);
-            int top = Math.Max(0, image.Height / 5);
-            int bottomMargin = Math.Max(0, image.Height / 10);
-            int contentWidth = Math.Max(1, image.Width - marginX * 2);
-            int contentHeight = Math.Max(1, image.Height - top - bottomMargin);
+            int contentWidth = area.Width > 0 ? area.Width : image.Width;
+            int contentHeight = area.Height > 0 ? area.Height : image.Height;
+            
+            if (area.Width == 0)
+            {
+                int marginX = Math.Max(0, image.Width / 10);
+                int top = Math.Max(0, image.Height / 5);
+                int bottomMargin = Math.Max(0, image.Height / 10);
+                area = new Rectangle(marginX, top, Math.Max(1, image.Width - marginX * 2), Math.Max(1, image.Height - top - bottomMargin));
+                contentWidth = area.Width;
+                contentHeight = area.Height;
+            }
+
             int step = Math.Max(1, Math.Max(contentWidth / 180, contentHeight / 140));
             int sampleWidth = Math.Max(1, contentWidth / step);
             int sampleHeight = Math.Max(1, contentHeight / step);
@@ -617,12 +598,12 @@ namespace snapvox.helpers
             {
                 for (int sy = 0; sy < sampleHeight; sy++)
                 {
-                    int sourceY = Math.Min(image.Height - 1, top + sy * step);
+                    int sourceY = Math.Min(image.Height - 1, area.Top + sy * step);
                     Span<Bgra32> row = accessor.GetRowSpan(sourceY);
                     int targetRow = sy * sampleWidth;
                     for (int sx = 0; sx < sampleWidth; sx++)
                     {
-                        int sourceX = Math.Min(image.Width - 1, marginX + sx * step);
+                        int sourceX = Math.Min(image.Width - 1, area.Left + sx * step);
                         Bgra32 px = row[sourceX];
                         gray[targetRow + sx] = (byte)((px.R * 30 + px.G * 59 + px.B * 11) / 100);
                     }
@@ -632,9 +613,6 @@ namespace snapvox.helpers
             return new SampleFrame(gray, sampleWidth, sampleHeight, step);
         }
 
-        public void Dispose()
-        {
-            Gray = null;
-        }
+        public void Dispose() { Gray = null; }
     }
 }

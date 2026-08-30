@@ -1,7 +1,5 @@
 using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.Collections.Generic;
 using System.Linq;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -38,6 +38,7 @@ namespace snapvox.helpers
 
             if (cancellationToken.IsCancellationRequested)
             {
+                if (isAlreadyOwned) image.Dispose();
                 return Task.FromCanceled<snapvox.foundation.interfaces.Ocr.OcrInformation>(cancellationToken);
             }
 
@@ -68,7 +69,7 @@ namespace snapvox.helpers
                 while (_channel.Reader.TryRead(out var pending))
                 {
                     pending.Completion.TrySetCanceled(cancellationToken);
-                    pending.Image.Dispose();
+                    pending.ReleaseImage();
                 }
 
                 if (!_channel.Writer.TryWrite(item))
@@ -89,16 +90,21 @@ namespace snapvox.helpers
         private async Task<snapvox.foundation.interfaces.Ocr.OcrInformation> EnqueueSlowAsync(WorkItem item, CancellationToken cancellationToken)
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdownCts.Token);
+            bool handedToWorker = false;
             try
             {
                 await _channel.Writer.WriteAsync(item, linked.Token).ConfigureAwait(false);
+                handedToWorker = true;
                 ExecutionTrace.SetQueueDepth("Ocr", 1);
                 return await item.Completion.Task.ConfigureAwait(false);
             }
             catch
             {
-                item.Completion.TrySetCanceled(linked.Token);
-                item.Image.Dispose();
+                if (!handedToWorker)
+                {
+                    item.Completion.TrySetCanceled(linked.Token);
+                    item.ReleaseImage();
+                }
                 throw;
             }
         }
@@ -113,7 +119,7 @@ namespace snapvox.helpers
                     if (item.CancellationToken.IsCancellationRequested)
                     {
                         item.Completion.TrySetCanceled(item.CancellationToken);
-                        item.Image.Dispose();
+                        item.ReleaseImage();
                         continue;
                     }
 
@@ -133,7 +139,7 @@ namespace snapvox.helpers
                     }
                     finally
                     {
-                        item.Image.Dispose();
+                        item.ReleaseImage();
                     }
                 }
             }
@@ -151,24 +157,29 @@ namespace snapvox.helpers
             while (_channel.Reader.TryRead(out var item))
             {
                 item.Completion.TrySetCanceled(_shutdownCts.Token);
-                item.Image.Dispose();
+                item.ReleaseImage();
             }
 
             ExecutionTrace.SetQueueDepth("Ocr", 0);
         }
 
-        private void DropPendingItems(CancellationToken cancellationToken)
-        {
-            while (_channel.Reader.TryRead(out var item))
-            {
-                item.Completion.TrySetCanceled(cancellationToken);
-                item.Image.Dispose();
-            }
-        }
-
         public void Dispose()
         {
-            _ = DisposeAsync().AsTask();
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            BeginShutdown();
+            _ = _worker.ContinueWith(completed =>
+            {
+                if (completed.Exception != null)
+                {
+                    ExecutionTrace.LogException("OcrRequestQueue.Shutdown", completed.Exception.GetBaseException());
+                }
+
+                _shutdownCts.Dispose();
+            }, TaskScheduler.Default);
         }
 
         public async ValueTask DisposeAsync()
@@ -178,11 +189,14 @@ namespace snapvox.helpers
                 return;
             }
 
-            _shutdownCts.Cancel();
-            _channel.Writer.TryComplete();
+            BeginShutdown();
             try
             {
                 await _worker.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ExecutionTrace.LogException("OcrRequestQueue.Shutdown", ex);
             }
             finally
             {
@@ -190,18 +204,38 @@ namespace snapvox.helpers
             }
         }
 
+        private void BeginShutdown()
+        {
+            try
+            {
+                _shutdownCts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
+            _channel.Writer.TryComplete();
+        }
+
         private sealed class WorkItem
         {
+            private Image _image;
+
             public WorkItem(Image image, TaskCompletionSource<snapvox.foundation.interfaces.Ocr.OcrInformation> completion, CancellationToken cancellationToken)
             {
-                Image = image;
+                _image = image;
                 Completion = completion;
                 CancellationToken = cancellationToken;
             }
 
-            public Image Image { get; }
+            public Image Image => Volatile.Read(ref _image);
             public TaskCompletionSource<snapvox.foundation.interfaces.Ocr.OcrInformation> Completion { get; }
             public CancellationToken CancellationToken { get; }
+
+            public void ReleaseImage()
+            {
+                Interlocked.Exchange(ref _image, null)?.Dispose();
+            }
         }
     }
 }

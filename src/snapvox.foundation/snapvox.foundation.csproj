@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
@@ -19,9 +19,5 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="log4net-embedded.xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="Languages\language-en-US.xml" />
-    <EmbeddedResource Include="Languages\help-en-US.html" />
   </ItemGroup>
 </Project>

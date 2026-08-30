@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -46,9 +46,9 @@ namespace snapvox.editor.forms
         private static readonly Avalonia.Input.Cursor ArrowCursor = new(StandardCursorType.Arrow);
         private static readonly Avalonia.Input.Cursor CrossCursor = new(StandardCursorType.Cross);
         private static readonly Avalonia.Input.Cursor SizeAllCursor = new(StandardCursorType.SizeAll);
-        // FEATURE (hand pan): cursor shown while actively dragging the picture around with
-        // the hand (no-tool mode) or with the middle mouse button. Windows has no standard
-        // closed-hand cursor, so the 4-way "move" arrow acts as the "holding hand" state.
+        
+        
+        
         private static readonly Avalonia.Input.Cursor PanHeldCursor = new(StandardCursorType.SizeAll);
         private static readonly Avalonia.Input.Cursor TopLeftCursor = new(StandardCursorType.TopLeftCorner);
         private static readonly Avalonia.Input.Cursor TopRightCursor = new(StandardCursorType.TopRightCorner);
@@ -62,6 +62,7 @@ namespace snapvox.editor.forms
         private static long _highlightCounter = 0;
 
         private ImageSharpImage _image;
+        private readonly object _imageLock = new object();
         private Bitmap _displayBitmap;
         private static int _cascadeOffset = 0;
         private static readonly log4net.ILog Log = LogHelper.GetLogger(typeof(ImageEditorWindow));
@@ -91,9 +92,9 @@ namespace snapvox.editor.forms
         private readonly LinkedList<EditorSnapshot> _undoStack = new LinkedList<EditorSnapshot>();
         private readonly LinkedList<EditorSnapshot> _redoStack = new LinkedList<EditorSnapshot>();
         private const int MaxStackSize = 40;
-        // ISSUE_001: hard memory ceiling shared by the undo AND redo history. Each snapshot stores a
-        // full-resolution clone (about width * height * 4 bytes), so a count-only cap of 40 + 40
-        // entries can retain gigabytes of memory on high-resolution captures.
+        
+        
+        
         private const long MaxUndoHistoryBytes = 384L * 1024 * 1024;
         private Avalonia.Controls.Shapes.Polyline _activePolyline;
         private double _zoomFactor = 1.0;
@@ -104,9 +105,9 @@ namespace snapvox.editor.forms
         private AvaloniaPoint _dragLastPoint;
         private double _dragUnsnappedLeft;
         private double _dragUnsnappedTop;
-        // FEATURE (magnet escape, resize edition): the raw, never-snapped bounds of the shape being
-        // resized - the resize twin of _dragUnsnappedLeft/_dragUnsnappedTop. The resize magnet
-        // computes from these instead of re-snapping its own output every frame.
+        
+        
+        
         private double _resizeUnsnappedLeft;
         private double _resizeUnsnappedTop;
         private double _resizeUnsnappedWidth;
@@ -116,7 +117,7 @@ namespace snapvox.editor.forms
         private int _resizeHandleIndex = -1;
         private bool _dragUndoCaptured;
         private bool _resizeUndoCaptured;
-        private bool _isBusy;
+        private int _isBusy;
         private AvaloniaControl _previewControl;
         private bool _showFirstRunHints;
 
@@ -135,8 +136,19 @@ namespace snapvox.editor.forms
 
         private sealed class EditorSnapshot
         {
-            public ImageSharpImage Image { get; init; }
+            private ImageSharpImage _image;
+
+            public ImageSharpImage Image
+            {
+                get => Volatile.Read(ref _image);
+                init => _image = value;
+            }
+
             public List<AvaloniaControl> Annotations { get; init; } = new List<AvaloniaControl>();
+
+            public ImageSharpImage TakeImage() => Interlocked.Exchange(ref _image, null);
+
+            public void ReleaseImage() => Interlocked.Exchange(ref _image, null)?.Dispose();
         }
 
         private Slider _inlinePixelateSlider;
@@ -167,30 +179,29 @@ namespace snapvox.editor.forms
         private const double VectorHitTolerance = 12.0;
         private const double VectorSnapThreshold = 12.0;
         private const double VectorSnapGap = 12.0;
-        private const double PastedSnapThreshold = 3.0;
         private const int SnapVoxFrameThickness = 3;
 
-        // FEATURE (tool ghosts): a translucent preview of the active tool's item floats under the
-        // pointer instead of a bare crosshair (the selected emoji travels with the mouse, a pencil
-        // is shown for the pen, ...). Esc / right-click exits the tool and drops the ghost.
+        
+        
+        
         private static readonly Avalonia.Input.Cursor NoneCursor = new(StandardCursorType.None);
         private Canvas _toolGhostLayer;
         private AvaloniaControl _toolGhost;
         private bool _ghostSettingsDirty = true;
         private readonly ScaleTransform _ghostIconScale = new ScaleTransform(1, 1);
 
-        // FEATURE (shape snap guides): dashed guide lines stretching between the shape being
-        // drawn/dragged/placed and the shape it magnetically aligns with, shown before release.
+        
+        
         private Canvas _snapGuideLayer;
         private readonly List<Avalonia.Controls.Shapes.Line> _snapGuideLines = new List<Avalonia.Controls.Shapes.Line>();
         private readonly List<SnapGuideInfo> _activeSnapGuides = new List<SnapGuideInfo>();
 
 
-        // ISSUE_021 (anchor-locked rectangle/ellipse draw): per-axis direction locks set on
-        // the first movement away from the press point. Once locked, the dragged corner can
-        // never cross the anchor corner - dragging back past it only shrinks the shape to the
-        // minimum instead of flipping/reversing it. The anchor is the source of truth until
-        // the mouse button is released.
+        
+        
+        
+        
+        
         private int _rectDrawDirX;
         private int _rectDrawDirY;
 
@@ -198,7 +209,7 @@ namespace snapvox.editor.forms
 
         private readonly struct SnapGuideInfo
         {
-            public readonly bool Horizontal; // true: the line runs left-right at a fixed Y
+            public readonly bool Horizontal; 
             public readonly double Coordinate;
             public readonly double Start;
             public readonly double End;
@@ -267,13 +278,10 @@ namespace snapvox.editor.forms
 
         private static readonly string[] EmojiPalette =
         {
-            "😀","😁","😂","🤣","😉","😊","😍","😘","😜","😎","😏","😒","😔","😕","😖","😫",
-            "🥺","😢","😭","😤","😡","🤬","🤯","😳","🥵","🥶","😱","😨","😰","😥","😓","🤔",
-            "🤗","🤭","🤫","🤥","😶","😐","😑","😬","🙄","😯","😦","😧","😮","😲","🥱","😴",
-            "🤤","😪","😵","🤐","🥴","🤢","🤮","🤧","😷","🤒","🤕","🤑","🤠","😈","👿","👹",
-            "👺","🤡","💩","👻","💀","👽","👾","🤖","🎃","😺","😸","😹","😻","😼","😽","🙀",
-            "😿","😾","👍","👎","💯","🔥","⭐","📍","✅","❌","⚠️","❗","➡️","⬅️","⬆️","⬇️",
-            "💡","🔒","👀","🎯"
+            "✅","❌","⚠️","❗","➡️","⬅️","⬆️","⬇️","⭐","🔥","💯","📍","💡","🔒","👀","🎯",
+            "👍","👎","😀","😁","😂","🤣","😉","😊","😍","😘","😜","😎","😏","😒","😔","😢",
+            "😭","😡","🤯","😳","😱","🤔","🤗","🙄","😐","😬","😴","🤐","🤮","😷","🤒","💀",
+            "🤖","💩"
         };
 
         private void PopulateEmojiGrid()
@@ -323,7 +331,7 @@ namespace snapvox.editor.forms
             };
             _canvas.Children.Add(_vectorInfoPopup);
 
-            // FEATURE (tool ghosts + shape snap guides): two hit-test transparent overlay layers.
+            
             _toolGhostLayer = new Canvas { IsHitTestVisible = false, IsVisible = false, ZIndex = 10004 };
             _canvas.Children.Add(_toolGhostLayer);
             _snapGuideLayer = new Canvas { IsHitTestVisible = false, IsVisible = false, ZIndex = 9996 };
@@ -748,7 +756,7 @@ namespace snapvox.editor.forms
             catch (TaskCanceledException) { }
         }
 
-        // IDEA_005 (Scroll-Cycle): Alt+scroll cycles tools in place without moving the cursor.
+        
         private static readonly EditorTool[] ScrollCycleTools =
         {
             EditorTool.Arrow, EditorTool.Line, EditorTool.Rectangle, EditorTool.Ellipse,
@@ -758,7 +766,7 @@ namespace snapvox.editor.forms
 
         private void OnPointerWheelChanged(object sender, PointerWheelEventArgs e)
         {
-            // IDEA_005: Alt+scroll = tool cycling express lane.
+            
             if (e.KeyModifiers.HasFlag(KeyModifiers.Alt) && !e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 CycleToolInPlace(e.Delta.Y > 0);
@@ -766,18 +774,18 @@ namespace snapvox.editor.forms
                 return;
             }
 
-            // FEATURE (wheel zoom): the middle wheel ALWAYS zooms in/out, no matter which tool
-            // is active or which modifier is held (Alt+scroll tool cycling was handled above).
-            // The ScrollViewer therefore never receives plain wheel events for up/down
-            // scrolling anymore; panning stays available via middle-drag.
+            
+            
+            
+            
             {
                 var scrollViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
                 if (scrollViewer == null) return;
 
-                // PRODUCT DECISION (top-left zoom anchor): the wheel anchors the TOP-LEFT corner
-                // exactly like the toolbar buttons. Cursor-pinned zooming dug toward wherever the
-                // pointer happened to rest (usually the bottom-right of the viewport), visibly
-                // detaching the picture from the top-left corner on every step.
+                
+                
+                
+                
                 ZoomTowards(_zoomFactor + (e.Delta.Y > 0 ? 0.1 : -0.1));
 
                 ShowZoomHintDebounced();
@@ -824,20 +832,20 @@ namespace snapvox.editor.forms
 
                 var zoomText = this.FindControl<Button>("ZoomText");
                 if (zoomText != null) zoomText.Content = $"{(int)(_zoomFactor * 100)}%";
-                // Icon ghosts counter-scale with zoom so they stay a constant size on screen.
+                
                 _ghostIconScale.ScaleX = 1.0 / _zoomFactor;
                 _ghostIconScale.ScaleY = 1.0 / _zoomFactor;
             }
         }
 
-        // FEATURE (top-left anchored zoom): every zoom path - wheel, toolbar +/-, reset - anchors
-        // the TOP-LEFT corner. The content point currently sitting at the viewport's top-left
-        // stays exactly where it is: the offset is simply rescaled (offset * ratio), so zooming
-        // IN always expands the picture toward the bottom-right and zooming OUT shrinks it back
-        // toward the top-left. Combined with the ZoomContainer's Left/Top alignment and the
-        // [0, content - viewport] clamp this makes voids at the top-left structurally
-        // impossible - leftover space can only ever appear on the right/bottom sides, and only
-        // when the zoomed content is smaller than the viewport.
+        
+        
+        
+        
+        
+        
+        
+        
         private void ZoomTowards(double requestedZoom)
         {
             double oldZoom = _zoomFactor;
@@ -854,22 +862,22 @@ namespace snapvox.editor.forms
             var oldOffset = scrollViewer.Offset;
             ApplyZoom();
 
-            // ISSUE_026 (deterministic top-left zoom): the ScrollViewer validates offsets
-            // against its CURRENT extent, which is still the pre-zoom one until the next
-            // layout pass. Forcing the layout NOW makes Extent/Viewport real, so the offset
-            // below is clamped against the final extent exactly once - no stale-extent
-            // re-clamping afterwards and no in/out drift of the anchored corner.
+            
+            
+            
+            
+            
             scrollViewer.UpdateLayout();
 
-            // Top-left anchor: rescale the existing offset around the viewport's (0,0) corner.
+            
             double ratio = _zoomFactor / oldZoom;
             double desiredX = oldOffset.X * ratio;
             double desiredY = oldOffset.Y * ratio;
             ApplyTopLeftAnchoredOffset(scrollViewer, desiredX, desiredY);
 
-            // The new extent is only measured on the NEXT layout pass; the ScrollViewer may
-            // re-clamp the offset against the stale extent in between and drift the picture
-            // toward the bottom-right. Re-assert the desired offset once the new extent is real.
+            
+            
+            
             Dispatcher.UIThread.Post(
                 () => ApplyTopLeftAnchoredOffset(scrollViewer, desiredX, desiredY),
                 DispatcherPriority.Loaded);
@@ -882,9 +890,9 @@ namespace snapvox.editor.forms
             double contentWidth = _image.Width * _zoomFactor;
             double contentHeight = _image.Height * _zoomFactor;
 
-            // Once the zoomed content fits inside the viewport on an axis there is nothing left
-            // to scroll to - snap that axis to 0 so the picture hugs the top-left corner instead
-            // of floating on a phantom scroll offset.
+            
+            
+            
             double x = contentWidth <= scrollViewer.Viewport.Width + 0.5
                 ? 0
                 : Math.Clamp(desiredX, 0, Math.Max(0, contentWidth - scrollViewer.Viewport.Width));
@@ -911,28 +919,86 @@ namespace snapvox.editor.forms
             var config = IniConfig.GetIniSection<CoreConfiguration>();
             if (_forceClose || _undoStack.Count == 0 || !config.WarnBeforeClosingEditor) return;
             
+            e.Cancel = true;
             if (!_isClosingPromptOpen)
             {
-                e.Cancel = true;
                 _isClosingPromptOpen = true;
-                var prompt = this.FindControl<Grid>("ClosePromptOverlay");
-                if (prompt != null) prompt.IsVisible = true;
-            }
-            else
-            {
-                e.Cancel = true;
+                SetClosePromptVisible(true);
             }
         }
 
-        private void OnPromptSaveClose(object sender, RoutedEventArgs e)
+        private void SetClosePromptVisible(bool visible)
         {
             var prompt = this.FindControl<Grid>("ClosePromptOverlay");
-            if (prompt != null) prompt.IsVisible = false;
-            OnDownloadClick(null, null);
+            var content = this.FindControl<DockPanel>("EditorContentRoot");
+            if (content != null) content.IsEnabled = !visible;
+            if (prompt == null) return;
+
+            prompt.IsVisible = visible;
+            if (!visible) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var cancel = this.FindControl<Button>("ClosePromptCancelButton");
+                if (cancel != null) cancel.Focus();
+                else prompt.Focus();
+            }, DispatcherPriority.Input);
+        }
+
+        private void OnClosePromptKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                OnPromptCancel(sender, null);
+                return;
+            }
+
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                OnPromptSaveClose(sender, null);
+            }
+        }
+
+        private async void OnPromptSaveClose(object sender, RoutedEventArgs e)
+        {
+            var save = this.FindControl<Button>("ClosePromptSaveButton");
+            var discard = this.FindControl<Button>("ClosePromptDiscardButton");
+            var cancel = this.FindControl<Button>("ClosePromptCancelButton");
+            if (save != null) save.IsEnabled = false;
+            if (discard != null) discard.IsEnabled = false;
+            if (cancel != null) cancel.IsEnabled = false;
+
+            bool saved;
+            try
+            {
+                saved = await SaveToDownloadsAsync().ConfigureAwait(true);
+            }
+            finally
+            {
+                if (save != null) save.IsEnabled = true;
+                if (discard != null) discard.IsEnabled = true;
+                if (cancel != null) cancel.IsEnabled = true;
+            }
+
+            if (saved) return;
+
+            _isClosingPromptOpen = false;
+            var message = this.FindControl<TextBlock>("ClosePromptMessage");
+            if (message != null)
+            {
+                message.Text = "The image could not be saved, so nothing was closed. Try Save again, choose Discard to throw the changes away, or Cancel to keep editing.";
+                message.Foreground = this.FindResource("SnapVoxWarningBrush") as IBrush ?? message.Foreground;
+            }
+
+            SetClosePromptVisible(true);
+            _isClosingPromptOpen = true;
         }
 
         private void OnPromptDiscard(object sender, RoutedEventArgs e)
         {
+            SetClosePromptVisible(false);
             _forceClose = true;
             Close();
         }
@@ -940,17 +1006,16 @@ namespace snapvox.editor.forms
         private void OnPromptCancel(object sender, RoutedEventArgs e)
         {
             _isClosingPromptOpen = false;
-            var prompt = this.FindControl<Grid>("ClosePromptOverlay");
-            if (prompt != null) prompt.IsVisible = false;
+            SetClosePromptVisible(false);
         }
 
         private void OnWindowOpened(object sender, EventArgs e)
         {
             UiClipboard.Register(this, text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
 
-            // ISSUE_026: when the viewport resizes (scrollbars toggling while zooming, window
-            // resize), re-normalize the offsets so any axis whose content now fits snaps back
-            // to 0 - the anchored top-left corner can never detach from the viewport origin.
+            
+            
+            
             if (!_zoomViewportHooked)
             {
                 _zoomViewportHooked = true;
@@ -961,10 +1026,10 @@ namespace snapvox.editor.forms
                 }
             }
 
-            // BUGFIX (oversized editor): PositionWindow() estimates the chrome before the
-            // first layout pass. Once the window is open, measure the REAL viewport and
-            // shrink the window to snip + actual chrome so small snips no longer open
-            // inside the old oversized 850x650 shell.
+            
+            
+            
+            
             if (_autoFitPending)
             {
                 Dispatcher.UIThread.Post(AutoFitWindowToContent, DispatcherPriority.Loaded);
@@ -972,10 +1037,13 @@ namespace snapvox.editor.forms
         }
         private void OnWindowClosed(object sender, EventArgs e) { UiClipboard.Unregister(this); ReleaseImageResources(); }
 
-        public async void SetImage(ImageSharpImage image, RECT captureRect)
+        private string _sourceTitle;
+        public async Task SetImageAsync(ImageSharpImage image, RECT captureRect, string sourceTitle = null)
         {
+            _sourceTitle = sourceTitle;
+            if (image == null) throw new ArgumentNullException(nameof(image));
             ReleaseImageResources();
-            _image = image ?? throw new ArgumentNullException(nameof(image));
+            SetImageUnderLock(image);
             await UpdateDisplayAsync().ConfigureAwait(true);
             PositionWindow(captureRect);
         }
@@ -983,8 +1051,10 @@ namespace snapvox.editor.forms
         private async Task UpdateDisplayAsync()
         {
             if (_image == null) return;
+            Bitmap rendered = await Task.Run(() => WithImage(img => img.ToAvaloniaBitmap())).ConfigureAwait(true);
+            if (rendered == null) { return; }
             _displayBitmap?.Dispose();
-            _displayBitmap = await _image.ToAvaloniaBitmapAsync().ConfigureAwait(true);
+            _displayBitmap = rendered;
             if (_imageControl != null) { _imageControl.Source = _displayBitmap; _imageControl.Width = _image.Width; _imageControl.Height = _image.Height; }
             if (_canvas != null) { _canvas.Width = _image.Width; _canvas.Height = _image.Height; }
             ApplyZoom();
@@ -1089,9 +1159,46 @@ namespace snapvox.editor.forms
                 || ReferenceEquals(control, _snapGuideLayer);
         }
 
+        private readonly List<AvaloniaControl> _annotationScratch = new List<AvaloniaControl>(32);
+        private readonly List<ShapeSnapTarget> _shapeSnapScratch = new List<ShapeSnapTarget>(64);
+        private readonly List<AvaloniaPoint> _vectorSnapScratch = new List<AvaloniaPoint>(64);
+        private bool _annotationScratchInUse;
+
         private List<AvaloniaControl> GetUserAnnotations()
         {
-            return _canvas.Children.OfType<AvaloniaControl>().Where(c => !IsEditorChrome(c)).ToList();
+            var result = new List<AvaloniaControl>(_canvas.Children.Count);
+            CollectUserAnnotations(result);
+            return result;
+        }
+
+        private void CollectUserAnnotations(List<AvaloniaControl> destination)
+        {
+            destination.Clear();
+            var children = _canvas.Children;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] is AvaloniaControl control && !IsEditorChrome(control)) destination.Add(control);
+            }
+        }
+
+        private List<AvaloniaControl> RentAnnotationBuffer(out bool pooled)
+        {
+            if (_annotationScratchInUse)
+            {
+                pooled = false;
+                return new List<AvaloniaControl>(_canvas.Children.Count);
+            }
+
+            pooled = true;
+            _annotationScratchInUse = true;
+            return _annotationScratch;
+        }
+
+        private void ReturnAnnotationBuffer(bool pooled)
+        {
+            if (!pooled) return;
+            _annotationScratch.Clear();
+            _annotationScratchInUse = false;
         }
 
         private List<(AvaloniaControl Control, bool WasVisible)> SetEditorChromeVisible(bool visible)
@@ -1199,7 +1306,7 @@ namespace snapvox.editor.forms
         {
             return new EditorSnapshot
             {
-                Image = cloneImage ? _image?.Clone(x => { }) : null,
+                Image = cloneImage ? WithImage(img => img.Clone(x => { })) : null,
                 Annotations = GetUserAnnotations().Select(CloneAnnotationControl).Where(c => c != null).ToList()
             };
         }
@@ -1214,11 +1321,10 @@ namespace snapvox.editor.forms
             _isResizing = false;
             _activePolyline = null;
 
-            if (snapshot.Image != null)
+            ImageSharpImage restored = snapshot.TakeImage();
+            if (restored != null)
             {
-                _image?.Dispose();
-                _image = snapshot.Image.Clone(x => { });
-                snapshot.Image.Dispose();
+                SetImageUnderLock(restored);
             }
 
             foreach (var annotation in snapshot.Annotations) _canvas.Children.Add(annotation);
@@ -1251,10 +1357,10 @@ namespace snapvox.editor.forms
             return total;
         }
 
-        /// <summary>
-        /// ISSUE_001: evicts the oldest undo entries while the combined undo/redo history exceeds
-        /// the memory budget. The newest undo entry is always kept so undo still works.
-        /// </summary>
+        
+        
+        
+        
         private void EnforceUndoMemoryBudget()
         {
             while (_undoStack.Count > 1 && TotalUndoHistoryBytes() > MaxUndoHistoryBytes)
@@ -1267,7 +1373,7 @@ namespace snapvox.editor.forms
 
         private void DisposeSnapshot(EditorSnapshot snapshot)
         {
-            snapshot?.Image?.Dispose();
+            snapshot?.ReleaseImage();
             if (snapshot?.Annotations == null) return;
             foreach (var annotation in snapshot.Annotations)
             {
@@ -1599,9 +1705,9 @@ namespace snapvox.editor.forms
             return tag;
         }
 
-        // BUGFIX (oversized editor): the real minimum usable shell - the left tool rail plus
-        // a compact snip still fit, but a tiny snip no longer inflates the window to the
-        // old 850x650 frame (spec item 13 updated accordingly).
+        
+        
+        
         private const double MinEditorWindowWidth = 620;
         private const double MinEditorWindowHeight = 400;
 
@@ -1624,13 +1730,13 @@ namespace snapvox.editor.forms
             }
 
             double scaling = targetScreen.Scaling;
-            // BUGFIX (auto-size): the old formula divided the image's DIP size by the screen
-            // scaling, shrinking the window on any high-DPI monitor (125%/150%), so a snip smaller
-            // than the screen still needed manual enlarging before the whole picture was visible.
-            // The picture is laid out 1:1 in DIPs and the working-area budget is converted to DIPs
-            // exactly once. The chrome budget now accounts for the real editor furniture:
-            // left tool rail (60) + snip frame (2 x 3) + scrollbar allowance (~18) + breathing
-            // room on each axis; top = title bar (32) + main toolbar (60); bottom bar = 60.
+            
+            
+            
+            
+            
+            
+            
             const double ChromeLeft = 60 + SnapVoxFrameThickness * 2 + 18 + 12;
             const double ChromeRight = SnapVoxFrameThickness * 2 + 18 + 12;
             const double ChromeTop = 32 + 60 + SnapVoxFrameThickness * 2 + 18 + 12;
@@ -1656,8 +1762,8 @@ namespace snapvox.editor.forms
             int cascade = (_cascadeOffset++ % 5) * 20;
             Position = new PixelPoint((int)(centerPhysicalX + cascade), (int)(centerPhysicalY + cascade));
 
-            // BUGFIX (oversized editor): remember the budget so AutoFitWindowToContent can
-            // correct the estimated chrome with the real viewport after the first layout.
+            
+            
             _autoFitPending = true;
             _autoFitRetries = 0;
             _autoFitWorkingArea = targetScreen.WorkingArea;
@@ -1671,7 +1777,7 @@ namespace snapvox.editor.forms
             var scroller = this.FindControl<ScrollViewer>("EditorScrollViewer");
             if (_image == null || scroller == null || scroller.Viewport.Width <= 1 || scroller.Viewport.Height <= 1)
             {
-                // Layout not measured yet - retry briefly on subsequent passes, then give up.
+                
                 if (++_autoFitRetries < 10) Dispatcher.UIThread.Post(AutoFitWindowToContent, DispatcherPriority.Loaded);
                 return;
             }
@@ -1685,18 +1791,18 @@ namespace snapvox.editor.forms
             Width = desiredWidth;
             Height = desiredHeight;
 
-            // Keep the corrected window centred on the screen that owns the snip.
+            
             double centerX = _autoFitWorkingArea.X + (_autoFitWorkingArea.Width - Width * _autoFitScaling) / 2;
             double centerY = _autoFitWorkingArea.Y + (_autoFitWorkingArea.Height - Height * _autoFitScaling) / 2;
             Position = new PixelPoint((int)centerX, (int)centerY);
         }
 
-        // ISSUE_032 (resize should resize the editor): changing the IMAGE size (not zooming)
-        // used to leave the window at its old dimensions - a 4K resize became a scrollboxed
-        // thumbnail and a shrink left a cavern of empty chrome. After an image resize the
-        // editor now adopts the new size exactly like a fresh snapshot of those dimensions:
-        // recompute the working-area budget for the screen the window is on and let the shared
-        // AutoFitWindowToContent pass size + centre the window with the real viewport chrome.
+        
+        
+        
+        
+        
+        
         private void RefitWindowToImage()
         {
             var screen = Screens.ScreenFromPoint(Position) ?? Screens.Primary;
@@ -1712,19 +1818,83 @@ namespace snapvox.editor.forms
 
         private void ReleaseImageResources()
         {
+            VerifyImageOwnerThread(nameof(ReleaseImageResources));
             RemovePreviewShape();
             RemoveUserAnnotations();
-            _image?.Dispose();
-            _image = null;
+            lock (_imageLock)
+            {
+                _image?.Dispose();
+                _image = null;
+            }
             _displayBitmap?.Dispose();
             _displayBitmap = null;
             ClearSnapshotStack(_undoStack);
             ClearSnapshotStack(_redoStack);
         }
-        private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }
-        // PRODUCT DECISION (top-left zoom anchor): toolbar buttons, wheel and reset all anchor
-        // the TOP-LEFT corner - zooming in expands toward the bottom-right and zooming out
-        // shrinks back toward the top-left, so voids can only ever open on the right/bottom.
+
+        private T WithImage<T>(Func<ImageSharpImage, T> work) where T : class
+        {
+            lock (_imageLock)
+            {
+                ImageSharpImage image = _image;
+                return image == null ? null : work(image);
+            }
+        }
+
+        private bool MutateImage(Action<ImageSharpImage> work)
+        {
+            lock (_imageLock)
+            {
+                ImageSharpImage image = _image;
+                if (image == null) return false;
+                work(image);
+                return true;
+            }
+        }
+
+        private void SetImageUnderLock(ImageSharpImage image)
+        {
+            VerifyImageOwnerThread(nameof(SetImageUnderLock));
+            ImageSharpImage previous;
+            lock (_imageLock)
+            {
+                previous = _image;
+                _image = image;
+            }
+            previous?.Dispose();
+        }
+
+        private static void VerifyImageOwnerThread(string operation)
+        {
+            if (Dispatcher.UIThread.CheckAccess()) return;
+            Log.Fatal("[FAIL] " + operation + " ran off the UI thread. The editor image may only be replaced or released from the UI thread.");
+        }
+
+        private bool HasImage
+        {
+            get
+            {
+                lock (_imageLock)
+                {
+                    return _image != null;
+                }
+            }
+        }
+
+        private bool TryGetImageSize(out int width, out int height)
+        {
+            lock (_imageLock)
+            {
+                ImageSharpImage image = _image;
+                width = image?.Width ?? 0;
+                height = image?.Height ?? 0;
+                return image != null;
+            }
+        }
+        private void InitializeComponent() { AvaloniaXamlLoader.Load(this); snapvox.foundation.core.UiLayoutDirection.Apply(this); }
+        
+        
+        
         private void OnZoomInClick(object sender, RoutedEventArgs e) { ZoomTowards(_zoomFactor + 0.1); ShowZoomHintDebounced(); }
         private void OnZoomOutClick(object sender, RoutedEventArgs e) { ZoomTowards(_zoomFactor - 0.1); ShowZoomHintDebounced(); }
         private void OnZoomResetButtonClick(object sender, RoutedEventArgs e) { ZoomTowards(1.0); ShowZoomHintDebounced(); }
@@ -1769,7 +1939,7 @@ namespace snapvox.editor.forms
 
         private void OnCanvasPointerPressed(object sender, PointerPressedEventArgs e)
         {
-            if (_isBusy) return;
+            if (IsEditorOperationInProgress) return;
 
             var pos = e.GetPosition(_canvas);
             
@@ -1787,9 +1957,9 @@ namespace snapvox.editor.forms
 
             if (e.GetCurrentPoint(this).Properties.IsMiddleButtonPressed)
             {
-                // FEATURE (hand pan): middle-click no longer resets the zoom; it immediately
-                // becomes the moving hand (same behaviour as dragging in no-tool mode) so an
-                // image larger than the window can be scrolled in any direction by dragging.
+                
+                
+                
                 var panScrollViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
                 if (panScrollViewer != null)
                 {
@@ -1881,7 +2051,7 @@ namespace snapvox.editor.forms
                 
                 _isDrawing = true; _startPoint = pos; var brush = _toolBrushes[_currentTool];
                 _disableSnappingForCurrentDrag = false;
-                HideToolGhost(); // the rubberband/annotation itself replaces the ghost while drawing
+                HideToolGhost(); 
                 Cursor = CrossCursor;
                 if (_currentTool == EditorTool.Counter) { PlaceCounter(ApplyStampSnap(EditorTool.Counter, _startPoint), brush); _isDrawing = false; _ghostSettingsDirty = true; }
                 else if (_currentTool == EditorTool.Emoji) { PlaceEmoji(ApplyStampSnap(EditorTool.Emoji, _startPoint), _pendingEmoji); _isDrawing = false; _ghostSettingsDirty = true; }
@@ -1906,8 +2076,8 @@ namespace snapvox.editor.forms
                 e.Pointer.Capture(_canvas);
             }
 
-            // FEATURE (hand pan): no-tool mode is the "hold the picture" mode - a regular
-            // hand while hovering, and a holding/moving hand while the pan drag is active.
+            
+            
             Cursor = _isPanning ? PanHeldCursor : HandCursor;
             UpdateThicknessPanelVisibility();
         }
@@ -1977,17 +2147,17 @@ namespace snapvox.editor.forms
         private AvaloniaPoint ApplyMagneticSnap(AvaloniaControl control, double left, double top, bool altSnapBypass = false)
         {
             var config = IniConfig.GetIniSection<CoreConfiguration>();
-            // FEATURE (magnet escape): holding ALT is a live override - the shape follows the raw
-            // un-snapped drag position for as long as it is held and snapping re-engages on release.
+            
+            
             if (altSnapBypass || !config.MagneticSnappingEnabled || _disableSnappingForCurrentDrag || !TryGetControlBounds(control, out var bounds))
             {
                 HideSnapGuides();
                 return new AvaloniaPoint(left, top);
             }
 
-            // FEATURE (shape snap guides): any edge or the center of the dragged shape aligns with
-            // any edge or center of every other shape (left/center/right and top/middle/bottom),
-            // with dashed guide lines stretched between the two shapes until the mouse is released.
+            
+            
+            
             var moving = new Rect(left, top, bounds.Width, bounds.Height);
             if (TrySnapRectToBoundsTargets(control, moving, out var snapDx, out var snapDy, _activeSnapGuides))
             {
@@ -1999,12 +2169,12 @@ namespace snapvox.editor.forms
             return new AvaloniaPoint(left, top);
         }
 
-        // FEATURE (magnet escape, resize edition): resizing snaps through the same engine as
-        // dragging/placing whole shapes. The dragged edge aligns with any edge-or-center rail of
-        // every other shape plus the image frame (the identical candidate set TrySnapAxis uses for
-        // moves), the pull is capped at VectorSnapThreshold, and because the input rect is the RAW
-        // never-snapped bounds the magnet releases the instant the raw edge leaves the zone. The
-        // dashed guide rails from the move magnet appear here too, so the snap is felt, not a trap.
+        
+        
+        
+        
+        
+        
         private Rect ApplyResizeMagneticSnap(AvaloniaControl control, Rect raw, bool altSnapBypass)
         {
             var config = IniConfig.GetIniSection<CoreConfiguration>();
@@ -2015,7 +2185,7 @@ namespace snapvox.editor.forms
             }
 
             _activeSnapGuides.Clear();
-            var targets = GetShapeSnapTargets(control).ToList();
+            var targets = BuildShapeSnapTargets(control);
             bool dragLeftEdge = _resizeHandleIndex == 0 || _resizeHandleIndex == 3;
             bool dragTopEdge = _resizeHandleIndex == 0 || _resizeHandleIndex == 1;
 
@@ -2033,8 +2203,8 @@ namespace snapvox.editor.forms
 
             if (_activeSnapGuides.Count > 0) ShowSnapGuides(); else HideSnapGuides();
 
-            // A snap may never collapse the shape below the 10 DIP floor - clamp against the
-            // anchored (undragged) edge, never past it.
+            
+            
             if (r - l < 10) { if (dragLeftEdge) l = r - 10; else r = l + 10; }
             if (b - t < 10) { if (dragTopEdge) t = b - 10; else b = t + 10; }
             return new Rect(l, t, r - l, b - t);
@@ -2064,21 +2234,21 @@ namespace snapvox.editor.forms
             return found;
         }
 
-        // ===== FEATURE (shape snap guides) =================================================
-        // Magnetic alignment between shape bounds: the moving shape's left/center/right and
-        // top/middle/bottom can each align with any of those anchors on every other shape, plus
-        // the image borders and the image's exact vertical/horizontal middle. When an alignment
-        // is within threshold the shape shifts onto it and guide lines appear. Guides always
-        // span the full image (like every classic design tool) instead of stretching from shape
-        // A to shape B, so a line can never read as something glued to the moving shape itself.
-        // Locking onto the image middle additionally pops a gentle full-length cross through
-        // the exact center of the picture until the snap is released.
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
         private readonly struct ShapeSnapTarget
         {
             public readonly Rect Bounds;
-            // True for the image's vertical-middle / horizontal-middle rails: matching one of
-            // these triggers the center-cross guide.
+            
+            
             public readonly bool IsImageMiddle;
             public ShapeSnapTarget(Rect bounds, bool isImageMiddle = false)
             {
@@ -2089,28 +2259,37 @@ namespace snapvox.editor.forms
 
         private static bool IsStampTool(EditorTool tool) => tool is EditorTool.Text or EditorTool.Counter or EditorTool.Emoji;
 
-        private static bool IsRectSnappableTool(EditorTool tool) => tool is EditorTool.Rectangle or EditorTool.Ellipse or EditorTool.Highlight or EditorTool.Blur;
-
-        private IEnumerable<ShapeSnapTarget> GetShapeSnapTargets(AvaloniaControl moving)
+        private List<ShapeSnapTarget> BuildShapeSnapTargets(AvaloniaControl moving)
         {
+            var targets = _shapeSnapScratch;
+            targets.Clear();
+
             if (_image != null)
             {
                 double w = _image.Width;
                 double h = _image.Height;
-                // The full-image target supplies the left/right/top/bottom frame rails.
-                yield return new ShapeSnapTarget(new Rect(0, 0, w, h));
-                // Vertical-middle rail: a shape's left/center/right can lock to x = w/2 anywhere
-                // along the line. Degenerate (zero-width) rect: Left == Center.X == Right == w/2.
-                yield return new ShapeSnapTarget(new Rect(w / 2, 0, 0, h), isImageMiddle: true);
-                // Horizontal-middle rail: a shape's top/middle/bottom can lock to y = h/2.
-                yield return new ShapeSnapTarget(new Rect(0, h / 2, w, 0), isImageMiddle: true);
+                targets.Add(new ShapeSnapTarget(new Rect(0, 0, w, h)));
+                targets.Add(new ShapeSnapTarget(new Rect(w / 2, 0, 0, h), isImageMiddle: true));
+                targets.Add(new ShapeSnapTarget(new Rect(0, h / 2, w, 0), isImageMiddle: true));
             }
 
-            foreach (var control in GetUserAnnotations())
+            var annotations = RentAnnotationBuffer(out bool pooled);
+            try
             {
-                if (ReferenceEquals(control, moving) || !TryGetControlBounds(control, out var bounds)) continue;
-                yield return new ShapeSnapTarget(bounds);
+                CollectUserAnnotations(annotations);
+                for (int i = 0; i < annotations.Count; i++)
+                {
+                    var control = annotations[i];
+                    if (ReferenceEquals(control, moving) || !TryGetControlBounds(control, out var bounds)) continue;
+                    targets.Add(new ShapeSnapTarget(bounds));
+                }
             }
+            finally
+            {
+                ReturnAnnotationBuffer(pooled);
+            }
+
+            return targets;
         }
 
         private bool TrySnapRectToBoundsTargets(AvaloniaControl moving, Rect movingBounds, out double snapDx, out double snapDy, List<SnapGuideInfo> guides)
@@ -2120,22 +2299,22 @@ namespace snapvox.editor.forms
             guides?.Clear();
             if (_image == null) return false;
 
-            var targets = GetShapeSnapTargets(moving).ToList();
+            var targets = BuildShapeSnapTargets(moving);
             bool snappedX = TrySnapAxis(vertical: false, movingBounds, targets, out snapDx, out var snapX);
             bool snappedY = TrySnapAxis(vertical: true, movingBounds, targets, out snapDy, out var snapY);
 
             if (guides == null) return snappedX || snappedY;
 
-            // BUGFIX (guide geometry): guides used to stretch from shape A to shape B, which read
-            // as a stray line attached to the moving shape whenever the alignment partner was the
-            // image frame. Classic design tools draw rail guides across the whole canvas instead:
-            // an X-axis alignment draws a vertical rail spanning the full image height, a Y-axis
-            // alignment draws a horizontal rail spanning the full image width.
+            
+            
+            
+            
+            
             if (snappedX) guides.Add(new SnapGuideInfo(false, snapX.Coordinate, 0, _image.Height));
             if (snappedY) guides.Add(new SnapGuideInfo(true, snapY.Coordinate, 0, _image.Width));
 
-            // FEATURE (center cross): locking onto the image's vertical or horizontal middle pops
-            // a gentle full-length cross through the exact center of the picture until release.
+            
+            
             if ((snappedX && snapX.IsMiddle) || (snappedY && snapY.IsMiddle))
             {
                 AddGuideOnce(guides, new SnapGuideInfo(false, _image.Width / 2, 0, _image.Height));
@@ -2192,9 +2371,9 @@ namespace snapvox.editor.forms
                     vertical ? target.Bounds.Bottom : target.Bounds.Right
                 };
 
-                // The middle coordinate this target can offer on the axis being tested (for the
-                // degenerate middle rails this IS the rail coordinate; for ordinary shapes and the
-                // image frame it is the bounds center, which is not treated as a center rail).
+                
+                
+                
                 double targetMiddle = vertical
                     ? target.Bounds.Top + target.Bounds.Height / 2
                     : target.Bounds.Left + target.Bounds.Width / 2;
@@ -2219,19 +2398,19 @@ namespace snapvox.editor.forms
             if (!found) return false;
 
             delta = bestDelta;
-            // A Y-axis alignment draws a horizontal guide; an X-axis alignment draws a vertical one.
+            
             snapped = new AxisSnapResult(bestCoordinate, bestIsMiddle);
             return true;
         }
 
-        // ISSUE_028 (stuttery shape creation): ApplyPreviewShapeSnap used to live here. While a
-        // NEW rect/ellipse/highlight/blur was being stretched it magnetically pulled the whole
-        // preview rect toward nearby edges/centers, which (a) made the rubberband visibly jump
-        // the moment an edge entered snap range and (b) shifted the entire preview - including
-        // the anchored corner - so the anchor never felt solid and the size kept changing on
-        // its own. Creation-time snapping was removed outright: the rubberband now tracks the
-        // pointer 1:1 (with ISSUE_021's anchor lock), and magnetic snapping + guide lines still
-        // apply when MOVING or RESIZING existing shapes and when placing stamps.
+        
+        
+        
+        
+        
+        
+        
+        
 
         private AvaloniaPoint ApplyStampSnap(EditorTool tool, AvaloniaPoint pos)
         {
@@ -2266,7 +2445,7 @@ namespace snapvox.editor.forms
                 }
                 case EditorTool.Emoji:
                 {
-                    // PlaceEmoji anchors the glyph's top-left 16 DIPs above-left of the click point.
+                    
                     double size = Math.Max(20, config.LastEmojiSize);
                     rect = new Rect(pos.X - 16, pos.Y - 16, size, size);
                     return true;
@@ -2302,7 +2481,7 @@ namespace snapvox.editor.forms
             }
 
             double zoom = Math.Max(0.1, _zoomFactor);
-            double thickness = 1.0 / zoom; // one on-screen pixel regardless of zoom
+            double thickness = 1.0 / zoom; 
 
             for (int i = 0; i < _activeSnapGuides.Count; i++)
             {
@@ -2411,8 +2590,8 @@ namespace snapvox.editor.forms
                 return SnapToEightDirectionsStrict(proposed, anchor);
             }
 
-            // FEATURE (magnet escape): holding ALT is a live override - the endpoint follows the
-            // pointer raw, with neither target magnets nor angle assistance.
+            
+            
             if (modifiers.HasFlag(KeyModifiers.Alt)) return proposed;
 
             AvaloniaPoint snapped = SnapToNearbyTarget(proposed, anchor);
@@ -2459,8 +2638,10 @@ namespace snapvox.editor.forms
             AvaloniaPoint? bestTarget = null;
             double bestDistance = 8.0;
 
-            foreach (var target in GetVectorSnapTargets())
+            var vectorTargets = BuildVectorSnapTargets();
+            for (int i = 0; i < vectorTargets.Count; i++)
             {
+                var target = vectorTargets[i];
                 double distance = Distance(proposed, target);
                 if (distance < bestDistance)
                 {
@@ -2481,58 +2662,73 @@ namespace snapvox.editor.forms
             return new AvaloniaPoint(target.X - dx / length * VectorSnapGap, target.Y - dy / length * VectorSnapGap);
         }
 
-        private IEnumerable<AvaloniaPoint> GetVectorSnapTargets()
+        private List<AvaloniaPoint> BuildVectorSnapTargets()
         {
+            var targets = _vectorSnapScratch;
+            targets.Clear();
+
             if (_image != null)
             {
                 double w = _image.Width;
                 double h = _image.Height;
-                yield return new AvaloniaPoint(0, 0);
-                yield return new AvaloniaPoint(w / 2, 0);
-                yield return new AvaloniaPoint(w, 0);
-                yield return new AvaloniaPoint(w, h / 2);
-                yield return new AvaloniaPoint(w, h);
-                yield return new AvaloniaPoint(w / 2, h);
-                yield return new AvaloniaPoint(0, h);
-                yield return new AvaloniaPoint(0, h / 2);
+                targets.Add(new AvaloniaPoint(0, 0));
+                targets.Add(new AvaloniaPoint(w / 2, 0));
+                targets.Add(new AvaloniaPoint(w, 0));
+                targets.Add(new AvaloniaPoint(w, h / 2));
+                targets.Add(new AvaloniaPoint(w, h));
+                targets.Add(new AvaloniaPoint(w / 2, h));
+                targets.Add(new AvaloniaPoint(0, h));
+                targets.Add(new AvaloniaPoint(0, h / 2));
             }
 
-            foreach (var annotation in GetUserAnnotations())
+            var annotations = RentAnnotationBuffer(out bool pooled);
+            try
             {
-                if (ReferenceEquals(annotation, _selectedControl)) continue;
-                if (!TryGetControlBounds(annotation, out var bounds)) continue;
-
-                bool isRound = annotation is Avalonia.Controls.Shapes.Ellipse || GetToolFromControl(annotation) == EditorTool.Counter || GetToolFromControl(annotation) == EditorTool.Emoji;
-                if (isRound)
+                CollectUserAnnotations(annotations);
+                for (int i = 0; i < annotations.Count; i++)
                 {
-                    double cx = bounds.X + bounds.Width / 2;
-                    double cy = bounds.Y + bounds.Height / 2;
-                    double rx = bounds.Width / 2;
-                    double ry = bounds.Height / 2;
-                    double cos = 0.70710678;
-                    double sin = 0.70710678;
+                    var annotation = annotations[i];
+                    if (ReferenceEquals(annotation, _selectedControl)) continue;
+                    if (!TryGetControlBounds(annotation, out var bounds)) continue;
 
-                    yield return new AvaloniaPoint(cx, bounds.Y);
-                    yield return new AvaloniaPoint(cx + rx * cos, cy - ry * sin);
-                    yield return new AvaloniaPoint(bounds.Right, cy);
-                    yield return new AvaloniaPoint(cx + rx * cos, cy + ry * sin);
-                    yield return new AvaloniaPoint(cx, bounds.Bottom);
-                    yield return new AvaloniaPoint(cx - rx * cos, cy + ry * sin);
-                    yield return new AvaloniaPoint(bounds.X, cy);
-                    yield return new AvaloniaPoint(cx - rx * cos, cy - ry * sin);
-                }
-                else
-                {
-                    yield return new AvaloniaPoint(bounds.X, bounds.Y);
-                    yield return new AvaloniaPoint(bounds.X + bounds.Width / 2, bounds.Y);
-                    yield return new AvaloniaPoint(bounds.Right, bounds.Y);
-                    yield return new AvaloniaPoint(bounds.Right, bounds.Y + bounds.Height / 2);
-                    yield return new AvaloniaPoint(bounds.Right, bounds.Bottom);
-                    yield return new AvaloniaPoint(bounds.X + bounds.Width / 2, bounds.Bottom);
-                    yield return new AvaloniaPoint(bounds.X, bounds.Bottom);
-                    yield return new AvaloniaPoint(bounds.X, bounds.Y + bounds.Height / 2);
+                    bool isRound = annotation is Avalonia.Controls.Shapes.Ellipse || GetToolFromControl(annotation) == EditorTool.Counter || GetToolFromControl(annotation) == EditorTool.Emoji;
+                    if (isRound)
+                    {
+                        double cx = bounds.X + bounds.Width / 2;
+                        double cy = bounds.Y + bounds.Height / 2;
+                        double rx = bounds.Width / 2;
+                        double ry = bounds.Height / 2;
+                        const double cos = 0.70710678;
+                        const double sin = 0.70710678;
+
+                        targets.Add(new AvaloniaPoint(cx, bounds.Y));
+                        targets.Add(new AvaloniaPoint(cx + rx * cos, cy - ry * sin));
+                        targets.Add(new AvaloniaPoint(bounds.Right, cy));
+                        targets.Add(new AvaloniaPoint(cx + rx * cos, cy + ry * sin));
+                        targets.Add(new AvaloniaPoint(cx, bounds.Bottom));
+                        targets.Add(new AvaloniaPoint(cx - rx * cos, cy + ry * sin));
+                        targets.Add(new AvaloniaPoint(bounds.X, cy));
+                        targets.Add(new AvaloniaPoint(cx - rx * cos, cy - ry * sin));
+                    }
+                    else
+                    {
+                        targets.Add(new AvaloniaPoint(bounds.X, bounds.Y));
+                        targets.Add(new AvaloniaPoint(bounds.X + bounds.Width / 2, bounds.Y));
+                        targets.Add(new AvaloniaPoint(bounds.Right, bounds.Y));
+                        targets.Add(new AvaloniaPoint(bounds.Right, bounds.Y + bounds.Height / 2));
+                        targets.Add(new AvaloniaPoint(bounds.Right, bounds.Bottom));
+                        targets.Add(new AvaloniaPoint(bounds.X + bounds.Width / 2, bounds.Bottom));
+                        targets.Add(new AvaloniaPoint(bounds.X, bounds.Bottom));
+                        targets.Add(new AvaloniaPoint(bounds.X, bounds.Y + bounds.Height / 2));
+                    }
                 }
             }
+            finally
+            {
+                ReturnAnnotationBuffer(pooled);
+            }
+
+            return targets;
         }
 
         private void RefreshSnapTargetsList()
@@ -2552,7 +2748,7 @@ namespace snapvox.editor.forms
 
             _snapDotsLayer.IsVisible = true;
             _snapDotTargets.Clear();
-            _snapDotTargets.AddRange(GetVectorSnapTargets());
+            _snapDotTargets.AddRange(BuildVectorSnapTargets());
 
             while (_snapDotsLayer.Children.Count < _snapDotTargets.Count)
             {
@@ -2768,10 +2964,11 @@ namespace snapvox.editor.forms
             props.Strength = strength;
             long requestId = System.Threading.Interlocked.Increment(ref _pixelateCounter);
             rectangle.Resources["PixelateRequest"] = requestId;
-            var bitmap = await Task.Run(() => {
-                using var patch = _image.Clone(ctx => ctx.Crop(area).BoxBlur((int)Math.Max(1, strength / 2.0f)).Pixelate(strength).BoxBlur((int)Math.Max(1, strength / 4.0f)));
+            var bitmap = await Task.Run(() => WithImage(img => {
+                using var patch = img.Clone(ctx => ctx.Crop(area).BoxBlur((int)Math.Max(1, strength / 2.0f)).Pixelate(strength).BoxBlur((int)Math.Max(1, strength / 4.0f)));
                 return patch.ToAvaloniaBitmap();
-            });
+            }));
+            if (bitmap == null) return;
             if (rectangle.Resources.TryGetValue("PixelateRequest", out var val) && val is long currentId && currentId != requestId) { bitmap.Dispose(); return; }
             if (rectangle.Fill is ImageBrush oldBrush && oldBrush.Source is IDisposable disp) disp.Dispose();
             rectangle.Fill = new ImageBrush { Source = bitmap, Stretch = Stretch.Fill };
@@ -2785,12 +2982,12 @@ namespace snapvox.editor.forms
             }
         }
 
-        // ===== FEATURE (highlight filter) ==================================================
-        // Ported from Greenshot's HighlightFilter (GPL): instead of painting a translucent
-        // alpha overlay over the capture (which washes the text out into a milky haze),
-        // every pixel inside the marker rectangle is re-coloured by taking the channel-
-        // wise minimum of the marker colour and the pixel colour. Dark text stays fully
-        // readable while the area still reads as "marked" - the classic marker-pen look.
+        
+        
+        
+        
+        
+        
         private Avalonia.Controls.Shapes.Rectangle CreateHighlightAnnotation(AvaloniaPoint start, AvaloniaPoint end)
         {
             double left = Math.Min(start.X, end.X);
@@ -2833,9 +3030,8 @@ namespace snapvox.editor.forms
             float mr = marker.R / 255f, mg = marker.G / 255f, mb = marker.B / 255f;
             long requestId = System.Threading.Interlocked.Increment(ref _highlightCounter);
             rectangle.Resources["HighlightRequest"] = requestId;
-            var bitmap = await Task.Run(() => {
-                using var patch = _image.Clone(ctx => ctx.Crop(area)).CloneAs<Rgba32>();
-                // Greenshot HighlightFilter math: Math.Min(marker, colour) per channel.
+            var bitmap = await Task.Run(() => WithImage(img => {
+                using var patch = img.Clone(ctx => ctx.Crop(area)).CloneAs<Rgba32>();
                 patch.Mutate(x => x.ProcessPixelRowsAsVector4(row =>
                 {
                     for (int x2 = 0; x2 < row.Length; x2++)
@@ -2847,7 +3043,8 @@ namespace snapvox.editor.forms
                     }
                 }));
                 return patch.ToAvaloniaBitmap();
-            });
+            }));
+            if (bitmap == null) return;
             if (rectangle.Resources.TryGetValue("HighlightRequest", out var val) && val is long currentId && currentId != requestId) { bitmap.Dispose(); return; }
             if (rectangle.Fill is ImageBrush oldBrush && oldBrush.Source is IDisposable disp) disp.Dispose();
             rectangle.Fill = new ImageBrush { Source = bitmap, Stretch = Stretch.Fill };
@@ -2922,10 +3119,10 @@ namespace snapvox.editor.forms
             }
         }
 
-        // ISSUE_021: clamps the dragged corner of a Rectangle/Ellipse draw so it can never
-        // cross the anchor corner. The direction locks the first time the pointer moves away
-        // from the anchor; afterwards the edge simply stops at the anchor (minimum size)
-        // when the user drags back past it. All other tools are returned untouched.
+        
+        
+        
+        
         private AvaloniaPoint ClampRectDrawEnd(AvaloniaPoint end)
         {
             if (_currentTool != EditorTool.Rectangle && _currentTool != EditorTool.Ellipse) return end;
@@ -3010,12 +3207,12 @@ namespace snapvox.editor.forms
         private class HighlightProperties { public AvaloniaColor Color; }
         private class TextAnnotationProperties { public double PreferredFontSize; }
 
-        // ===== FEATURE (tool ghosts) =======================================================
-        // A translucent preview of the active tool's item floats under the pointer instead of the
-        // plain crosshair: the selected emoji travels with the mouse, a pencil is shown for the pen,
-        // a mini arrow/rectangle/ellipse/etc. previews the shape about to be drawn, and stamps
-        // (text/counter/emoji) render exactly where they will land. Esc or right-click leaves the
-        // tool, which hides the ghost (see ResetToolsAndSelection).
+        
+        
+        
+        
+        
+        
 
         private void OnCanvasPointerExited(object sender, PointerEventArgs e)
         {
@@ -3023,11 +3220,12 @@ namespace snapvox.editor.forms
             HideSnapGuides();
             Cursor = _currentTool == EditorTool.None ? HandCursor : CrossCursor;
         }
-
         private void HideToolGhost()
         {
             if (_toolGhostLayer != null) _toolGhostLayer.IsVisible = false;
         }
+
+        private CoreConfiguration _cachedCoreConfig;
 
         private void UpdateToolGhost(AvaloniaPoint pos)
         {
@@ -3044,31 +3242,31 @@ namespace snapvox.editor.forms
                 return;
             }
 
-            // Stamps magnetically preview their snapped landing spot along with the guide lines.
+            
             AvaloniaPoint effective = IsStampTool(_currentTool) ? ApplyStampSnap(_currentTool, pos) : pos;
-            var config = IniConfig.GetIniSection<CoreConfiguration>();
+            var config = _cachedCoreConfig ??= IniConfig.GetIniSection<CoreConfiguration>();
 
             switch (_currentTool)
             {
-                case EditorTool.Emoji: // same anchor as PlaceEmoji
+                case EditorTool.Emoji: 
                     Canvas.SetLeft(_toolGhost, effective.X - 16);
                     Canvas.SetTop(_toolGhost, effective.Y - 16);
                     break;
-                case EditorTool.Counter: // same anchor as PlaceCounter (centered on the click)
+                case EditorTool.Counter: 
                 {
                     double size = config.LastCounterSize > 0 ? config.LastCounterSize : 42;
                     Canvas.SetLeft(_toolGhost, effective.X - size / 2);
                     Canvas.SetTop(_toolGhost, effective.Y - size / 2);
                     break;
                 }
-                default: // icon ghosts are drawn centered around (0,0) of their host
+                default: 
                     Canvas.SetLeft(_toolGhost, effective.X);
                     Canvas.SetTop(_toolGhost, effective.Y);
                     break;
             }
 
             _toolGhostLayer.IsVisible = true;
-            Cursor = NoneCursor; // the ghost replaces the OS cursor while it is visible
+            Cursor = NoneCursor; 
         }
 
         private void RebuildToolGhost()
@@ -3120,11 +3318,11 @@ namespace snapvox.editor.forms
 
                 case EditorTool.Text:
                 {
-                    // ISSUE_022 (text tool ghost): the old ghost was a bare "T" - it never
-                    // previewed what would actually land. The ghost is now the EXACT 140x36
-                    // landing box (same geometry as TryGetStampSnapRect/PlaceText) with a
-                    // text caret, an "Aa" sample rendered at the persisted font size and a
-                    // small size badge, so click-to-place is fully predictable.
+                    
+                    
+                    
+                    
+                    
                     double persistedSize = config.LastTextSize > 0 ? config.LastTextSize : 16;
                     double sampleSize = Math.Clamp(persistedSize, 9, 20);
                     var sample = new StackPanel
@@ -3136,7 +3334,7 @@ namespace snapvox.editor.forms
                         VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                         IsHitTestVisible = false
                     };
-                    sample.Children.Add(new Avalonia.Controls.Shapes.Rectangle { Width = 1.5, Height = sampleSize, Fill = brush }); // caret
+                    sample.Children.Add(new Avalonia.Controls.Shapes.Rectangle { Width = 1.5, Height = sampleSize, Fill = brush }); 
                     sample.Children.Add(new TextBlock { Text = "Aa", Foreground = brush, FontSize = sampleSize, FontWeight = FontWeight.SemiBold, IsHitTestVisible = false });
                     var content = new Grid { IsHitTestVisible = false };
                     content.Children.Add(sample);
@@ -3171,11 +3369,11 @@ namespace snapvox.editor.forms
 
                 case EditorTool.Line:
                 {
-                    // ISSUE_029 (line tool ghost): the old ghost was a single short diagonal
-                    // stroke trailing the cursor, which read as a stray pencil mark instead of a
-                    // tool preview. The ghost now shows what the tool actually draws: a solid
-                    // origin dot at the anchor point plus a HORIZONTAL and a DIAGONAL segment,
-                    // both real strokes at the current thickness in the current brush.
+                    
+                    
+                    
+                    
+                    
                     var host = CreateGhostIconHost();
                     double thickness = Math.Max(2, _currentThickness);
                     host.Children.Add(CreateGhostOriginDot(brush));
@@ -3291,8 +3489,8 @@ namespace snapvox.editor.forms
 
         private Canvas CreateGhostIconHost()
         {
-            // Icons counter-scale against the zoom container so they keep a constant on-screen
-            // size at any zoom level; the transform origin (0,0) keeps them pinned to the pointer.
+            
+            
             return new Canvas
             {
                 RenderTransform = _ghostIconScale,
@@ -3310,8 +3508,8 @@ namespace snapvox.editor.forms
 
         private Canvas CreatePencilGhost(IBrush brush)
         {
-            // Classic pencil angled at 45°, graphite tip exactly at the pointer (0,0), body in the
-            // current pen color so the ghost also previews which color will be drawn.
+            
+            
             var host = CreateGhostIconHost();
             host.Opacity = 0.9;
             host.Children.Add(new Avalonia.Controls.Shapes.Polygon
@@ -3336,11 +3534,11 @@ namespace snapvox.editor.forms
 
         private Canvas CreateArrowGhostIcon(IBrush brush)
         {
-            // ISSUE_030 (arrow ghost "trail"): the old ghost was a lone diagonal stroke with a
-            // crooked quadrilateral "head" floating beside its tip - it read as a small stray
-            // line trailing the cursor rather than an arrow preview. The ghost now mirrors the
-            // line ghost (origin dot + horizontal & diagonal segments) with each segment
-            // finished by a clean, proportionally sized arrowhead aligned to its direction.
+            
+            
+            
+            
+            
             var host = CreateGhostIconHost();
             double thickness = Math.Max(2, _currentThickness);
             host.Children.Add(CreateGhostOriginDot(brush));
@@ -3351,9 +3549,9 @@ namespace snapvox.editor.forms
 
         private static AvaloniaControl CreateGhostOriginDot(IBrush brush)
         {
-            // A solid dot marks the exact anchor point (0,0 = pointer) that the ghost's
-            // segments emanate from, so the glyph reads as a cursor overlay, never as a
-            // stray annotation left on the canvas.
+            
+            
+            
             var dot = new Avalonia.Controls.Shapes.Ellipse { Width = 5, Height = 5, Fill = brush, IsHitTestVisible = false };
             Canvas.SetLeft(dot, -2.5);
             Canvas.SetTop(dot, -2.5);
@@ -3371,8 +3569,8 @@ namespace snapvox.editor.forms
             double headLength = Math.Clamp(thickness * 3.0, 6, 10);
             double headWidth = headLength * 0.55;
 
-            // The shaft stops just inside the head so the head's tip - not the line cap -
-            // forms the visible end point.
+            
+            
             var shaftEnd = new AvaloniaPoint(end.X - headLength * 0.6 * ux, end.Y - headLength * 0.6 * uy);
             segment.Children.Add(new Avalonia.Controls.Shapes.Line
             {
@@ -3397,7 +3595,7 @@ namespace snapvox.editor.forms
 
         private void OnCanvasPointerMoved(object sender, PointerEventArgs e)
         {
-            if (_isBusy) return;
+            if (IsEditorOperationInProgress) return;
 
             if (_isPanning)
             {
@@ -3457,9 +3655,9 @@ namespace snapvox.editor.forms
                 {
                     Cursor = _currentTool == EditorTool.None ? HandCursor : CrossCursor;
                     UpdateHoverIndicator(null);
-                    // FEATURE (tool ghosts): float the active tool's item under the pointer so it
-                    // is obvious what will land where once clicked. Stamps also magnetically
-                    // preview their snapped landing spot together with the guide lines.
+                    
+                    
+                    
                     if (_currentTool != EditorTool.None) UpdateToolGhost(pos);
                     else { HideToolGhost(); HideSnapGuides(); }
                 }
@@ -3563,12 +3761,12 @@ namespace snapvox.editor.forms
             else
             {
                 var previewEnd = IsVectorTool(_currentTool) ? ApplyVectorConstraints(pos, _startPoint, e.KeyModifiers) : pos;
-                previewEnd = ClampRectDrawEnd(previewEnd); // ISSUE_021: never flip past the anchor while drawing
+                previewEnd = ClampRectDrawEnd(previewEnd); 
                 UpdatePreviewShape(previewEnd);
-                // ISSUE_028 (stuttery shape creation): no magnetic pull and no guide lines while
-                // STRETCHING a new shape - the rubberband tracks the pointer 1:1 so the anchored
-                // corner stays put and sizing feels smooth. Snapping/guides remain for moves,
-                // resizes and stamp placement.
+                
+                
+                
+                
                 HideSnapGuides();
                 if (IsVectorTool(_currentTool)) UpdateVectorInfo(_startPoint, previewEnd);
                 
@@ -3630,19 +3828,19 @@ namespace snapvox.editor.forms
             }
             else
             {
-                // FEATURE (magnet escape, resize edition): the resize magnet now runs through the
-                // exact same engine as dragging/placing whole shapes. The RAW, never-snapped bounds
-                // are advanced below (the twin of _dragUnsnappedLeft/_dragUnsnappedTop on moves) and
-                // only the APPLIED bounds get bent by the magnet, so the capture zone always stays
-                // centered on the true pointer position, the pull never exceeds the snap threshold
-                // and it releases the instant the raw edge leaves the zone. The previous version
-                // re-snapped its own output every frame, letting the snap baseline drift ahead of
-                // the cursor and chain captures into an unreleasable loop. ALT remains a live raw
-                // override and the toolbar magnet button (MagneticSnappingEnabled) is the setting.
+                
+                
+                
+                
+                
+                
+                
+                
+                
                 switch (_resizeHandleIndex)
                 {
-                    // The opposite edge stays anchored; at the 10 DIP floor the dragged edge simply
-                    // freezes (no hysteresis - moving back the other way resumes immediately).
+                    
+                    
                     case 0:
                         if (_resizeUnsnappedWidth - dx >= 10) { _resizeUnsnappedWidth -= dx; _resizeUnsnappedLeft += dx; }
                         if (_resizeUnsnappedHeight - dy >= 10) { _resizeUnsnappedHeight -= dy; _resizeUnsnappedTop += dy; }
@@ -3715,14 +3913,14 @@ namespace snapvox.editor.forms
 
         private void OnCanvasPointerReleased(object sender, PointerReleasedEventArgs e)
         {
-            if (_isBusy) return;
+            if (IsEditorOperationInProgress) return;
 
             if (_isPanning)
             {
                 _isPanning = false;
                 e.Pointer.Capture(null);
-                // Back to the regular hand in move mode, or to the active tool's crosshair
-                // otherwise (middle-button panning works while any tool is active too).
+                
+                
                 Cursor = _currentTool == EditorTool.None ? HandCursor : CrossCursor;
                 return;
             }
@@ -3754,6 +3952,7 @@ namespace snapvox.editor.forms
                         var lastWord = _selectedOcrWords.OrderByDescending(w => w.Bounds.X + w.Bounds.Width).ThenBy(w => w.Bounds.Y).Last();
                         Canvas.SetLeft(ocrToolbar, lastWord.Bounds.X + lastWord.Bounds.Width + 5);
                         Canvas.SetTop(ocrToolbar, lastWord.Bounds.Y);
+                        UpdateOcrContextToolbarButtons(OcrTextLayout.BuildVisualSelectionText(_selectedOcrWords).Trim());
                         ocrToolbar.IsVisible = true;
                     }
                     else if (_selectedOcrWords.Count == 0 && ocrToolbar != null)
@@ -3798,11 +3997,11 @@ namespace snapvox.editor.forms
             _isDrawing = false;
             var endPoint = e.GetPosition(_canvas);
             if (IsVectorTool(_currentTool)) endPoint = ApplyVectorConstraints(endPoint, _startPoint, e.KeyModifiers);
-            endPoint = ClampRectDrawEnd(endPoint); // ISSUE_021: the committed shape never flips past the anchor
+            endPoint = ClampRectDrawEnd(endPoint); 
             RemovePreviewShape();
             HideVectorInfo();
-            // ISSUE_028: creation is no longer snapped, so the shape lands exactly where the raw
-            // rubberband was drawn - anchor corner included.
+            
+            
             HideSnapGuides();
             if (_currentTool != EditorTool.FreeDraw) CommitShape(_startPoint, endPoint);
             _activePolyline = null;
@@ -3965,7 +4164,8 @@ namespace snapvox.editor.forms
                     break;
             }
 
-            Canvas.SetLeft(_contextToolbar, Math.Clamp(toolbarL, 0, Math.Max(0, canvasW - barW)));
+            double maxLeft = canvasW - barW;
+            Canvas.SetLeft(_contextToolbar, maxLeft > 0 ? Math.Clamp(toolbarL, 0, maxLeft) : (canvasW - barW) / 2);
             Canvas.SetTop(_contextToolbar, Math.Clamp(toolbarT, 0, Math.Max(0, canvasH - barH)));
         }
 
@@ -4043,30 +4243,30 @@ namespace snapvox.editor.forms
             Log.Info("Object deleted via toolbar button.");
         }
 
+        private bool IsEditorOperationInProgress => System.Threading.Volatile.Read(ref _isBusy) != 0;
+
         private bool TryBeginEditorOperation()
         {
-            if (_isBusy) return false;
-            _isBusy = true;
-            return true;
+            return System.Threading.Interlocked.CompareExchange(ref _isBusy, 1, 0) == 0;
         }
 
         private void EndEditorOperation()
         {
-            _isBusy = false;
+            System.Threading.Interlocked.Exchange(ref _isBusy, 0);
         }
 
-        // ISSUE (sluggish final action): Download/Copy/OCR waited a HARDCODED 1000ms
-        // before closing the editor while the blink overlay honoured the user's
-        // NotificationOverlayDurationMs setting. With a 500ms blink the editor idled
-        // another 500ms with no overlay on screen; with a long blink the overlay
-        // outlived the editor by seconds. The close wait now derives from the SAME
-        // GetOverlayDurationMs() value the overlay uses, clamped to [250, 1000]:
-        // a 250ms floor keeps the "blink first, then close" sequential finality
-        // visible, and the 1000ms ceiling means the editor never closes slower
-        // than the old fixed wait. The overlay finishes its full configured cycle
-        // on its own (it owns its lifetime), so longer blink settings still
-        // confirm the action after the editor is gone. Everything stays on the
-        // async/await pipeline - no blocking waits, no fire-and-forget closes.
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         private static int GetFinalActionCloseDelayMs()
         {
             return Math.Clamp(NotificationOverlayWindow.GetOverlayDurationMs(), 250, 1000);
@@ -4084,14 +4284,14 @@ namespace snapvox.editor.forms
                     Log.Info($"Resizing image to {resizeWin.ResultWidth}x{resizeWin.ResultHeight}");
                     SaveUndoState(true);
                     await FlattenAnnotationsAsync().ConfigureAwait(true);
-                    await Task.Run(() => _image.Mutate(x => x.Resize(resizeWin.ResultWidth, resizeWin.ResultHeight))).ConfigureAwait(true);
+                    if (!await Task.Run(() => MutateImage(img => img.Mutate(x => x.Resize(resizeWin.ResultWidth, resizeWin.ResultHeight)))).ConfigureAwait(true)) return;
                     Dispatcher.UIThread.Post(async () => {
                         await UpdateDisplayAsync().ConfigureAwait(true);
                         OverlayHelper.ShowLightToast("IMAGE RESIZED", this);
                         ShowUndoAvailableHint();
-                        // ISSUE_032 (resize should resize the editor): adopting the new pixel
-                        // size must also re-fit the window, exactly like a freshly taken
-                        // snapshot of those dimensions.
+                        
+                        
+                        
                         RefitWindowToImage();
                     });
                 }
@@ -4131,18 +4331,25 @@ namespace snapvox.editor.forms
 
         private async void OnDownloadClick(object sender, RoutedEventArgs e)
         {
-            if (_image == null || !TryBeginEditorOperation()) return;
+            await SaveToDownloadsAsync().ConfigureAwait(true);
+        }
+
+        private async Task<bool> SaveToDownloadsAsync()
+        {
+            if (_image == null || !TryBeginEditorOperation()) return false;
+            bool saved = false;
             try
             {
                 using var tempImage = await GetFlattenedImageForOcrAsync().ConfigureAwait(true);
-                if (tempImage == null) return;
+                if (tempImage == null) return false;
 
-                string fileName = $"Capture_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.jpg";
+                string fileName = $"Capture_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.{(IniConfig.GetIniSection<CoreConfiguration>().OutputFileAllowPng ? "png" : "jpg")}";
                 
                 string downloadsPath = await GetEffectiveDownloadPathAsync().ConfigureAwait(true);
                 Directory.CreateDirectory(downloadsPath);
                 string downloadedFilePath = Path.Combine(downloadsPath, fileName);
-                await SaveJpegAsync(tempImage, downloadedFilePath).ConfigureAwait(true);
+                await SaveImageAsync(tempImage, downloadedFilePath).ConfigureAwait(true);
+                saved = true;
 
                 await SaveToHistoryBackupAsync(fileName, tempImage).ConfigureAwait(true);
 
@@ -4161,6 +4368,7 @@ namespace snapvox.editor.forms
             }
             catch (Exception ex)
             {
+                saved = false;
                 Log.Fatal("[DOWNLOAD_CRITICAL_ERROR]", ex);
                 Dispatcher.UIThread.Post(() => {
                     OverlayHelper.ShowNotification("Save Failed", this);
@@ -4170,6 +4378,8 @@ namespace snapvox.editor.forms
             {
                 EndEditorOperation();
             }
+
+            return saved;
         }
 
         private async void OnCopyClick(object sender, RoutedEventArgs e)
@@ -4181,7 +4391,7 @@ namespace snapvox.editor.forms
                 using var tempImage = await GetFlattenedImageAsync().ConfigureAwait(true);
                 if (tempImage == null) return;
 
-                await SaveToHistoryBackupAsync($"Capture_{DateTime.Now:yyyy-MM-dd HH_mm_ss_fff}.jpg", tempImage).ConfigureAwait(true);
+                await SaveToHistoryBackupAsync($"Capture_{DateTime.Now:yyyy-MM-dd HH_mm_ss_fff}.{(IniConfig.GetIniSection<CoreConfiguration>().OutputFileAllowPng ? "png" : "jpg")}", tempImage).ConfigureAwait(true);
 
                 await UiClipboard.SetImageAsync(tempImage, true).ConfigureAwait(true);
                 
@@ -4209,7 +4419,7 @@ namespace snapvox.editor.forms
             }
         }
 
-        private static Task SaveJpegAsync(ImageSharpImage img, string path) => Task.Run(() => img.Save(path, new JpegEncoder { Quality = IniConfig.GetIniSection<CoreConfiguration>().OutputFileJpegQuality }));
+        private static Task SaveImageAsync(ImageSharpImage img, string path) => Task.Run(() => { var config = IniConfig.GetIniSection<CoreConfiguration>(); if (config.OutputFileAllowPng) { img.Save(path, new SixLabors.ImageSharp.Formats.Png.PngEncoder()); } else { img.Save(path, new JpegEncoder { Quality = config.OutputFileJpegQuality }); } });
 
         private static async Task SaveToHistoryBackupAsync(string fileName, ImageSharpImage img)
         {
@@ -4219,7 +4429,7 @@ namespace snapvox.editor.forms
             {
                 string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
                 Directory.CreateDirectory(tempDir);
-                await SaveJpegAsync(img, Path.Combine(tempDir, fileName)).ConfigureAwait(false);
+                await SaveImageAsync(img, Path.Combine(tempDir, fileName)).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -4494,6 +4704,37 @@ namespace snapvox.editor.forms
             if (ocrToolbar != null) ocrToolbar.IsVisible = false;
         }
 
+        
+        private void UpdateOcrContextToolbarButtons(string text)
+        {
+            var btnLink = this.FindControl<Button>("OcrContextOpenLinkButton");
+            var btnEmail = this.FindControl<Button>("OcrContextEmailButton");
+            if (btnLink != null) btnLink.IsVisible = System.Text.RegularExpressions.Regex.IsMatch(text, @"^https?://\S+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) || System.Text.RegularExpressions.Regex.IsMatch(text, @"^www\.\S+\.\S+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (btnEmail != null) btnEmail.IsVisible = System.Text.RegularExpressions.Regex.IsMatch(text, @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+        }
+
+        private void OnOcrContextOpenLinkClick(object sender, RoutedEventArgs e)
+        {
+            if (_selectedOcrWords.Count == 0) return;
+            string text = OcrTextLayout.BuildVisualSelectionText(_selectedOcrWords).Trim();
+            if (!text.StartsWith("http", StringComparison.OrdinalIgnoreCase)) text = "https://" + text;
+            _ = Task.Run(() => Process.Start(new ProcessStartInfo(text) { UseShellExecute = true }));
+            ClearOcrContext();
+        }
+
+        private void OnOcrContextEmailClick(object sender, RoutedEventArgs e)
+        {
+            if (_selectedOcrWords.Count == 0) return;
+            string text = OcrTextLayout.BuildVisualSelectionText(_selectedOcrWords).Trim();
+            _ = Task.Run(() => Process.Start(new ProcessStartInfo("mailto:" + text) { UseShellExecute = true }));
+            ClearOcrContext();
+        }
+
+        private void ClearOcrContext()
+        {
+            ClearOcrContext();
+        }
+
         private async void OnOcrContextCopyClick(object sender, RoutedEventArgs e)
         {
             if (_selectedOcrWords.Count == 0) return;
@@ -4504,17 +4745,7 @@ namespace snapvox.editor.forms
             
             OverlayHelper.ShowNotification("TEXT COPIED", this);
             
-            _selectedOcrWords.Clear();
-            _ocrSelectionStartIndex = -1;
-            _ocrSelectionEndIndex = -1;
-            UpdateOcrSelectionVisuals(true);
-            var ocrToolbar = this.FindControl<Border>("OcrContextToolbar");
-            if (ocrToolbar != null) ocrToolbar.IsVisible = false;
-        }
-
-        private void OnCropApplyClick(object sender, RoutedEventArgs e)
-        {
-            OnWindowKeyDown(this, new KeyEventArgs { Key = Key.Enter });
+            ClearOcrContext();
         }
 
         private void OnUndoClick(object sender, RoutedEventArgs e)
@@ -4589,10 +4820,10 @@ namespace snapvox.editor.forms
 
             _currentThickness = _toolThicknesses.TryGetValue(_currentTool, out var thickness) ? thickness : 3.0;
             _isFillMode = _toolFillModes.TryGetValue(_currentTool, out var fillMode) && fillMode;
-            // BUGFIX (stale marching ants): activating any tool moves the editing focus away
-            // from the currently selected object, so the selection - and its marching-ants
-            // frame, handles and context toolbar - must be released here. Previously the ants
-            // stayed glued to the old object while the new tool was already in use.
+            
+            
+            
+            
             if (_currentTool != EditorTool.None && _selectedControl != null)
             {
                 if (IsPastedImageControl(_selectedControl)) FinalizeSelectedPasteObject();
@@ -4613,7 +4844,7 @@ namespace snapvox.editor.forms
                 UpdatePresetSelectionVisuals(scb.Color);
             }
 
-            _ghostSettingsDirty = true; // tool ghost must reflect the newly selected tool
+            _ghostSettingsDirty = true; 
         }
         private void OnColorSelectClick(object sender, RoutedEventArgs e) { if (sender is Button btn && btn.Tag is string colorHex) { var color = AvaloniaColor.Parse(colorHex); ApplyColor(color); UpdateCurrentColorDisplay(color); } }
 
@@ -4637,9 +4868,9 @@ namespace snapvox.editor.forms
 
         private bool _syncingHexInput;
 
-        // FEATURE (pro color picker): two-way hex entry - typing #RRGGBB (or RRGGBB / #AARRGGBB)
-        // moves the spectrum view to that color, and every picker change writes the hex back.
-        // A copy button exports the current hex to the clipboard as plain text.
+        
+        
+        
         private void InitializeCustomColorFlyout()
         {
             var picker = this.FindControl<ColorView>("ColorPickerView");
@@ -4665,7 +4896,7 @@ namespace snapvox.editor.forms
                 if (_syncingHexInput) return;
                 if (TryParseHexColor(hexInput.Text, out var parsed))
                 {
-                    picker.Color = parsed; // raises ColorChanged, which refreshes the preview chip
+                    picker.Color = parsed; 
                 }
             };
         }
@@ -4795,7 +5026,7 @@ namespace snapvox.editor.forms
         private void ApplyColor(AvaloniaColor color)
         {
             _lastSelectedColor = color;
-            _ghostSettingsDirty = true; // tool ghost should preview the new color
+            _ghostSettingsDirty = true; 
             var brush = new SolidColorBrush(color);
             if (_selectedControl != null)
             {
@@ -4872,7 +5103,7 @@ namespace snapvox.editor.forms
             if (control is Avalonia.Controls.Shapes.Shape s) { 
                 if (s is Avalonia.Controls.Shapes.Rectangle r && r.Tag is HighlightProperties highlightProps)
                 {
-                    // Greenshot-style highlight recolors the actual pixels, so re-render the patch.
+                    
                     highlightProps.Color = AvaloniaColor.FromArgb(255, color.R, color.G, color.B);
                     RefreshHighlightAnnotation(r);
                 }
@@ -4905,7 +5136,7 @@ namespace snapvox.editor.forms
 
             _currentTool = EditorTool.Emoji;
             _pendingEmoji = emoji;
-            _ghostSettingsDirty = true; // ghost must float the newly picked emoji
+            _ghostSettingsDirty = true; 
             Cursor = HandCursor;
 
             var emojiBtn = this.FindControl<Button>("EmojiTool");
@@ -4925,9 +5156,9 @@ namespace snapvox.editor.forms
             UpdateThicknessPanelVisibility();
             UpdateModeStatus();
 
-            // BUGFIX (emoji popup): picking an emoji commits the choice - fold the flyout
-            // immediately instead of leaving it dangling over the canvas while the ghost
-            // floats the selection.
+            
+            
+            
             emojiBtn?.Flyout?.Hide();
         }
 
@@ -5053,7 +5284,7 @@ namespace snapvox.editor.forms
                 
                 if (saveConfig) IniConfig.Save();
                 SaveToolPreferences();
-                _ghostSettingsDirty = true; // tool ghost must preview the new thickness
+                _ghostSettingsDirty = true; 
                 Log.Info($"Thickness set to: {val}");
             } 
         }
@@ -5073,7 +5304,7 @@ namespace snapvox.editor.forms
             }
 
             UpdateFillToggleVisual();
-            _ghostSettingsDirty = true; // ghost must preview the new fill mode
+            _ghostSettingsDirty = true; 
             OverlayHelper.ShowLightToast(_isFillMode ? "FILL ON" : "FILL OFF", this);
 
             if (_selectedControl != null) {
@@ -5360,7 +5591,7 @@ namespace snapvox.editor.forms
                     Canvas.SetTop(child, Canvas.GetTop(child) - cropRect.Y);
                 }
 
-                await Task.Run(() => _image.Mutate(x => x.Crop(cropRect))).ConfigureAwait(true);
+                if (!await Task.Run(() => MutateImage(img => img.Mutate(x => x.Crop(cropRect)))).ConfigureAwait(true)) return;
                 await UpdateDisplayAsync().ConfigureAwait(true);
                 ShowUndoAvailableHint();
             }
@@ -5383,7 +5614,7 @@ namespace snapvox.editor.forms
                 SaveUndoState(true);
                 int oldW = _image.Width;
                 int oldH = _image.Height;
-                await Task.Run(() => _image.Mutate(x => x.Rotate(mode))).ConfigureAwait(true);
+                if (!await Task.Run(() => MutateImage(img => img.Mutate(x => x.Rotate(mode)))).ConfigureAwait(true)) return;
                 
                 double rotAngle = 0;
                 if (mode == RotateMode.Rotate90) rotAngle = 90;
@@ -5504,13 +5735,13 @@ namespace snapvox.editor.forms
             ShowUndoAvailableHint();
         }
 
-        // IDEA_008 (Ink Alive): plays the juicy stamp-in animation on a newly placed object.
+        
         private static void PlayStampIn(AvaloniaControl control)
         {
             if (control == null) return;
             control.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
             control.Classes.Add("ink-stamp");
-            // Auto-remove the class once the animation completes so it can replay next time.
+            
             DispatcherTimer.RunOnce(() =>
             {
                 control.Classes.Remove("ink-stamp");
@@ -5545,44 +5776,51 @@ namespace snapvox.editor.forms
 
         private async Task<ImageSharpImage> GetFlattenedImageAsync()
         {
-            if (_image == null) return null;
-            byte[] bytes = await RenderFlattenedImageBytesAsync().ConfigureAwait(true);
-            if (bytes == null)
+            if (!HasImage) return null;
+            FlattenedSurface surface = await RenderFlattenedSurfaceAsync().ConfigureAwait(true);
+            if (surface == null)
             {
-                var source = _image;
-                return await Task.Run(() => source.Clone()).ConfigureAwait(true);
+                return await Task.Run(() => WithImage(img => img.Clone(x => { }))).ConfigureAwait(true);
             }
             bool addFrameBorders = IniConfig.GetIniSection<CoreConfiguration>().AddFrameBorders;
-            return await Task.Run(() => LoadFlattenedImage(bytes, addFrameBorders)).ConfigureAwait(true);
+            return await Task.Run(() => LoadFlattenedImage(surface, addFrameBorders)).ConfigureAwait(true);
         }
 
         private async Task<ImageSharpImage> GetFlattenedImageForOcrAsync()
         {
-            if (_image == null) return null;
-            byte[] bytes = await RenderFlattenedImageBytesAsync().ConfigureAwait(true);
-            if (bytes == null)
+            if (!HasImage) return null;
+            FlattenedSurface surface = await RenderFlattenedSurfaceAsync().ConfigureAwait(true);
+            if (surface == null)
             {
-                var source = _image;
-                return await Task.Run(() => source.Clone()).ConfigureAwait(true);
+                return await Task.Run(() => WithImage(img => img.Clone(x => { }))).ConfigureAwait(true);
             }
             bool addFrameBorders = IniConfig.GetIniSection<CoreConfiguration>().AddFrameBorders;
-            return await Task.Run(() => LoadFlattenedImage(bytes, addFrameBorders)).ConfigureAwait(true);
+            return await Task.Run(() => LoadFlattenedImage(surface, addFrameBorders)).ConfigureAwait(true);
         }
 
-        private async Task<byte[]> RenderFlattenedImageBytesAsync()
+        private async Task<FlattenedSurface> RenderFlattenedSurfaceAsync()
         {
             if (Dispatcher.UIThread.CheckAccess())
             {
                 await Task.Yield();
-                return RenderFlattenedImageBytes();
+                return RenderFlattenedSurface();
             }
 
-            return await Dispatcher.UIThread.InvokeAsync(RenderFlattenedImageBytes);
+            return await Dispatcher.UIThread.InvokeAsync(RenderFlattenedSurface);
         }
 
-        private byte[] RenderFlattenedImageBytes()
+        private sealed class FlattenedSurface
         {
-            if (_image == null) return null;
+            public byte[] Pixels;
+            public int Width;
+            public int Height;
+            public bool IsRgbaOrder;
+            public bool IsPremultiplied;
+        }
+
+        private FlattenedSurface RenderFlattenedSurface()
+        {
+            if (!TryGetImageSize(out int imageWidth, out int imageHeight)) return null;
             var chromeState = SetEditorChromeVisible(false);
             Panel originalParent = null;
             int originalIndex = -1;
@@ -5594,8 +5832,8 @@ namespace snapvox.editor.forms
 
             try
             {
-                int w = _image.Width;
-                int h = _image.Height;
+                int w = imageWidth;
+                int h = imageHeight;
                 renderRoot = new Grid { Width = w, Height = h };
                 imgClone = new Avalonia.Controls.Image { Source = _displayBitmap, Width = w, Height = h, Stretch = Stretch.None };
                 renderRoot.Children.Add(imgClone);
@@ -5617,9 +5855,27 @@ namespace snapvox.editor.forms
                 renderRoot.Arrange(new Rect(0, 0, w, h));
                 rtb.Render(renderRoot);
 
-                using var ms = new MemoryStream();
-                rtb.Save(ms);
-                return ms.ToArray();
+                int stride = checked(w * 4);
+                byte[] pixels = new byte[checked(stride * h)];
+                GCHandle pin = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+                try
+                {
+                    rtb.CopyPixels(new PixelRect(0, 0, w, h), pin.AddrOfPinnedObject(), pixels.Length, stride);
+                }
+                finally
+                {
+                    pin.Free();
+                }
+
+                Avalonia.Platform.PixelFormat? format = rtb.Format;
+                return new FlattenedSurface
+                {
+                    Pixels = pixels,
+                    Width = w,
+                    Height = h,
+                    IsRgbaOrder = format.HasValue && format.Value == Avalonia.Platform.PixelFormat.Rgba8888,
+                    IsPremultiplied = rtb.AlphaFormat.GetValueOrDefault(Avalonia.Platform.AlphaFormat.Premul) == Avalonia.Platform.AlphaFormat.Premul
+                };
             }
             catch (Exception ex)
             {
@@ -5654,10 +5910,11 @@ namespace snapvox.editor.forms
             }
         }
 
-        private static ImageSharpImage LoadFlattenedImage(byte[] bytes, bool addFrameBorders)
+        private static ImageSharpImage LoadFlattenedImage(FlattenedSurface surface, bool addFrameBorders)
         {
-            using var ms = new MemoryStream(bytes);
-            var sharpImg = ImageSharpImage.Load(ms);
+            if (surface?.Pixels == null) return null;
+            NormalizeFlattenedPixels(surface);
+            var sharpImg = ImageSharpImage.LoadPixelData<Bgra32>(surface.Pixels, surface.Width, surface.Height);
             if (addFrameBorders)
             {
                 int w = sharpImg.Width;
@@ -5670,6 +5927,41 @@ namespace snapvox.editor.forms
                 });
             }
             return sharpImg;
+        }
+
+        private static void NormalizeFlattenedPixels(FlattenedSurface surface)
+        {
+            byte[] pixels = surface.Pixels;
+            bool swap = surface.IsRgbaOrder;
+            bool unpremultiply = surface.IsPremultiplied;
+            if (!swap && !unpremultiply) return;
+
+            for (int i = 0; i < pixels.Length; i += 4)
+            {
+                byte b = pixels[i];
+                byte g = pixels[i + 1];
+                byte r = pixels[i + 2];
+                byte a = pixels[i + 3];
+
+                if (swap)
+                {
+                    byte tmp = b;
+                    b = r;
+                    r = tmp;
+                }
+
+                if (unpremultiply && a != 0 && a != 255)
+                {
+                    b = (byte)Math.Min(255, b * 255 / a);
+                    g = (byte)Math.Min(255, g * 255 / a);
+                    r = (byte)Math.Min(255, r * 255 / a);
+                }
+
+                pixels[i] = b;
+                pixels[i + 1] = g;
+                pixels[i + 2] = r;
+                pixels[i + 3] = a;
+            }
         }
 
         private SixLabors.ImageSharp.Rectangle ClampImageRectangle(Rect rect)
@@ -5704,32 +5996,16 @@ namespace snapvox.editor.forms
         private async void OnClearAllClick(object sender, RoutedEventArgs e)
         {
             if (GetUserAnnotations().Count == 0) return;
-            var prompt = new Window
-            {
-                Title = "Clear All",
-                Width = 300, Height = 150,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background = new SolidColorBrush(AvaloniaColor.Parse("#2D2D30")),
-                Content = new StackPanel
-                {
-                    Spacing = 20, Margin = new Thickness(20),
-                    Children = {
-                        new TextBlock { Text = "Erase all shapes and start fresh?", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Foreground = Brushes.White },
-                        new StackPanel {
-                            Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                            Children = {
-                                new Button { Content = "Yes", Width = 80, Cursor = HandCursor, Background = Brushes.Crimson, Foreground = Brushes.White, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center },
-                                new Button { Content = "Cancel", Width = 80, Cursor = HandCursor, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center }
-                            }
-                        }
-                    }
-                }
-            };
-            var buttons = ((StackPanel)((StackPanel)prompt.Content).Children[1]).Children.OfType<Button>().ToList();
-            bool confirmed = false;
-            buttons[0].Click += (s, ev) => { confirmed = true; prompt.Close(); };
-            buttons[1].Click += (s, ev) => prompt.Close();
-            await prompt.ShowDialog(this);
+            int count = GetUserAnnotations().Count;
+            bool confirmed = await ConfirmDialog.ShowAsync(
+                this,
+                "Clear All",
+                count == 1
+                    ? "This permanently removes the 1 object you added to this image. It cannot be recovered after the editor closes."
+                    : $"This permanently removes all {count} objects you added to this image. They cannot be recovered after the editor closes.",
+                "Clear All",
+                "Keep Them",
+                true).ConfigureAwait(true);
             if (confirmed) { SaveUndoState(true); RemoveUserAnnotations(); _selectedControl = null; UpdateSelectionIndicator(); ShowUndoAvailableHint(); }
         }
     }

@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -27,15 +27,9 @@ namespace snapvox.editor.forms
         private void InitializeComponent()
         {
             AvaloniaXamlLoader.Load(this);
+            snapvox.foundation.core.UiLayoutDirection.Apply(this);
         }
 
-        /// <summary>
-        /// Single source of truth for the blink overlay duration (ms). Reads the user's
-        /// CoreConfiguration.NotificationOverlayDurationMs and clamps it to [250, 10000];
-        /// falls back to the historical 1000ms when the INI layer is unavailable so
-        /// callers can never get 0/negative delays. The editor's final-action close
-        /// delay derives from this value, keeping the overlay and the window in sync.
-        /// </summary>
         public static int GetOverlayDurationMs()
         {
             int blinkTotalMs = 1000;
@@ -110,13 +104,8 @@ namespace snapvox.editor.forms
 
                     window.Show();
 
-                    // BUGFIX (overlay lifetime): any exception between Show() and the end
-                    // of the blink used to strand a visible topless overlay window for the
-                    // rest of the session. Everything after Show() now runs in try/finally
-                    // so Close() is guaranteed exactly once on every path.
                     try
                     {
-                        // Center manually after Show() so actual bounds are known
                         window.Position = new PixelPoint(
                             work.X + (work.Width - (int)window.Bounds.Width) / 2,
                             work.Y + (work.Height - (int)window.Bounds.Height) / 2);
@@ -126,14 +115,6 @@ namespace snapvox.editor.forms
                         var blueBrush = new SolidColorBrush(Color.Parse("#007ACC"));
                         IBrush[] colors = { whiteBrush, redBrush, blueBrush };
 
-                        // FEATURE (blink duration setting): the blink cycle length is user
-                        // configurable via CoreConfiguration.NotificationOverlayDurationMs
-                        // (INI backed, Settings > General). Default 1000ms keeps the original
-                        // 4 x 250ms cadence; the total is spread evenly over the 4 colour
-                        // changes so the blink rhythm stays constant at any duration.
-                        // GetOverlayDurationMs() is the SINGLE source of truth - the editor's
-                        // final-action close delay reads the same clamped value, so the
-                        // window never outlives (or under-lives) the blink it waits for.
                         int blinkTotalMs = GetOverlayDurationMs();
                         int blinkStepDelay = Math.Max(50, blinkTotalMs / 4);
                         for (int i = 0; i < 4; i++)
@@ -179,15 +160,17 @@ namespace snapvox.editor.forms
                     if (targetScreen == null) return;
                     var work = targetScreen.WorkingArea;
 
-                    // Capture owner bounds and position safely inside UIThread.Post
                     var ownerBounds = contextWindow.Bounds;
                     var ownerPos = contextWindow.Position;
 
                     int offset;
-                    bool counted = false;
-                    lock(_toastLock) { offset = _activeToasts++; counted = true; }
+                    bool counted;
+                    lock (_toastLock) { offset = _activeToasts++; counted = true; }
 
-                    var window = new NotificationOverlayWindow();
+                    NotificationOverlayWindow window = null;
+                    try
+                    {
+                    window = new NotificationOverlayWindow();
                     var chrome = window.FindControl<Border>("NotificationChrome");
                     var textBlock = window.FindControl<TextBlock>("NotificationText");
                     var icon = window.FindControl<TextBlock>("NotificationIcon");
@@ -207,7 +190,7 @@ namespace snapvox.editor.forms
                         textBlock.MaxWidth = 300;
                     }
                     if (icon != null) { 
-                        icon.Text = "\uE946"; // Info icon
+                        icon.Text = "\uE946";
                         icon.FontSize = 16;
                         icon.Foreground = new SolidColorBrush(Color.Parse("#FFF2B84B"));
                     }
@@ -234,25 +217,16 @@ namespace snapvox.editor.forms
 
                     window.Position = new PixelPoint((int)targetX, (int)targetY);
 
-                    // BUGFIX (toast counter leak): _activeToasts was decremented only on
-                    // the success path - any exception during fade/display leaked the slot
-                    // forever (permanently offsetting every later toast), and a throw after
-                    // Show() stranded the window. Close + decrement now run in a finally so
-                    // the counter and the window lifetime always converge.
-                    try
-                    {
-                        // Fade in (200ms)
-                        for (int i = 0; i < 5; i++) { window.Opacity += 0.2; await Task.Delay(40); }
-                        window.Opacity = 1.0;
-                        
-                        await Task.Delay(800); // Display (800ms)
-                        
-                        // Fade out (200ms)
-                        for (int i = 0; i < 5; i++) { window.Opacity -= 0.2; await Task.Delay(40); }
+                    for (int i = 0; i < 5; i++) { window.Opacity += 0.2; await Task.Delay(40); }
+                    window.Opacity = 1.0;
+
+                    await Task.Delay(800);
+
+                    for (int i = 0; i < 5; i++) { window.Opacity -= 0.2; await Task.Delay(40); }
                     }
                     finally
                     {
-                        window.Close();
+                        window?.Close();
                         if (counted) lock (_toastLock) { _activeToasts--; if (_activeToasts < 0) _activeToasts = 0; }
                     }
                 }

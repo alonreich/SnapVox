@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -17,12 +17,13 @@ using snapvox.helpers;
 using snapvox.native;
 using snapvox.native.foundation;
 using ImageSharpBgra = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Bgra32>;
-
+using SixLabors.ImageSharp.Processing;
 namespace snapvox.forms
 {
     public partial class ScrollCaptureWindow : Window
     {
         private static readonly ILog Log = LogHelper.GetLogger(typeof(ScrollCaptureWindow));
+        private static readonly Avalonia.Input.Cursor RecordingCursor = new Avalonia.Input.Cursor(StandardCursorType.Arrow);
         private static readonly object Sync = new object();
         private static readonly List<ScrollCaptureWindow> ActiveWindows = new List<ScrollCaptureWindow>();
         private static RECT SelectedRect = RECT.Empty;
@@ -44,14 +45,9 @@ namespace snapvox.forms
         private TextBlock _instructionText;
         private TextBlock _statusText;
         private Button _exitButton;
-        private const int WM_MOUSEWHEEL = 0x020A;
-        private const int WM_MOUSEHWHEEL = 0x020E;
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x00000020;
         private const int WS_EX_LAYERED = 0x00080000;
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr SendMessageW(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
@@ -99,22 +95,22 @@ namespace snapvox.forms
                 }
                 
                 ticks++;
-                if (ticks < 10) return; // 500ms grace period
+                if (ticks < 10) return;
 
                 bool spacePressed = (GetAsyncKeyState(0x20) & 0x8000) != 0;
                 bool leftClickPressed = (GetAsyncKeyState(0x01) & 0x8000) != 0;
 
-                if (spacePressed || leftClickPressed) // Space or Left Click
+                if (spacePressed || leftClickPressed)
                 {
                     StopInputPolling();
                     _ = FinishRecordingAsync();
                 }
-                else if ((GetAsyncKeyState(0x1B) & 0x8000) != 0) // Escape
+                else if ((GetAsyncKeyState(0x1B) & 0x8000) != 0)
                 {
                     StopInputPolling();
                     _ = ExitModeAsync();
                 }
-                else if ((GetAsyncKeyState(0x02) & 0x8000) != 0) // Right Mouse
+                else if ((GetAsyncKeyState(0x02) & 0x8000) != 0)
                 {
                     StopInputPolling();
                     _ = ExitModeAsync();
@@ -136,6 +132,7 @@ namespace snapvox.forms
         public ScrollCaptureWindow()
         {
             InitializeComponent();
+            snapvox.foundation.core.UiLayoutDirection.Apply(this);
         }
 
         public ScrollCaptureWindow(PixelRect screenBounds)
@@ -186,10 +183,10 @@ namespace snapvox.forms
             {
                 if (ActiveWindows.Count > 0)
                 {
-                    foreach (ScrollCaptureWindow window in ActiveWindows.ToList())
+                    for (int i = 0; i < ActiveWindows.Count; i++)
                     {
-                        window.Activate();
-                        window.Focus();
+                        ActiveWindows[i].Activate();
+                        ActiveWindows[i].Focus();
                     }
                     return;
                 }
@@ -304,7 +301,6 @@ namespace snapvox.forms
 
         private void OnPointerWheelChanged(object sender, PointerWheelEventArgs e)
         {
-            // Handled via WS_EX_TRANSPARENT | WS_EX_LAYERED click-through
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
@@ -380,7 +376,7 @@ namespace snapvox.forms
                     Win32WindowHelper.SetForegroundWindow(SelectedWindowHandle);
                     var config = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>();
                     int delay = Math.Max(150, config.CaptureDelay);
-                    await Task.Delay(delay); // Honor CaptureDelay while maintaining safety margin
+                    await Task.Delay(delay);
                 }
 
                 Recorder = new ScrollCaptureRecorder(rect);
@@ -388,7 +384,7 @@ namespace snapvox.forms
                 IsRecording = true;
                 foreach (var win in ActiveWindows) 
                 { 
-                    win.Cursor = new Avalonia.Input.Cursor(StandardCursorType.Arrow); 
+                    win.Cursor = RecordingCursor; 
                     win.SetClickThrough(true);
                     if (win._highlightBorder != null) win._highlightBorder.IsVisible = false;
                     if (win._recordingDot != null) { win._recordingDot.IsVisible = true; win._recordingDot.Classes.Add("pulse"); }
@@ -399,7 +395,14 @@ namespace snapvox.forms
             catch (Exception ex)
             {
                 Log.Error("Could not start scroll capture.", ex);
-                BroadcastStatus("Try again", "Could not start recording");
+                if (!IsSnapVoxElevated)
+                {
+                    BroadcastStatus("ACCESS DENIED / BLOCKED", "Run SnapVox as Admin to capture this app");
+                }
+                else
+                {
+                    BroadcastStatus("Try again", "Could not start recording");
+                }
                 IsRecording = false;
                 Recorder = null;
             }
@@ -447,17 +450,23 @@ namespace snapvox.forms
                     return;
                 }
 
-                ImageSharpBgra clipboardImage = result.Clone();
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                ImageSharpBgra clipboardImage = result.Clone(x => { });
+                try
                 {
-                    RECT captureRect = RECT.FromXYWH(SelectedRect.Left, SelectedRect.Top, result.Width, result.Height);
-                    CloseAllOverlays();
-                    RestoreOwner();
-                    CaptureHelper.OpenEditorForOwnedImage(result, captureRect);
-                    result = null;
-                });
-                await UiClipboard.SetImageAsync(clipboardImage).ConfigureAwait(false);
-                clipboardImage.Dispose();
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        RECT captureRect = RECT.FromXYWH(SelectedRect.Left, SelectedRect.Top, result.Width, result.Height);
+                        CloseAllOverlays();
+                        RestoreOwner();
+                        CaptureHelper.OpenEditorForOwnedImage(result, captureRect);
+                        result = null;
+                    });
+                    await UiClipboard.SetImageAsync(clipboardImage).ConfigureAwait(false);
+                }
+                finally
+                {
+                    clipboardImage.Dispose();
+                }
             }
             catch (Exception ex)
             {
@@ -473,29 +482,6 @@ namespace snapvox.forms
             {
                 result?.Dispose();
             }
-        }
-
-        private static async Task CancelAttemptAsync()
-        {
-            ScrollCaptureRecorder recorder = Recorder;
-            Recorder = null;
-            IsRecording = false;
-            IsFinishing = false;
-            if (recorder != null)
-            {
-                await recorder.CancelAsync().ConfigureAwait(false);
-                await recorder.DisposeAsync().ConfigureAwait(false);
-            }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                foreach (var win in ActiveWindows)
-                {
-                    if (win._recordingDot != null) { win._recordingDot.IsVisible = false; win._recordingDot.Classes.Remove("pulse"); }
-                }
-                SelectedRect = RECT.Empty;
-                BroadcastStatus("Point at a window", "Space = start");
-            });
         }
 
         private static async Task ExitModeAsync()
@@ -558,24 +544,17 @@ namespace snapvox.forms
 
         private static void BroadcastSelection(RECT rect)
         {
-            foreach (ScrollCaptureWindow window in ActiveWindows.ToList())
+            for (int i = 0; i < ActiveWindows.Count; i++)
             {
-                window.ShowSelection(rect);
+                ActiveWindows[i].ShowSelection(rect);
             }
-        }
-
-        private static void SendMouseWheel(IntPtr hwnd, int message, int delta, POINT cursor)
-        {
-            IntPtr wParam = new IntPtr(delta << 16);
-            long packed = ((long)(cursor.Y & 0xFFFF) << 16) | (uint)(cursor.X & 0xFFFF);
-            SendMessageW(hwnd, message, wParam, new IntPtr(packed));
         }
 
         private static void BroadcastStatus(string instruction, string status)
         {
-            foreach (ScrollCaptureWindow window in ActiveWindows.ToList())
+            for (int i = 0; i < ActiveWindows.Count; i++)
             {
-                window.SetStatus(instruction, status);
+                ActiveWindows[i].SetStatus(instruction, status);
             }
         }
 

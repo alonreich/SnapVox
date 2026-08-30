@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,11 +6,6 @@ using Microsoft.Win32;
 
 namespace snapvox.helpers;
 
-/// <summary>
-/// Authoritative list of registry keys and filesystem paths created by the application.
-/// Derived from source audit — Registry.* / Directory.CreateDirectory / File.Write* call sites.
-/// Resolves Issue ID: 001, 002, 004, 005, 006, 009, 010.
-/// </summary>
 internal static class DeploymentFootprint
 {
     public const string AppName = "snapvox";
@@ -48,7 +43,17 @@ internal static class DeploymentFootprint
     public static readonly string[] RunKeyRelativePaths =
     {
         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-        @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"
+        @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run",
+        @"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
+        @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\RunOnce"
+    };
+
+    public static readonly string[] RunValueNames =
+    {
+        AppName,
+        DisplayName,
+        "SnapVox",
+        "snapvox"
     };
 
     public static readonly string[] MuiCacheRelativePaths =
@@ -63,8 +68,7 @@ internal static class DeploymentFootprint
         "snapvox.lnk",
         "SnapVox.lnk",
         "Uninstall snapvox.lnk",
-        "Uninstall SnapVox.lnk",
-        "snapvox.lnk"
+        "Uninstall SnapVox.lnk"
     };
 
     public static IEnumerable<string> GetShortcutSearchFolders()
@@ -79,13 +83,11 @@ internal static class DeploymentFootprint
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
     }
 
-    /// <summary>Canonical ARP entry for creation.</summary>
     public static (RegistryHive Hive, RegistryView View, string SubKeyPath) GetCanonicalUninstallRegistryTarget()
     {
         return (RegistryHive.LocalMachine, RegistryView.Registry64, UninstallKeyPath);
     }
 
-    /// <summary>All uninstall registration locations to purge (Resolves Issue 001, 002).</summary>
     public static IEnumerable<(RegistryHive Hive, RegistryView View, string SubKeyPath)> GetUninstallRegistryPurgeTargets()
     {
         foreach (RegistryHive hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
@@ -113,9 +115,9 @@ internal static class DeploymentFootprint
             foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
             {
                 yield return (hive, view, AppRegistryKeyPath);
-                yield return (hive, view, @"SOFTWARE\Wow6432Node\snapvox");
                 yield return (hive, view, @"SOFTWARE\snapvox");
                 yield return (hive, view, @"SOFTWARE\Wow6432Node\snapvox");
+                yield return (hive, view, @"SOFTWARE\Wow6432Node\SnapVox");
             }
         }
     }
@@ -153,5 +155,20 @@ internal static class DeploymentFootprint
         yield return ProgramDataFolder;
         yield return RoamingAppDataFolder;
         yield return LocalAppDataFolder;
+    }
+
+    public static IEnumerable<string> GetFullVerificationTargets()
+    {
+        foreach (string target in GetVerificationTargets()) yield return target;
+        yield return TempAppFolder;
+    }
+
+    public static IEnumerable<(RegistryHive Hive, RegistryView View, string SubKeyPath)> GetFileAssociationVerificationTargets()
+    {
+        yield return (RegistryHive.LocalMachine, RegistryView.Registry64, @"SOFTWARE\Classes\" + ProgId);
+        foreach (string ext in ImageExtensions)
+        {
+            yield return (RegistryHive.LocalMachine, RegistryView.Registry64, @"SOFTWARE\Classes\" + ext + @"\shell\" + OpenWithShellName);
+        }
     }
 }

@@ -1,7 +1,5 @@
 using snapvox.native;
 using snapvox.native.foundation;
-using snapvox.native.graphics;
-using snapvox.native.ui;
 using System;
 using System.Globalization;
 using System.IO;
@@ -342,15 +340,6 @@ namespace snapvox.foundation.core
                 _isLog4NetConfigured = false;
                 _fallbackLogFile = null;
             }
-        }
-    }
-
-    public class SpecialFolderPatternConverter : PatternConverter
-    {
-        public override void Convert(TextWriter writer, object state)
-        {
-            Environment.SpecialFolder specialFolder = (Environment.SpecialFolder) Enum.Parse(typeof(Environment.SpecialFolder), Option, true);
-            writer.Write(Environment.GetFolderPath(specialFolder));
         }
     }
 }

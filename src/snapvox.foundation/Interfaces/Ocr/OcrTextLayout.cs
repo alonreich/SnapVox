@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -69,7 +69,8 @@ namespace snapvox.helpers
             }
 
             bool hasHebrew = hebrewSource.Words.Any(word => ContainsHebrew(word.Text));
-            if (!hasHebrew)
+            bool primaryCarriesConfidence = hebrewSource.Words.Any(word => word != null && word.HasConfidence);
+            if (!hasHebrew && !primaryCarriesConfidence)
             {
                 NormalizeTextFromWordsWhenEmpty(englishSource);
                 return englishSource;
@@ -83,17 +84,33 @@ namespace snapvox.helpers
             }
 
             var mergedWords = new List<snapvox.foundation.interfaces.Ocr.OcrWord>();
+            var supersededByConfidence = new HashSet<snapvox.foundation.interfaces.Ocr.OcrWord>();
+
             foreach (var word in hebrewSource.Words)
             {
-                if (ContainsHebrew(word.Text) || !OverlapsAny(word.Bounds, englishSource.Words))
+                if (ContainsHebrew(word.Text))
                 {
+                    mergedWords.Add(word);
+                    continue;
+                }
+
+                var rival = FindOverlap(word.Bounds, englishSource.Words);
+                if (rival == null)
+                {
+                    mergedWords.Add(word);
+                    continue;
+                }
+
+                if (WinsOnConfidence(word, rival))
+                {
+                    supersededByConfidence.Add(rival);
                     mergedWords.Add(word);
                 }
             }
 
             foreach (var word in englishSource.Words)
             {
-                if (!ContainsHebrew(word.Text))
+                if (!ContainsHebrew(word.Text) && !supersededByConfidence.Contains(word))
                 {
                     mergedWords.Add(word);
                 }
@@ -252,17 +269,31 @@ namespace snapvox.helpers
             return runs;
         }
 
-        private static bool OverlapsAny(RECT bounds, IEnumerable<snapvox.foundation.interfaces.Ocr.OcrWord> words)
+        private const float ConfidenceOverrideThreshold = 0.80f;
+
+        private static bool WinsOnConfidence(snapvox.foundation.interfaces.Ocr.OcrWord challenger, snapvox.foundation.interfaces.Ocr.OcrWord incumbent)
+        {
+            if (challenger == null || incumbent == null) return false;
+            if (!challenger.HasConfidence) return false;
+            if (challenger.Confidence < ConfidenceOverrideThreshold) return false;
+
+            string a = (challenger.Text ?? string.Empty).Trim();
+            string b = (incumbent.Text ?? string.Empty).Trim();
+            if (string.Equals(a, b, StringComparison.Ordinal)) return false;
+
+            if (incumbent.HasConfidence) return challenger.Confidence > incumbent.Confidence;
+            return true;
+        }
+
+        private static snapvox.foundation.interfaces.Ocr.OcrWord FindOverlap(RECT bounds, IEnumerable<snapvox.foundation.interfaces.Ocr.OcrWord> words)
         {
             foreach (var word in words)
             {
-                if (IntersectionRatio(bounds, word.Bounds) >= 0.35)
-                {
-                    return true;
-                }
+                if (word == null) continue;
+                if (IntersectionRatio(bounds, word.Bounds) >= 0.35) return word;
             }
 
-            return false;
+            return null;
         }
 
         private static double IntersectionRatio(RECT a, RECT b)

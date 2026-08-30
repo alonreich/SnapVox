@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -43,7 +43,12 @@ namespace snapvox.native
 
         public void Dispose()
         {
-            _ = DisposeAsync().AsTask();
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            _queue.Dispose();
         }
 
         public async ValueTask DisposeAsync()
@@ -71,37 +76,7 @@ namespace snapvox.native
             return ResolveLanguageTag("he") != null;
         }
 
-        public static bool IsAnySupportedLanguageAvailable()
-        {
-            try
-            {
-                return OcrEngine.AvailableRecognizerLanguages.Count > 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
 
-        public static string GetAvailabilityMessage()
-        {
-            if (AreRequiredLanguagesAvailable())
-            {
-                return string.Empty;
-            }
-
-            if (!IsAnySupportedLanguageAvailable())
-            {
-                return "Windows OCR is not available. Install English and Hebrew language packs with OCR.";
-            }
-
-            if (!IsEnglishLanguageAvailable())
-            {
-                return "Windows OCR is missing English language support.";
-            }
-
-            return "Windows OCR is missing Hebrew language support. English OCR is available.";
-        }
 
         public static Task EnsureWindowsOcrInstalled() => Task.CompletedTask;
 
@@ -183,13 +158,18 @@ namespace snapvox.native
             }
         }
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> CachedLanguageTags = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         private static string ResolveLanguageTag(string prefix)
         {
+            if (CachedLanguageTags.TryGetValue(prefix, out string cached)) return cached;
             try
             {
-                return OcrEngine.AvailableRecognizerLanguages
+                string tag = OcrEngine.AvailableRecognizerLanguages
                     .Select(language => language.LanguageTag)
-                    .FirstOrDefault(tag => tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    .FirstOrDefault(t => t.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                if (tag != null) CachedLanguageTags[prefix] = tag;
+                return tag;
             }
             catch
             {

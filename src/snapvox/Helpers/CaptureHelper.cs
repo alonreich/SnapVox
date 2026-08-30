@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,7 +17,6 @@ using snapvox.foundation.IniFile;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Drawing.Processing;
 using ImageSharpImage = SixLabors.ImageSharp.Image;
 
 namespace snapvox.helpers
@@ -30,58 +29,98 @@ namespace snapvox.helpers
 
         private static CoreConfiguration Config => IniConfig.GetIniSection<CoreConfiguration>();
 
-        private static ImageSharpImage _frozenSnapshot;
+        private static volatile ImageSharpImage _frozenSnapshot;
         private static RECT _frozenVirtualBounds;
 
+        public static bool IsFrozenSnapshotReady => _frozenSnapshot != null;
+
+        public static string LastActiveWindowTitle { get; set; }
         public static void CaptureRegion(bool fromHotkey)
         {
+            LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
             if (!forms.CaptureWindow.BeginCaptureSession()) return;
             _ = Task.Run(() => CaptureRegionAsync(fromHotkey));
         }
 
         public static void ClearFrozenSnapshot()
         {
-            lock (LastRegionSync)
+            ImageSharpImage target = _frozenSnapshot;
+            if (target == null) return;
+
+            if (System.Threading.Monitor.TryEnter(LastRegionSync))
             {
-                _frozenSnapshot?.Dispose();
-                _frozenSnapshot = null;
+                try
+                {
+                    RetireFrozenSnapshotLocked(target);
+                }
+                finally
+                {
+                    System.Threading.Monitor.Exit(LastRegionSync);
+                }
+                return;
             }
+
+            _ = Task.Run(() =>
+            {
+                lock (LastRegionSync)
+                {
+                    RetireFrozenSnapshotLocked(target);
+                }
+            });
+        }
+
+        private static void RetireFrozenSnapshotLocked(ImageSharpImage target)
+        {
+            if (!ReferenceEquals(_frozenSnapshot, target)) return;
+            _frozenSnapshot = null;
+            target.Dispose();
         }
 
         public static ImageSharpImage GetFrozenSnapshot(RECT target)
         {
+            if (_frozenSnapshot == null) return null;
+
             lock (LastRegionSync)
             {
-                if (_frozenSnapshot == null) return null;
-                
-                var cropRect = ClampCropRectangle(new Rectangle(target.Left - _frozenVirtualBounds.Left, target.Top - _frozenVirtualBounds.Top, target.Width, target.Height), _frozenSnapshot.Width, _frozenSnapshot.Height);
+                ImageSharpImage source = _frozenSnapshot;
+                if (source == null) return null;
+
+                var cropRect = ClampCropRectangle(new Rectangle(target.Left - _frozenVirtualBounds.Left, target.Top - _frozenVirtualBounds.Top, target.Width, target.Height), source.Width, source.Height);
                 if (cropRect.Width <= 0 || cropRect.Height <= 0) return null;
-                
-                return _frozenSnapshot.Clone(x => x.Crop(cropRect));
+
+                return source.Clone(x => x.Crop(cropRect));
             }
         }
 
         private static async Task CaptureRegionAsync(bool fromHotkey)
         {
+            string sourceTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
             bool overlaysShown = false;
             try
             {
                 RECT virtualBounds = GetVirtualDesktopBounds();
                 ImageSharpImage fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
-                if (fullSnapshot == null)
+                try
                 {
-                    forms.CaptureWindow.EndCaptureSession();
-                    return;
+                    if (fullSnapshot == null)
+                    {
+                        forms.CaptureWindow.EndCaptureSession();
+                        return;
+                    }
+
+                    if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
+
+                    lock (LastRegionSync)
+                    {
+                        _frozenSnapshot?.Dispose();
+                        _frozenSnapshot = fullSnapshot;
+                        fullSnapshot = null;
+                        _frozenVirtualBounds = virtualBounds;
+                    }
                 }
-
-                if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
-
-                lock (LastRegionSync)
+                finally
                 {
-                    _frozenSnapshot?.Dispose();
-                    _frozenSnapshot = fullSnapshot;
-                    fullSnapshot = null;
-                    _frozenVirtualBounds = virtualBounds;
+                    fullSnapshot?.Dispose();
                 }
 
                 var screensInfo = await Dispatcher.UIThread.InvokeAsync(() =>
@@ -103,34 +142,20 @@ namespace snapvox.helpers
                     return;
                 }
 
-                ImageSharpImage snapshotForCropping;
-                lock (LastRegionSync) snapshotForCropping = _frozenSnapshot;
+                SixLabors.ImageSharp.Image<Rgba32> snapshotForCropping = null;
+                lock (LastRegionSync) 
+                {
+                    if (_frozenSnapshot != null) snapshotForCropping = _frozenSnapshot.CloneAs<Rgba32>();
+                }
                 if (snapshotForCropping == null)
                 {
                     forms.CaptureWindow.EndCaptureSession();
                     return;
                 }
 
-                // BUGFIX (mixed-DPI cross-monitor rubberband): the frozen backdrop stays one
-                // unified image, but the overlay is split into one CaptureWindow PER MONITOR
-                // again. Under the app's PerMonitorV2 manifest a single window spanning the
-                // whole virtual desktop carries exactly one DPI factor (the monitor that owns
-                // it), so the rubberband was pixel-exact only on that monitor and drifted
-                // off the drag or vanished on every other scale factor. One window per
-                // monitor gives every overlay its own correct DPI factor, and CaptureWindow
-                // keeps the whole selection state in ABSOLUTE device pixels (see its shared
-                // visual broadcasts), so a drag crossing monitors stays continuous.
-                // BUGFIX (capture crash): the snapshot is Image<Bgra32> (NativeCapture's pixel
-                // type) - a hard (Image<Rgba32>) cast of it compiles but ALWAYS throws
-                // InvalidCastException at runtime, killing every capture ~50ms in. CloneAs does
-                // a real Bgra32->Rgba32 pixel conversion instead (same pattern as
-                // OcrImagePreprocessor).
-                using var unifiedBackdrop = snapshotForCropping.CloneAs<Rgba32>();
+                using var unifiedBackdrop = snapshotForCropping;
                 if (Config.AddFrameBorders)
                 {
-                    // Preserve the mandated 3px navy (#000080) outline around every monitor
-                    // on the unified frozen backdrop (visual only - output images are framed
-                    // separately at save time).
                     foreach (var screen in screensInfo)
                     {
                         DrawMonitorFrame(unifiedBackdrop, screen.Bounds, virtualBounds);
@@ -140,8 +165,8 @@ namespace snapvox.helpers
                 var backdrops = new List<(PixelRect Bounds, Avalonia.Media.Imaging.Bitmap Bitmap)>();
                 try
                 {
-                    // BMP round-trip keeps the encode/decode off the UI thread; slicing the
-                    // unified clone per monitor also avoids any PNG compression passes.
+
+
                     backdrops = await Task.Run(() =>
                     {
                         var slices = new List<(PixelRect Bounds, Avalonia.Media.Imaging.Bitmap Bitmap)>();
@@ -169,7 +194,7 @@ namespace snapvox.helpers
                             {
                                 var slice = backdrops[i];
                                 window = new forms.CaptureWindow(slice.Bounds, slice.Bitmap);
-                                backdrops[i] = (slice.Bounds, null); // bitmap ownership moved into the window
+                                backdrops[i] = (slice.Bounds, null);
                                 window.Show();
                             }
                             catch
@@ -197,8 +222,8 @@ namespace snapvox.helpers
             }
         }
 
-        // NOTE: snapvox pins ImageSharp 2.1.13 (Rgba32), while snapvox.editor compiles against
-        // 3.x (Rgba24) - keep these helpers on the 2.x-safe pixel type and indexer API.
+
+
         private static void DrawMonitorFrame(Image<Rgba32> image, PixelRect bounds, RECT virtualBounds)
         {
             int x0 = Math.Clamp(bounds.X - virtualBounds.Left, 0, Math.Max(0, image.Width - 1));
@@ -246,7 +271,7 @@ namespace snapvox.helpers
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-        public static void CaptureWindow(bool fromHotkey) => CaptureActiveWindow(fromHotkey);
+        public static void CaptureWindow(bool fromHotkey) { LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle(); CaptureActiveWindow(fromHotkey); }
 
         public static void CaptureActiveWindow(bool fromHotkey)
         {
@@ -299,11 +324,11 @@ namespace snapvox.helpers
                     {
                         if (Win32WindowHelper.GetWindowRect(activeHwnd, out RECT rawRect) && !rawRect.IsEmpty)
                         {
-                            // ISSUE_024: prefer the VISIBLE (DWM extended frame) bounds on every
-                            // path - the raw GetWindowRect includes the invisible resize borders,
-                            // so captures came out bigger than the chosen window. Maximized
-                            // windows are additionally clamped to their monitor so the DWM frame
-                            // overhang past the screen edges is trimmed off.
+
+
+
+
+
                             if (Win32WindowHelper.GetWindowRectActual(activeHwnd, out RECT dwmRect) && !dwmRect.IsEmpty)
                             {
                                 dwmRect = Win32WindowHelper.ClampRectToMonitor(activeHwnd, dwmRect);
@@ -332,8 +357,8 @@ namespace snapvox.helpers
 
                                 if (Config.AddFrameBorders)
                                 {
-                                    // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
-                                    // to the already-shrunk size (a no-op) and the border is silently lost.
+
+
                                     int frameW = owned.Width; int frameH = owned.Height; int t = 3;
                                     if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
                                 }
@@ -341,7 +366,7 @@ namespace snapvox.helpers
                                 RememberRegion(rawRect);
                                 await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
                                 ImageSharpImage imageForEditor = owned;
-                                await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImage(imageForEditor, rawRect, "region"));
+                                await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, rawRect, "region"));
                                 owned = null;
                                 editorShown = true;
                             }
@@ -360,6 +385,7 @@ namespace snapvox.helpers
 
         public static void CaptureFullscreen(bool fromHotkey, ScreenCaptureMode mode)
         {
+            LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
             App.ForceRedTrayIcon(true);
             _ = Task.Run(async () =>
             {
@@ -392,15 +418,15 @@ namespace snapvox.helpers
 
                         if (Config.AddFrameBorders)
                         {
-                            // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
-                            // to the already-shrunk size (a no-op) and the border is silently lost.
+
+
                             int frameW = owned.Width; int frameH = owned.Height; int t = 3;
                             if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
                         }
 
                         await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
                         ImageSharpImage imageForEditor = owned;
-                        await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImage(imageForEditor, virtualBounds, "region"));
+                        await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, virtualBounds, "region"));
                         owned = null;
                         editorShown = true;
                     }
@@ -416,6 +442,7 @@ namespace snapvox.helpers
 
         public static void CaptureClipboard()
         {
+            LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
             App.ForceRedTrayIcon(true);
             _ = Dispatcher.UIThread.InvokeAsync(async () =>
             {
@@ -424,7 +451,7 @@ namespace snapvox.helpers
                     ImageSharpImage image = await UiClipboard.GetImageAsync();
                     if (image != null)
                     {
-                        ShowEditorForOwnedImage(image, RECT.Empty, "clipboard");
+                        await ShowEditorForOwnedImageAsync(image, RECT.Empty, "clipboard");
                     }
                     else
                     {
@@ -511,8 +538,8 @@ namespace snapvox.helpers
 
                         if (Config.AddFrameBorders)
                         {
-                            // ISSUE_003: capture the size BEFORE Crop shrinks the buffer, otherwise Pad pads back
-                            // to the already-shrunk size (a no-op) and the border is silently lost.
+
+
                             int frameW = owned.Width; int frameH = owned.Height; int t = 2;
                             if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
                         }
@@ -526,7 +553,7 @@ namespace snapvox.helpers
                     RememberRegion(region);
                     await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
                     ImageSharpImage imageForEditor = owned;
-                    await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImage(imageForEditor, region, "region"));
+                    await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, region, "region"));
                     owned = null;
                     editorShown = true;
                 }
@@ -544,16 +571,17 @@ namespace snapvox.helpers
 
         public static void OpenEditorForOwnedImage(ImageSharpImage image, RECT region)
         {
-            ShowEditorForOwnedImage(image, region, "scroll");
+            App.ForceRedTrayIcon(true, "scroll capture editor handoff");
+            _ = ShowEditorForOwnedImageAsync(image, region, "scroll");
         }
 
-        private static void ShowEditorForOwnedImage(ImageSharpImage image, RECT region, string context)
+        private static async Task ShowEditorForOwnedImageAsync(ImageSharpImage image, RECT region, string context)
         {
             ImageEditorWindow editor = null;
             try
             {
                 editor = new ImageEditorWindow();
-                editor.SetImage(image, region);
+                await editor.SetImageAsync(image, region, LastActiveWindowTitle).ConfigureAwait(true);
                 editor.Show();
                 App.ForceRedTrayIcon(false);
             }

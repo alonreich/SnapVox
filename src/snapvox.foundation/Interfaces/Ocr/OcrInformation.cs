@@ -1,12 +1,16 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using snapvox.native.foundation;
 
 namespace snapvox.foundation.interfaces.Ocr
 {
     public class OcrWord
     {
+        public const float UnknownConfidence = -1f;
+
         public string Text { get; set; }
         public RECT Bounds { get; set; }
+        public float Confidence { get; set; } = UnknownConfidence;
+        public bool HasConfidence => Confidence >= 0f;
     }
 
     public class OcrInformation

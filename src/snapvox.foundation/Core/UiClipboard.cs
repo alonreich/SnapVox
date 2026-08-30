@@ -14,9 +14,9 @@ namespace snapvox.foundation.core
 {
     public static class UiClipboard
     {
-        // ISSUE_004: owner-aware registrations. Windows register themselves on open and unregister on
-        // close, so a closed window can never stay referenced by this static class (and silently
-        // swallow clipboard text writes). The most recently registered live handler wins.
+
+
+
         private static readonly object _textHandlerLock = new object();
         private static readonly System.Collections.Generic.List<(object Owner, Func<string, Task> SetTextAsync)> _textHandlers
             = new System.Collections.Generic.List<(object, Func<string, Task>)>();
@@ -35,7 +35,6 @@ namespace snapvox.foundation.core
         [DllImport("user32.dll")] private static extern bool IsClipboardFormatAvailable(uint format);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterClipboardFormat(string lpszFormat);
 
-        private const uint CF_BITMAP = 2;
         private const uint CF_DIB = 8;
         private const uint GHND = 0x0042;
         private const int DefaultClipboardHistoryPromotionDelayMs = 400;
@@ -51,7 +50,7 @@ namespace snapvox.foundation.core
             {
                 if (owner == null)
                 {
-                    // Legacy anonymous registration: replace everything.
+
                     _textHandlers.Clear();
                     _textHandlers.Add((null, setTextAsync));
                     return;
@@ -94,7 +93,7 @@ namespace snapvox.foundation.core
 
             if (handler == null)
             {
-                // ISSUE_004: no more silent no-op - make the dropped write visible in the log.
+
                 LogHelper.GetLogger(typeof(UiClipboard)).Warn("SetTextAsync dropped text: no open window registered a clipboard handler.");
                 return Task.CompletedTask;
             }
@@ -105,7 +104,7 @@ namespace snapvox.foundation.core
             });
         }
 
-        // ISSUE_006: the promotion delay is configurable (Core section of the INI) instead of a hardcoded sleep.
+
         private static int GetClipboardHistoryPromotionDelayMs()
         {
             try
