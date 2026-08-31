@@ -49,7 +49,7 @@ namespace snapvox.helpers
             _cts.Cancel();
             _frames.Writer.TryComplete();
             await WaitForTasksAsync().ConfigureAwait(false);
-            if (_trackingFailed || _stitcher.AcceptedFrames < 2)
+            if (_trackingFailed || _stitcher.AcceptedFrames < 1)
             {
                 return null;
             }
@@ -345,8 +345,11 @@ namespace snapvox.helpers
 
         public Image<Bgra32> BuildImage(IProgress<double> progress = null)
         {
-            if (AcceptedFrames < 2 || !_viewportDetected) return null;
-
+            if (AcceptedFrames < 1 || _firstFrame == null) return null;
+            if (_segments.Count == 0 || !_viewportDetected)
+            {
+                return _firstFrame.Clone(x => { });
+            }
             int minX = int.MaxValue, minY = int.MaxValue;
             int maxX = int.MinValue, maxY = int.MinValue;
             foreach (var segment in _segments)

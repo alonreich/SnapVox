@@ -326,6 +326,45 @@ namespace snapvox.foundation.core
             }
         }
 
+        public static void LogCrash(string source, Exception ex, object rawObject = null)
+        {
+            try
+            {
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                string detail = (ex != null ? ex.ToString() : rawObject?.ToString()) ?? "Unknown Exception Details";
+                string formatted = $"==================== CRASH REPORT [{source}] ===================={Environment.NewLine}" +
+                                   $"Timestamp: {timestamp}{Environment.NewLine}" +
+                                   $"Source: {source}{Environment.NewLine}" +
+                                   $"Message: {ex?.Message ?? rawObject?.ToString()}{Environment.NewLine}" +
+                                   $"Details:{Environment.NewLine}{detail}{Environment.NewLine}" +
+                                   $"================================================================={Environment.NewLine}{Environment.NewLine}";
+
+                try
+                {
+                    string commonDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "snapvox");
+                    Directory.CreateDirectory(commonDir);
+                    File.AppendAllText(Path.Combine(commonDir, "crash.log"), formatted);
+                    File.AppendAllText(Path.Combine(commonDir, "snapvox.log"), formatted);
+                }
+                catch { }
+
+                try
+                {
+                    string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
+                    Directory.CreateDirectory(tempDir);
+                    File.AppendAllText(Path.Combine(tempDir, "crash.log"), formatted);
+                }
+                catch { }
+
+                try
+                {
+                    GetLogger("CrashHandler").Fatal(formatted, ex);
+                }
+                catch { }
+            }
+            catch { }
+        }
+
         public static void Shutdown()
         {
             try

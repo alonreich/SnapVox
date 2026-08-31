@@ -72,11 +72,7 @@ public class snapvoxMain
         InstallHostContext.WriteEarlyTrace("ENTER Main PID=" + Environment.ProcessId + " exe=" + Environment.ProcessPath);
         InstallHostContext.WriteEarlyTrace("Args: " + string.Join(' ', args));
 
-        bool headlessInstaller = DeploymentLifecycle.ShouldRunHeadlessDeployment(args);
-        if (!headlessInstaller)
-        {
-            BootstrapDebug.Clear();
-        }
+        BootstrapDebug.Clear();
 
         BootstrapDebug.Log("--- Application Bootstrap Starting ---");
         BootstrapDebug.Log("Args: " + string.Join(' ', args));
@@ -91,7 +87,7 @@ public class snapvoxMain
                 return;
             }
 
-            if (headlessInstaller)
+            if (DeploymentLifecycle.IsLifecycleCommand(args))
             {
                 BootstrapDebug.Log("Installer mode detected. Flowing to Avalonia for UI...");
             }
@@ -101,8 +97,28 @@ public class snapvoxMain
             {
                 BootstrapDebug.Log("Stage 1: Relocating installer to temporary directory.");
                 string tempInstallerPath = Path.Combine(DeploymentFootprint.DeploymentTempRoot, "Install", Path.GetFileName(RuntimePathHelper.ExecutablePath));
-                Directory.CreateDirectory(Path.GetDirectoryName(tempInstallerPath));
-                File.Copy(RuntimePathHelper.ExecutablePath, tempInstallerPath, true);
+                string tempDir = Path.GetDirectoryName(tempInstallerPath);
+                if (!string.IsNullOrEmpty(tempDir)) Directory.CreateDirectory(tempDir);
+
+                for (int attempt = 0; attempt < 5; attempt++)
+                {
+                    try
+                    {
+                        if (File.Exists(tempInstallerPath))
+                        {
+                            File.SetAttributes(tempInstallerPath, FileAttributes.Normal);
+                        }
+                        File.Copy(RuntimePathHelper.ExecutablePath, tempInstallerPath, true);
+                        File.SetAttributes(tempInstallerPath, FileAttributes.Normal);
+                        break;
+                    }
+                    catch
+                    {
+                        if (attempt == 4) throw;
+                        Thread.Sleep(150);
+                    }
+                }
+
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = tempInstallerPath,
@@ -190,16 +206,18 @@ public class snapvoxMain
     internal static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         Exception ex = e.ExceptionObject as Exception;
-        LOG?.Error("UnhandledException: " + (ex?.Message ?? "Unknown"), ex);
-        BootstrapDebug.Log($"UnhandledException: {ex}");
-        InstallHostContext.WriteEarlyTrace("UnhandledException: " + ex);
+        LogHelper.LogCrash("AppDomain.UnhandledException", ex, e.ExceptionObject);
+        LOG?.Fatal("UnhandledException: " + (ex?.Message ?? e.ExceptionObject?.ToString() ?? "Unknown"), ex);
+        BootstrapDebug.Log($"UnhandledException: {ex ?? (object)e.ExceptionObject}");
+        InstallHostContext.WriteEarlyTrace("UnhandledException: " + (ex ?? (object)e.ExceptionObject));
         ExecutionTrace.LogException("AppDomain.UnhandledException", ex, string.Empty);
     }
 
     internal static void Task_UnhandledException(object sender, UnobservedTaskExceptionEventArgs args)
     {
         Exception ex = args.Exception;
-        LOG?.Error("TaskException: " + ex.Message, ex);
+        LogHelper.LogCrash("TaskScheduler.UnobservedTaskException", ex, args.Exception);
+        LOG?.Fatal("TaskException: " + ex?.Message, ex);
         BootstrapDebug.Log($"TaskException: {ex}");
         ExecutionTrace.LogException("Task.UnobservedTaskException", ex, string.Empty);
         args.SetObserved();

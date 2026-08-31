@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -53,6 +53,7 @@ namespace snapvox
         {
             TaskScheduler.UnobservedTaskException += (s, e) =>
             {
+                LogHelper.LogCrash("App.UnobservedTaskException", e.Exception, e.Exception);
                 LogHelper.GetLogger(typeof(App)).Error("Unobserved Task Exception", e.Exception);
                 e.SetObserved();
             };
@@ -400,11 +401,14 @@ namespace snapvox
             }
             else
             {
-                Dispatcher.UIThread.Post(ApplyIcon);
+                Dispatcher.UIThread.Post(ApplyIcon, DispatcherPriority.Send);
             }
         }
 
-        public void OnTrayIconClicked(object sender, EventArgs e) => OnCaptureRegionClick(sender, e);
+        public void OnTrayIconClicked(object sender, EventArgs e)
+        {
+            OnCaptureRegionClick(sender, e);
+        }
         public void OnCaptureRegionClick(object sender, EventArgs e) => CaptureHelper.CaptureRegion(false);
         public void OnCaptureWindowClick(object sender, EventArgs e) => CaptureHelper.CaptureActiveWindow(false);
         private void OnCaptureFullscreenClick(object sender, EventArgs e) => CaptureHelper.CaptureFullscreen(false, ScreenCaptureMode.FullScreen);

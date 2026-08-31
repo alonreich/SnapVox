@@ -41,6 +41,9 @@ namespace snapvox.helpers
         [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern IntPtr LoadLibrary(string lpFileName);
 
+        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool SetDllDirectory(string lpPathName);
+
         private static readonly SemaphoreSlim InitializationGate = new SemaphoreSlim(1, 1);
         private static int _initialized;
 
@@ -57,21 +60,17 @@ namespace snapvox.helpers
 
         public static async Task EnsureTesseractReadyAsync(CancellationToken cancellationToken = default)
         {
-            if (Volatile.Read(ref _initialized) != 0)
-            {
-                return;
-            }
+            if (Volatile.Read(ref _initialized) == 1) return;
 
             await InitializationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (Volatile.Read(ref _initialized) != 0)
-                {
-                    return;
-                }
+                if (Volatile.Read(ref _initialized) == 1) return;
+                
+                string installFolder = AppDomain.CurrentDomain.BaseDirectory;
+                await EnsureBinariesExtractedAsync(installFolder, cancellationToken).ConfigureAwait(false);
+                await EnsureOfflineTessDataExtractedAsync(installFolder, cancellationToken).ConfigureAwait(false);
 
-                await EnsureBinariesExtractedAsync(null, cancellationToken).ConfigureAwait(false);
-                await EnsureOfflineTessDataExtractedAsync(null, cancellationToken).ConfigureAwait(false);
                 Volatile.Write(ref _initialized, 1);
             }
             finally
@@ -85,6 +84,8 @@ namespace snapvox.helpers
             try
             {
                 string targetPath = ResolveOcrStorageRoot(installFolder);
+                SetDllDirectory(targetPath);
+                
                 var asm = System.Reflection.Assembly.GetEntryAssembly();
                 if (asm == null) asm = typeof(OcrInstallationHelper).Assembly;
                 var resources = asm.GetManifestResourceNames();
@@ -94,7 +95,7 @@ namespace snapvox.helpers
                 foreach (var lib in libs)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    string destPath = Path.Combine(targetPath, lib);
+                    string destPath = Path.Combine(targetPath, "x64", lib); Directory.CreateDirectory(Path.Combine(targetPath, "x64"));
                     if (File.Exists(destPath)) continue;
 
                     string resName = resources.FirstOrDefault(r => r.EndsWith(lib, StringComparison.OrdinalIgnoreCase));
@@ -112,7 +113,7 @@ namespace snapvox.helpers
                 foreach (var lib in libs)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    LoadLibrary(Path.Combine(targetPath, lib));
+                    LoadLibrary(Path.Combine(targetPath, "x64", lib));
                 }
             }
             catch (OperationCanceledException)
@@ -187,3 +188,4 @@ namespace snapvox.helpers
         }
     }
 }
+

@@ -1,14 +1,16 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Avalonia.Svg.Skia"
         x:Class="snapvox.editor.forms.ImageEditorWindow"
         Title="SnapVox Editor"
         Background="{DynamicResource SnapVoxCanvasBrush}"
         ShowInTaskbar="True"
+        CanResize="True"
         ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaTitleBarHeightHint="-1"
-        MinWidth="620" MinHeight="400"
-        WindowStartupLocation="Manual">
+        ExtendClientAreaTitleBarHeightHint="32"
+        MinWidth="880" MinHeight="630"
+        WindowStartupLocation="Manual"
+        Cursor="Arrow">
     <Window.Resources>
         <VisualBrush x:Key="CheckerboardBrush" TileMode="Tile" SourceRect="0,0,20,20" DestinationRect="0,0,20,20">
             <VisualBrush.Visual>
@@ -90,51 +92,44 @@
         <Style Selector="Button.context-apply:hover /template/ Border#ActionBorder">
             <Setter Property="Background" Value="{DynamicResource SnapVoxSuccessHoverBrush}" />
         </Style>
+        <Style Selector="Button.toolbar:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="0.35" />
+        </Style>
+        <Style Selector="Button.toolbar /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxToolbarBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1,1,2,2" />
+            <Setter Property="BorderBrush" Value="#44000000" />
+            <Setter Property="Transitions">
+                <Transitions>
+                </Transitions>
+            </Setter>
+        </Style>
         <Style Selector="Button.toolbar:hover /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SnapVoxHoverBrush}" />
         </Style>
         <Style Selector="Button.toolbar:pressed /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SnapVoxPressedBrush}" />
+            <Setter Property="BorderThickness" Value="2,2,1,1" />
+            <Setter Property="BorderBrush" Value="#88000000" />
         </Style>
         <Style Selector="Button.toolbar.selected /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource SnapVoxAccentBrush}" />
-        </Style>
-        <Style Selector="Button.toolbar.selected">
-            <Setter Property="Background" Value="{DynamicResource SnapVoxAccentBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
-            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="Background" Value="#660078D7" />
+            <Setter Property="BorderThickness" Value="2,2,1,1" />
+            <Setter Property="BorderBrush" Value="#88000000" />
         </Style>
         
         
-        <Style Selector="Button.destructive">
-            <Setter Property="Height" Value="40" />
-            <Setter Property="MinWidth" Value="40" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{DynamicResource SnapVoxToolbarTextBrush}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Padding" Value="10,0" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="FontSize" Value="{DynamicResource SnapVoxToolbarFontSize}" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Transitions">
-                <Transitions>
-                    <BrushTransition Property="Background" Duration="0:0:0.1" />
-                </Transitions>
-            </Setter>
-        </Style>
-        <Style Selector="Button.destructive:hover">
+
+        <Style Selector="Button.destructive:hover /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
+            <Setter Property="BorderThickness" Value="2,2,1,1" />
+            <Setter Property="BorderBrush" Value="#88000000" />
         </Style>
-        <Style Selector="Button.destructive:pressed">
+        <Style Selector="Button.destructive:pressed /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveHoverBrush}" />
-        </Style>
-        <Style Selector="Button.destructive:disabled">
-            <Setter Property="Opacity" Value="0.45" />
+            <Setter Property="BorderThickness" Value="2,2,1,1" />
+            <Setter Property="BorderBrush" Value="#88000000" />
         </Style>
         
         <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar">
@@ -180,8 +175,8 @@
             </Style.Animations>
         </Style>
         <Style Selector="Button.thickness">
-            <Setter Property="Width" Value="24" />
-            <Setter Property="Height" Value="40" />
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="28" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Margin" Value="0" />
@@ -190,13 +185,17 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Padding" Value="0" />
         </Style>
+        <Style Selector="Button.thickness:hover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverBrush}" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
         <Style Selector="Button.thickness.selected /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SnapVoxSelectedSurfaceBrush}" />
-            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="CornerRadius" Value="3" />
         </Style>
         <Style Selector="Button.thickness.selected">
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
-            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="BorderThickness" Value="1.5" />
         </Style>
         <Style Selector="Slider.pixelate-strength">
             <Setter Property="Height" Value="44" />
@@ -301,7 +300,7 @@
 
     <Panel>
     <DockPanel Name="EditorContentRoot">
-        <Grid DockPanel.Dock="Top" Name="TitleBar" Height="32" ColumnDefinitions="Auto,*,Auto" Background="{DynamicResource SnapVoxPanelDarkBrush}">
+        <Grid DockPanel.Dock="Top" Name="TitleBar" Height="32" ColumnDefinitions="Auto,*,Auto" Background="{DynamicResource SnapVoxPanelDarkBrush}" Cursor="Arrow" PointerPressed="OnTitleBarPointerPressed">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
                 <Image Source="avares://SnapVox/SnapVox.ico" Width="16" Height="16" Margin="0,0,8,0" AutomationProperties.AccessibilityView="Raw"/>
                 <TextBlock Text="SnapVox Editor" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="{DynamicResource SnapVoxTitleFontSize}" VerticalAlignment="Center"/>
@@ -310,20 +309,14 @@
             <Border Grid.Column="2" Width="140" Background="Transparent" IsHitTestVisible="False"/>
         </Grid>
 
-        <Border DockPanel.Dock="Top" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,0,0,1">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,0,0,1" Cursor="Arrow">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Name="TopToolbarStackPanel" Grid.Column="0" Orientation="Horizontal" Margin="10,0" Spacing="7" VerticalAlignment="Center">
                     <Button Classes="toolbar" Name="DownloadButton" AutomationProperties.Name="Save image to Downloads" ToolTip.Tip="Save image to Downloads (Ctrl+S)" Click="OnDownloadClick" IsDefault="False">
-                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/download.svg" />
-                            <TextBlock Name="SaveHintLabel" Text="Save" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" IsVisible="False" />
-                        </StackPanel>
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/download.svg" />
                     </Button>
                     <Button Classes="toolbar" Name="CopyButton" AutomationProperties.Name="Copy image to clipboard" ToolTip.Tip="Copy image to clipboard (Ctrl+C)" Click="OnCopyClick" IsDefault="False">
-                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/copy.svg" />
-                            <TextBlock Name="CopyHintLabel" Text="Copy" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" IsVisible="False" />
-                        </StackPanel>
+                        <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/copy.svg" />
                     </Button>
                     
                     <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="3,0" />
@@ -367,9 +360,9 @@
                 </StackPanel>
                 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
-                    <Button Classes="destructive" Name="ClearAllButton" AutomationProperties.Name="Clear all objects" ToolTip.Tip="Removes every object you added to this image. Asks first." Click="OnClearAllClick" Padding="10,0">
-                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                            <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/nuclear-sharp.svg" />
+                    <Button Classes="toolbar destructive" Name="ClearAllButton" AutomationProperties.Name="Clear all objects" ToolTip.Tip="Removes every object you added to this image. Asks first." Click="OnClearAllClick" Width="NaN" MinWidth="40" Height="40" Padding="8,4">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <svg:Svg Width="20" Height="20" VerticalAlignment="Center" Path="avares://snapvox.editor/Icons/nuclear-sharp.svg" />
                             <TextBlock Text="Clear All" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" />
                         </StackPanel>
                     </Button>
@@ -377,10 +370,9 @@
             </Grid>
         </Border>
 
-        <Border Name="BottomToolbarBorder" DockPanel.Dock="Bottom" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,1,0,0">
+        <Border Name="BottomToolbarBorder" DockPanel.Dock="Bottom" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,1,0,0" Cursor="Arrow">
             <Grid ColumnDefinitions="*,Auto,*">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0" Spacing="0" VerticalAlignment="Center" HorizontalAlignment="Left">
-                    <TextBlock Text="Colour" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" />
                     <StackPanel Name="ColorPresetsPanel" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
                         <Button Classes="color-preset" Background="#000000" Click="OnColorSelectClick" Tag="#000000" AutomationProperties.Name="Black" ToolTip.Tip="Black" />
                         <Button Classes="color-preset" Background="#00FF00" Click="OnColorSelectClick" Tag="#00FF00" AutomationProperties.Name="Green" ToolTip.Tip="Green" />
@@ -392,44 +384,50 @@
 
                     <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="5,0" />
                     
-                    <Button Name="CustomColorBtn" MinWidth="118" MinHeight="40" VerticalAlignment="Center" Cursor="Hand" Padding="8,0" AutomationProperties.Name="Current colour, opens colour picker" ToolTip.Tip="Current color">
-                        <Button.Flyout>
-                            <Flyout Placement="Top">
-                                
-                                <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="14" MinWidth="316" MaxWidth="420">
-                                    <StackPanel Spacing="10">
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <TextBlock Text="CUSTOM COLOR" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" />
-                                            <Border Grid.Column="1" Name="HexPreviewChip" Width="26" Height="26" CornerRadius="4" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" ToolTip.Tip="Current picker color" />
-                                        </Grid>
-                                        <ColorView Name="ColorPickerView" />
-                                        <Grid ColumnDefinitions="Auto,*,Auto">
-                                            <TextBlock Text="HEX" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                            <TextBox Grid.Column="1" Name="HexInput" AutomationProperties.Name="Hex colour code" Watermark="#RRGGBB" MaxLength="9" FontFamily="Consolas, Courier New" FontSize="13" Padding="6,4" Background="{DynamicResource SnapVoxCanvasBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" KeyDown="OnHexInputKeyDown" ToolTip.Tip="Type a hex color; Enter applies it to the tool" />
-                                            <Button Grid.Column="2" Name="CopyHexButton" Classes="toolbar" Width="34" Height="34" Margin="6,0,0,0" Click="OnCopyHexClick" AutomationProperties.Name="Copy hex code" ToolTip.Tip="Copy hex code to clipboard">
-                                                <svg:Svg Width="18" Height="18" Path="avares://snapvox.editor/Icons/copy.svg" />
-                                            </Button>
-                                        </Grid>
-                                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0">
-                                            <Button Grid.Column="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,6" Click="OnSamplerClick" AutomationProperties.Name="Sample a colour from the screen" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" ToolTip.Tip="Pick any color from the screen (Esc cancels)">
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/custom-color.svg" />
-                                                    <TextBlock Text="Sample From Screen" VerticalAlignment="Center" FontSize="12" />
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Grid.Column="1" Content="Cancel" IsCancel="True" AutomationProperties.Name="Cancel colour change" Click="OnColorCancelClick" Margin="6,0,0,0" MinWidth="72" Padding="8,6" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" />
-                                            <Button Grid.Column="2" Content="OK" IsDefault="True" AutomationProperties.Name="Apply colour" Click="OnColorConfirmClick" Margin="6,0,0,0" MinWidth="72" Padding="8,6" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" FontWeight="SemiBold" />
-                                        </Grid>
-                                    </StackPanel>
-                                </Border>
-                            </Flyout>
-                        </Button.Flyout>
-                        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                            <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/custom-color.svg" />
-                            <Border Name="CurrentColorPreview" Width="24" Height="24" CornerRadius="3" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="1"/>
-                            <TextBlock Name="CurrentColorHex" Text="#007ACC" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                        </StackPanel>
-                    </Button>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <Button Name="CustomColorBtn" MinWidth="74" MinHeight="40" VerticalAlignment="Center" Cursor="Hand" Padding="6,0" AutomationProperties.Name="Current colour, opens colour picker" ToolTip.Tip="Current color (click to open picker)">
+                            <Button.Flyout>
+                                <Flyout Placement="Top">
+                                    <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="14" MinWidth="316" MaxWidth="420">
+                                        <StackPanel Spacing="10">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="CUSTOM COLOR" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" />
+                                                <Border Grid.Column="1" Name="HexPreviewChip" Width="26" Height="26" CornerRadius="4" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" ToolTip.Tip="Current picker color" />
+                                            </Grid>
+                                            <ColorView Name="ColorPickerView" />
+                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                <TextBlock Text="HEX" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <TextBox Grid.Column="1" Name="HexInput" AutomationProperties.Name="Hex colour code" Watermark="#RRGGBB" MaxLength="9" FontFamily="Consolas, Courier New" FontSize="13" Padding="6,4" Background="{DynamicResource SnapVoxCanvasBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" KeyDown="OnHexInputKeyDown" ToolTip.Tip="Type a hex color; Enter applies it to the tool" />
+                                                <Button Grid.Column="2" Name="CopyHexButton" Classes="toolbar" Width="34" Height="34" Margin="6,0,0,0" Click="OnCopyHexClick" AutomationProperties.Name="Copy hex code" ToolTip.Tip="Copy hex code to clipboard">
+                                                    <svg:Svg Width="18" Height="18" Path="avares://snapvox.editor/Icons/copy.svg" />
+                                                </Button>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0">
+                                                <Button Grid.Column="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,6" Click="OnSamplerClick" AutomationProperties.Name="Sample a colour from the screen" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" ToolTip.Tip="Pick any color from the screen (Esc cancels)">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <svg:Svg Width="20" Height="20" Path="avares://snapvox.editor/Icons/custom-color.svg" />
+                                                        <TextBlock Text="Sample From Screen" VerticalAlignment="Center" FontSize="12" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Grid.Column="1" Content="Cancel" IsCancel="True" AutomationProperties.Name="Cancel colour change" Click="OnColorCancelClick" Margin="6,0,0,0" MinWidth="72" Padding="8,6" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" />
+                                                <Button Grid.Column="2" Content="OK" IsDefault="True" AutomationProperties.Name="Apply colour" Click="OnColorConfirmClick" Margin="6,0,0,0" MinWidth="72" Padding="8,6" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="0" CornerRadius="4" Cursor="Hand" FontWeight="SemiBold" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </Flyout>
+                            </Button.Flyout>
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <svg:Svg Width="18" Height="18" Path="avares://snapvox.editor/Icons/custom-color.svg" />
+                                <Border Name="CurrentColorPreview" Width="20" Height="20" CornerRadius="3" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="1"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Name="CopyCurrentColorBtn" Classes="toolbar" Width="NaN" MinWidth="82" Height="36" Padding="6,0" Click="OnCopyCurrentColorClick" AutomationProperties.Name="Copy current hex color code" ToolTip.Tip="Copy color hex code to clipboard" Cursor="Hand">
+                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                <TextBlock Name="CurrentColorHex" Text="#007ACC" VerticalAlignment="Center" FontSize="{DynamicResource SnapVoxToolbarFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                <svg:Svg Width="14" Height="14" Path="avares://snapvox.editor/Icons/copy.svg" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
 
                     
                     <Button Classes="toolbar" Name="FillToggleBtn" AutomationProperties.Name="Toggle shape fill" ToolTip.Tip="Toggle Shape Fill" Click="OnFillToggleClick" VerticalAlignment="Center" Width="NaN" MinWidth="40" Padding="10,0" Margin="25,0,0,0">
@@ -457,7 +455,7 @@
                     
                     <StackPanel Name="ThicknessPanel" Orientation="Horizontal" Spacing="2" Margin="25,0,0,0" VerticalAlignment="Center">
                         <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,0,5,0" />
-                        <StackPanel Name="ThicknessChoicesPanel" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                        <StackPanel Name="ThicknessChoicesPanel" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
                             
                             <TextBlock Name="ThicknessLabel" Text="Thickness" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" Margin="0,0,6,0" />
                             <Button Classes="thickness" Click="OnThicknessClick" Tag="1" AutomationProperties.Name="1 pixel thickness" ToolTip.Tip="1px">
@@ -489,7 +487,7 @@
                                     Orientation="Horizontal"
                                     Minimum="2"
                                     Maximum="29"
-                                    MinWidth="170"
+                                    Width="140"
                                     AutomationProperties.Name="Pixelation strength"
                                     ToolTip.Tip="Pixelization strength" />
                             <TextBlock Name="PixelatePercentText" Text="0%" MinWidth="38" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" TextAlignment="Right" />
@@ -521,7 +519,7 @@
             </Grid>
         </Border>
 
-        <Border DockPanel.Dock="Left" Background="{DynamicResource SnapVoxToolbarBrush}" Width="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,0,1,0">
+        <Border DockPanel.Dock="Left" Background="{DynamicResource SnapVoxToolbarBrush}" Width="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,0,1,0" Cursor="Arrow">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Name="LeftToolBar" Orientation="Vertical" Margin="0,10" HorizontalAlignment="Center" Spacing="5">
                     <Button Classes="toolbar" Name="ArrowTool" AutomationProperties.Name="Arrow tool" ToolTip.Tip="Arrow (A). Esc exits this tool." Click="OnToolClick" Tag="Arrow">
@@ -561,8 +559,15 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/emoji.svg" />
                         <Button.Flyout>
                             <Flyout Placement="Right">
-                                
-                                <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+                                <ScrollViewer MaxHeight="300" AllowAutoHide="False" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                                    <ScrollViewer.Styles>
+                                        <Style Selector="ScrollBar">
+                                            <Setter Property="AllowAutoHide" Value="False" />
+                                        </Style>
+                                        <Style Selector="ScrollBar:vertical">
+                                            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarVertical}" />
+                                        </Style>
+                                    </ScrollViewer.Styles>
                                     <ItemsControl Name="EmojiGrid">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>

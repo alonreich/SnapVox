@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using snapvox.native.foundation;
 using SixLabors.ImageSharp;
@@ -330,3 +330,6 @@ namespace snapvox.native
         }
     }
 }
+
+
+

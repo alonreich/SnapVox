@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -38,15 +38,6 @@ internal static class DeploymentLifecycle
     [DllImport("shell32.dll")]
     private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
 
-    public static bool ShouldRunHeadlessDeployment(string[] args)
-    {
-        if (args == null || args.Length == 0) return InstallHostContext.IsStandaloneInstallerHost();
-        return args.Any(arg => arg.Equals("--uninstall", StringComparison.OrdinalIgnoreCase) 
-                             || arg.Equals("--install", StringComparison.OrdinalIgnoreCase)
-                             || arg.Equals("--install-worker", StringComparison.OrdinalIgnoreCase)
-                             || arg.Equals("--cleanup-worker", StringComparison.OrdinalIgnoreCase));
-    }
-
     public static bool IsLifecycleCommand(string[] args)
     {
         if (args == null || args.Length == 0) return false;
@@ -66,7 +57,6 @@ internal static class DeploymentLifecycle
 
     public static async Task<int> RunLifecycleCommandAsync(string[] args, CancellationToken ct = default)
     {
-        InstallHostContext.HeadlessInstallerActive = false;
         try
         {
             if (IsUninstallLauncherCommand(args)) return await RunUninstallLauncherAsync(args, ct).ConfigureAwait(false);
@@ -120,7 +110,7 @@ internal static class DeploymentLifecycle
         try
         {
             logger = await DeploymentLogger.CreateAsync(logPath, "INSTALL/UPGRADE", ct).ConfigureAwait(false);
-            progress = CreateDeploymentProgress("SnapVox Setup", logPath);
+            progress = await DeploymentProgress.CreateAsync("SnapVox Setup", logPath);
 
             string conflict = DetectConflictingSoftware();
             if (conflict != null)
@@ -139,6 +129,10 @@ internal static class DeploymentLifecycle
 
 
 
+
+            await ReportAsync(progress, logger, 5, "CLEANUP", "PROCESSES", "Killing all instances...", ct).ConfigureAwait(false);
+            await StartupTaskHelper.KillAllProcessesAsync(s => progress?.Update(5, s), ct).ConfigureAwait(false);
+            await Task.Delay(500, ct).ConfigureAwait(false);
 
             bool upgradeDetected = DetectExistingInstallation();
             bool keepUserSettings = false;
@@ -223,9 +217,13 @@ internal static class DeploymentLifecycle
         try
         {
             logger = await DeploymentLogger.CreateAsync(logPath, "UNINSTALL", ct).ConfigureAwait(false);
-            progress = CreateDeploymentProgress("SnapVox Uninstaller", logPath);
+            progress = await DeploymentProgress.CreateAsync("SnapVox Uninstaller", logPath);
 
             await ReportAsync(progress, logger, 5, "UNINSTALL", "INIT", "Starting scorched-earth cleanup...", ct).ConfigureAwait(false);
+
+            await ReportAsync(progress, logger, 5, "CLEANUP", "PROCESSES", "Killing all instances...", ct).ConfigureAwait(false);
+            await StartupTaskHelper.KillAllProcessesAsync(s => progress?.Update(5, s), ct).ConfigureAwait(false);
+            await Task.Delay(500, ct).ConfigureAwait(false);
 
             await PerformFullHostCleanupAsync(progress, logger, "Uninstall", 10, 90, requireZeroFootprint: true, purgeUserArtifacts: true, ct).ConfigureAwait(false);
 
@@ -279,10 +277,6 @@ internal static class DeploymentLifecycle
     {
         Interlocked.Exchange(ref _pendingRebootDeletes, 0);
         await logger.LogAsync("CLEANUP", "START", $"Performing Scorched Earth for: {op}", ct).ConfigureAwait(false);
-
-        await ReportAsync(progress, logger, start + 5, "CLEANUP", "PROCESSES", "Killing all instances...", ct).ConfigureAwait(false);
-        await StartupTaskHelper.KillAllProcessesAsync(s => progress?.Update(start + 5, s), ct).ConfigureAwait(false);
-        await Task.Delay(500, ct).ConfigureAwait(false);
 
         await ReportAsync(progress, logger, start + 10, "CLEANUP", "TASKS", "Removing triggers...", ct).ConfigureAwait(false);
         await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000, logger, ct).ConfigureAwait(false);
@@ -953,9 +947,40 @@ internal static class DeploymentLifecycle
 
     private static async Task CopyFileAggressiveAsync(string src, string dest, DeploymentLogger logger, CancellationToken ct)
     {
-        if (File.Exists(dest)) { File.SetAttributes(dest, FileAttributes.Normal); File.Delete(dest); }
-        File.Copy(src, dest, true);
-        await logger.LogAsync("FILESYSTEM", "COPY", dest, ct).ConfigureAwait(false);
+        string destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir))
+        {
+            Directory.CreateDirectory(destDir);
+        }
+
+        const int maxRetries = 5;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                if (File.Exists(dest))
+                {
+                    File.SetAttributes(dest, FileAttributes.Normal);
+                    File.Delete(dest);
+                }
+                File.Copy(src, dest, true);
+                File.SetAttributes(dest, FileAttributes.Normal);
+                await logger.LogAsync("FILESYSTEM", "COPY", dest, ct).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex)
+            {
+                if (attempt == maxRetries)
+                {
+                    await logger.LogAsync("FILESYSTEM", "COPY_FAIL", $"{dest} :: {ex.Message}", ct, ex).ConfigureAwait(false);
+                    throw;
+                }
+
+                await logger.LogAsync("FILESYSTEM", "COPY_RETRY", $"Attempt {attempt} for {dest}: {ex.Message}", ct).ConfigureAwait(false);
+                await StartupTaskHelper.KillAllProcessesAsync(null, ct).ConfigureAwait(false);
+                await Task.Delay(250 * attempt, ct).ConfigureAwait(false);
+            }
+        }
     }
 
     private static async Task LaunchInstalledApplicationAsync()
@@ -1148,7 +1173,7 @@ internal static class DeploymentLifecycle
         }
     }
 
-    private static DeploymentProgress CreateDeploymentProgress(string title, string log) => InstallHostContext.HeadlessInstallerActive ? null : new DeploymentProgress(title, log);
+    
 
     private static async Task AwaitUserAcknowledgementAsync(DeploymentProgress progress, DeploymentLogger logger, string finalStatus, CancellationToken ct)
     {
@@ -1183,12 +1208,18 @@ internal static class DeploymentLifecycle
     private static async Task<DialogResult> ShowBlockingPromptAsync(DeploymentProgress progress, string message, string title, MessageBoxButtons buttons, MessageBoxIcon icon)
     {
         progress?.SuppressTopmost();
+        IntPtr hwnd = IntPtr.Zero;
+        if (progress != null)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                hwnd = progress.GetWindowHandle();
+            });
+        }
         try
         {
-
-
-            await Task.Delay(120, CancellationToken.None).ConfigureAwait(false);
-            return StartupTaskHelper.ShowForegroundMessageBox(message, title, buttons, icon);
+            await Task.Delay(100, CancellationToken.None).ConfigureAwait(false);
+            return StartupTaskHelper.ShowForegroundMessageBox(message, title, buttons, icon, hwnd);
         }
         finally
         {
@@ -1218,12 +1249,18 @@ internal static class DeploymentLifecycle
         private static readonly TimeSpan AcknowledgementBackstop = TimeSpan.FromMinutes(30);
 
         private forms.DeploymentProgressWindow _window;
-        public DeploymentProgress(string title, string log) 
-        { 
-            Dispatcher.UIThread.Post(() => { 
-                _window = new forms.DeploymentProgressWindow(title, log); 
-                _window.Show(); 
-            }); 
+        private DeploymentProgress() {}
+
+        public static Task<DeploymentProgress> CreateAsync(string title, string log)
+        {
+            var tcs = new TaskCompletionSource<DeploymentProgress>();
+            Dispatcher.UIThread.Post(() => {
+                var dp = new DeploymentProgress();
+                dp._window = new forms.DeploymentProgressWindow(title, log);
+                dp._window.Show();
+                tcs.SetResult(dp);
+            });
+            return tcs.Task;
         }
         public void Update(int pct, string status) 
         { 
@@ -1259,8 +1296,19 @@ internal static class DeploymentLifecycle
         public void RestoreTopmost()
         {
             Dispatcher.UIThread.Post(() => {
-                try { if (_window != null) { _window.Topmost = true; _window.Activate(); } } catch { }
+                try { if (_window != null) { _window.Topmost = false; _window.Activate(); } } catch { }
             });
+        }
+        public IntPtr GetWindowHandle()
+        {
+            try
+            {
+                return _window?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            }
+            catch
+            {
+                return IntPtr.Zero;
+            }
         }
         public void Dispose() 
         { 
@@ -1296,3 +1344,6 @@ internal static class DeploymentLifecycle
         public async ValueTask DisposeAsync() { _writer.Dispose(); await ValueTask.CompletedTask; }
     }
 }
+
+
+

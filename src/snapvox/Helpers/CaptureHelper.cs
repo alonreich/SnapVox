@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -98,6 +98,8 @@ namespace snapvox.helpers
             bool overlaysShown = false;
             try
             {
+                int delay = Config.CaptureDelay > 0 ? Config.CaptureDelay : (fromHotkey ? 0 : 350);
+                if (delay > 0) await Task.Delay(delay).ConfigureAwait(false);
                 RECT virtualBounds = GetVirtualDesktopBounds();
                 ImageSharpImage fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
                 try
@@ -107,8 +109,6 @@ namespace snapvox.helpers
                         forms.CaptureWindow.EndCaptureSession();
                         return;
                     }
-
-                    if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
 
                     lock (LastRegionSync)
                     {
@@ -283,11 +283,11 @@ namespace snapvox.helpers
                 bool editorShown = false;
                 try
                 {
-                    RECT virtualBounds = GetVirtualDesktopBounds();
-                    fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
-
                     int delay = Config.CaptureDelay > 0 ? Config.CaptureDelay : (fromHotkey ? 0 : 400);
                     if (delay > 0) await Task.Delay(delay).ConfigureAwait(false);
+
+                    RECT virtualBounds = GetVirtualDesktopBounds();
+                    fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
 
                     IntPtr activeHwnd = Win32WindowHelper.GetForegroundWindow();
                     if (activeHwnd != IntPtr.Zero)
@@ -393,10 +393,11 @@ namespace snapvox.helpers
                 bool editorShown = false;
                 try
                 {
+                    int delay = Config.CaptureDelay > 0 ? Config.CaptureDelay : (fromHotkey ? 0 : 400);
+                    if (delay > 0) await Task.Delay(delay).ConfigureAwait(false);
+
                     RECT virtualBounds = GetVirtualDesktopBounds();
                     using var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
-
-                    if (Config.CaptureDelay > 0) await Task.Delay(Config.CaptureDelay).ConfigureAwait(false);
 
                     if (fullSnapshot != null)
                     {

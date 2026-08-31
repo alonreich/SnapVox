@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -234,8 +234,8 @@ namespace snapvox.native
         {
             var engine = new TesseractEngine(tessDataPath, "heb+eng", EngineMode.LstmOnly);
             engine.SetVariable("preserve_interword_spaces", "1");
-            engine.SetVariable("load_system_dawg", true);
-            engine.SetVariable("load_freq_dawg", true);
+            engine.SetVariable("load_system_dawg", false);
+            engine.SetVariable("load_freq_dawg", false);
             engine.SetVariable("classify_enable_learning", false);
             engine.SetVariable("user_defined_dpi", "300");
             engine.SetVariable("textord_tabfind_find_tables", false);
@@ -343,3 +343,4 @@ namespace snapvox.native
         }
     }
 }
+

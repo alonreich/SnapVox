@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -116,6 +116,8 @@ namespace snapvox.helpers
                 }
             }
 
+            SanitizeOcrWords(mergedWords);
+
             var result = new snapvox.foundation.interfaces.Ocr.OcrInformation { Words = mergedWords };
             result.Text = BuildVisualSelectionText(mergedWords);
             return result;
@@ -135,6 +137,26 @@ namespace snapvox.helpers
             else if (information.Text != null)
             {
                 information.Text = information.Text.Normalize(NormalizationForm.FormC);
+            }
+        }
+
+        private static void SanitizeOcrWords(List<snapvox.foundation.interfaces.Ocr.OcrWord> words)
+        {
+            foreach (var word in words)
+            {
+                if (string.IsNullOrWhiteSpace(word.Text)) continue;
+                int letters = word.Text.Count(c => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
+                int digits = word.Text.Count(c => c >= '0' && c <= '9');
+                if (letters == 0 || digits == 0) continue;
+
+                if (letters > digits)
+                {
+                    word.Text = word.Text.Replace('0', 'O').Replace('1', 'l').Replace('5', 'S');
+                }
+                else if (digits > letters)
+                {
+                    word.Text = word.Text.Replace('O', '0').Replace('o', '0').Replace('l', '1').Replace('I', '1').Replace('S', '5').Replace('s', '5').Replace('Z', '2').Replace('z', '2');
+                }
             }
         }
 

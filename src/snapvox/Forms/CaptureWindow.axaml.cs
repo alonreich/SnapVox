@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -1315,7 +1315,7 @@ namespace snapvox.forms
                     var handler = SimpleServiceProvider.Current.GetInstance<IOcrResultHandler>(true);
                     if (handler != null)
                     {
-                        string text = HebrewOcrCorrectionHelper.BuildVisualSelectionText(_paintedWords);
+                        string text = snapvox.helpers.OcrTextLayout.BuildVisualSelectionText(_paintedWords);
                         await handler.HandleOcrResult(text).ConfigureAwait(false);
                     }
                     TryPostToUi(CloseAllCaptureOverlays);

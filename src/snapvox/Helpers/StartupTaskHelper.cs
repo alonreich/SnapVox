@@ -1,4 +1,4 @@
-﻿using snapvox.native;
+using snapvox.native;
 using snapvox.native.foundation;
 using System;
 using System.ComponentModel;
@@ -328,10 +328,12 @@ public static class StartupTaskHelper
     {
         string[] processNames = {
             "snapvox",
+            "SnapVox",
             "Uninstall",
             "snapvox_Cleanup",
+            "SnapVox_Cleanup",
             "snapvox_tesseract",
-            "snapvox",
+            "SnapVox_tesseract",
             "snapvoxImgEditor"
         };
         var current = Process.GetCurrentProcess();
@@ -370,7 +372,7 @@ public static class StartupTaskHelper
             }
 
             if (!foundAny) break;
-            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(300, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -381,17 +383,25 @@ public static class StartupTaskHelper
             string msg = string.Format("AUTO-CLEANUP: Terminating PID {0} ({1})...", process.Id, process.ProcessName);
             Log?.Info(msg);
             updateStatus?.Invoke(msg);
-            process.Kill();
             try
             {
-                await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromMilliseconds(3000), cancellationToken).ConfigureAwait(false);
+                process.Kill(true);
+            }
+            catch
+            {
+                process.Kill();
+            }
+
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromMilliseconds(2000), cancellationToken).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
                 using var taskKill = Process.Start(new ProcessStartInfo
                 {
                     FileName = "taskkill",
-                    Arguments = string.Format("/F /PID {0}", process.Id),
+                    Arguments = string.Format("/F /T /PID {0}", process.Id),
                     CreateNoWindow = true,
                     UseShellExecute = false
                 });
@@ -403,7 +413,7 @@ public static class StartupTaskHelper
         }
         catch (Exception ex)
         {
-                if (!IsExpectedProcessInspectionException(ex)) Log?.Warn("Auto-cleanup failed for PID " + process.Id + ": " + ex.Message);
+            if (!IsExpectedProcessInspectionException(ex)) Log?.Warn("Auto-cleanup failed for PID " + process.Id + ": " + ex.Message);
         }
     }
 
@@ -433,17 +443,10 @@ public static class StartupTaskHelper
     private const int IdYes = 6;
     private const int IdNo = 7;
 
-    public static DialogResult ShowForegroundMessageBox(string message, string title, MessageBoxButtons buttons = MessageBoxButtons.OK, MessageBoxIcon icon = MessageBoxIcon.Information)
+    public static DialogResult ShowForegroundMessageBox(string message, string title, MessageBoxButtons buttons = MessageBoxButtons.OK, MessageBoxIcon icon = MessageBoxIcon.Information, IntPtr ownerHWnd = default)
     {
         try
         {
-
-
-
-
-
-
-
             uint type = MbOk;
             if (buttons == MessageBoxButtons.OKCancel) type = MbOkCancel;
             else if (buttons == MessageBoxButtons.AbortRetryIgnore) type = MbAbortRetryIgnore;
@@ -457,12 +460,9 @@ public static class StartupTaskHelper
             else if (icon == MessageBoxIcon.None) {  }
             else type |= MbIconInformation;
 
-
-
-
             type |= MbSetForeground | MbTopmost;
 
-            int result = MessageBox(IntPtr.Zero, message, title, type);
+            int result = MessageBox(ownerHWnd, message, title, type);
 
             if (result == IdYes) return DialogResult.Yes;
             if (result == IdNo) return DialogResult.No;

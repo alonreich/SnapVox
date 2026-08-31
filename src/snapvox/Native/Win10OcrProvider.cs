@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -63,7 +63,7 @@ namespace snapvox.native
 
         public static bool AreRequiredLanguagesAvailable()
         {
-            return IsEnglishLanguageAvailable() && IsHebrewLanguageAvailable();
+            return IsEnglishLanguageAvailable() || IsHebrewLanguageAvailable();
         }
 
         public static bool IsEnglishLanguageAvailable()
@@ -112,13 +112,19 @@ namespace snapvox.native
                 return null;
             }
 
-            OcrInformation english = await RecognizeWithLanguageAsync(bitmap, englishTag, prepared, cancellationToken).ConfigureAwait(false);
-            if (!includeHebrew || hebrewTag == null)
+            Task<OcrInformation> englishTask = RecognizeWithLanguageAsync(bitmap, englishTag, prepared, cancellationToken);
+            Task<OcrInformation> hebrewTask = (!includeHebrew || hebrewTag == null) ? Task.FromResult<OcrInformation>(null) : RecognizeWithLanguageAsync(bitmap, hebrewTag, prepared, cancellationToken);
+
+            await Task.WhenAll(englishTask, hebrewTask).ConfigureAwait(false);
+
+            OcrInformation english = await englishTask.ConfigureAwait(false);
+            OcrInformation hebrew = await hebrewTask.ConfigureAwait(false);
+
+            if (hebrew == null)
             {
                 return english;
             }
 
-            OcrInformation hebrew = await RecognizeWithLanguageAsync(bitmap, hebrewTag, prepared, cancellationToken).ConfigureAwait(false);
             return OcrTextLayout.MergeByLanguage(hebrew, english);
         }
 
@@ -231,3 +237,5 @@ namespace snapvox.native
         }
     }
 }
+
+

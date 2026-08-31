@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="snapvox.forms.DeploymentProgressWindow"
         Title="SnapVox Setup"
@@ -8,7 +8,7 @@
         WindowStartupLocation="CenterScreen"
         SystemDecorations="Full"
         Background="{DynamicResource SnapVoxCanvasBrush}"
-        Topmost="True"
+        Topmost="False"
         ShowInTaskbar="True"
         CanResize="True">
     <!-- ISSUE_012: theme is set once at the Application level (App.axaml). -->

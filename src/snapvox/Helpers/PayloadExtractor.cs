@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Reflection;
 using System.Linq;
+using System.Threading;
 
 namespace snapvox.helpers
 {
@@ -118,13 +119,35 @@ namespace snapvox.helpers
                 }
                 else
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
-                    try
+                    string parent = Path.GetDirectoryName(destinationPath);
+                    if (!string.IsNullOrEmpty(parent))
                     {
-                        entry.ExtractToFile(destinationPath, true);
+                        Directory.CreateDirectory(parent);
                     }
-                    catch (IOException)
+
+                    for (int attempt = 0; attempt < 5; attempt++)
                     {
+                        try
+                        {
+                            if (File.Exists(destinationPath))
+                            {
+                                File.SetAttributes(destinationPath, FileAttributes.Normal);
+                            }
+
+                            entry.ExtractToFile(destinationPath, true);
+                            File.SetAttributes(destinationPath, FileAttributes.Normal);
+                            break;
+                        }
+                        catch (IOException)
+                        {
+                            if (attempt == 4) break;
+                            Thread.Sleep(100);
+                        }
+                        catch (UnauthorizedAccessException)
+                        {
+                            if (attempt == 4) break;
+                            Thread.Sleep(100);
+                        }
                     }
                 }
             }

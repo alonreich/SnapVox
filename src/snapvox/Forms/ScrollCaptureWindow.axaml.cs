@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -85,7 +85,7 @@ namespace snapvox.forms
                 {
                     if (Recorder != null)
                     {
-                        BroadcastStatus("SCROLLING ACTIVE", $"Space/Left-click finishes | {Recorder.AcceptedFrames} frames");
+                        BroadcastStatus("SCROLLING ACTIVE", $"Scroll down · Space/Enter finishes | {Recorder.AcceptedFrames} frames");
                     }
                 }
                 else
@@ -98,9 +98,9 @@ namespace snapvox.forms
                 if (ticks < 10) return;
 
                 bool spacePressed = (GetAsyncKeyState(0x20) & 0x8000) != 0;
-                bool leftClickPressed = (GetAsyncKeyState(0x01) & 0x8000) != 0;
+                bool enterPressed = (GetAsyncKeyState(0x0D) & 0x8000) != 0;
 
-                if (spacePressed || leftClickPressed)
+                if (spacePressed || enterPressed)
                 {
                     StopInputPolling();
                     _ = FinishRecordingAsync();
@@ -530,7 +530,7 @@ namespace snapvox.forms
 
             if (rect.IsEmpty)
             {
-                BroadcastStatus("Point at a window", "Space = start");
+                BroadcastStatus("Point at a window", "Left-click or Space to start (Esc exits)");
             }
             else if (IsSelectedWindowElevated)
             {
@@ -538,7 +538,7 @@ namespace snapvox.forms
             }
             else
             {
-                BroadcastStatus("Window ready", "Space = start");
+                BroadcastStatus("Window ready", "Left-click or Space to start (Esc exits)");
             }
         }
 

@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="snapvox.editor.forms.NotificationOverlayWindow"
         Title="Notification"
@@ -10,34 +10,27 @@
         ShowInTaskbar="False"
         IsHitTestVisible="False"
         SizeToContent="WidthAndHeight">
-    <Border Name="NotificationChrome"
-            Background="Transparent"
-            CornerRadius="8"
-            Padding="18,10"
-            MinWidth="220"
-            BorderBrush="Transparent"
-            BorderThickness="0">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="12" Opacity="0.35" OffsetX="0" OffsetY="4" />
-        </Border.Effect>
-        <StackPanel Name="NotificationPanel" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-            <TextBlock Name="NotificationIcon"
-                       Text="&#xE73E;"
-                       FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons, Segoe UI Symbol, $Default"
-                       Foreground="White"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="28"/>
-            <!-- ISSUE_010: wrap long messages and cap width so the popup stays readable and on-screen. -->
-            <TextBlock Name="NotificationText"
-                       Foreground="White"
-                       FontSize="22"
-                       FontWeight="SemiBold"
-                       MaxWidth="420"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       TextWrapping="Wrap"
-                       TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
-    </Border>
+    <Panel Margin="30">
+        <Border Name="NotificationChrome"
+                Background="#E6181A1F"
+                CornerRadius="12"
+                Padding="32,16"
+                BorderBrush="#00B4D8"
+                BorderThickness="2"
+                BoxShadow="0 8 28 0 #B3000000">
+            <StackPanel Name="NotificationPanel" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Name="NotificationIcon"
+                           Text="&#xE73E;"
+                           FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons, Segoe UI Symbol, $Default"
+                           Foreground="#FFFFFF"
+                           VerticalAlignment="Center"
+                           FontSize="26"/>
+                <TextBlock Name="NotificationText"
+                           Foreground="#FFFFFF"
+                           FontSize="20"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Panel>
 </Window>

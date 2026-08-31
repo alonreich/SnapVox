@@ -1,4 +1,4 @@
-﻿<ResourceDictionary xmlns="https://github.com/avaloniaui"
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- ═════════════════════════════════════════════════════════════════
          SnapVox Shared Design System
@@ -101,6 +101,26 @@
     <Color x:Key="SnapVoxScrollAccentColor">#00AEEF</Color>
     <SolidColorBrush x:Key="SnapVoxScrollAccentBrush" Color="{StaticResource SnapVoxScrollAccentColor}" />
 
+    <!-- ── Drawing Palette & Structural Colors ── -->
+    <Color x:Key="SnapVoxPaletteBlackColor">#000000</Color>
+    <SolidColorBrush x:Key="SnapVoxPaletteBlackBrush" Color="{StaticResource SnapVoxPaletteBlackColor}" />
+    <Color x:Key="SnapVoxPaletteGreenColor">#00FF00</Color>
+    <SolidColorBrush x:Key="SnapVoxPaletteGreenBrush" Color="{StaticResource SnapVoxPaletteGreenColor}" />
+    <Color x:Key="SnapVoxPaletteRedColor">#FF0000</Color>
+    <SolidColorBrush x:Key="SnapVoxPaletteRedBrush" Color="{StaticResource SnapVoxPaletteRedColor}" />
+    <Color x:Key="SnapVoxPaletteYellowColor">#FFFF00</Color>
+    <SolidColorBrush x:Key="SnapVoxPaletteYellowBrush" Color="{StaticResource SnapVoxPaletteYellowColor}" />
+    <Color x:Key="SnapVoxPaletteBlueColor">#0000FF</Color>
+    <SolidColorBrush x:Key="SnapVoxPaletteBlueBrush" Color="{StaticResource SnapVoxPaletteBlueColor}" />
+    <Color x:Key="SnapVoxPaletteWhiteColor">#FFFFFF</Color>
+    <SolidColorBrush x:Key="SnapVoxPaletteWhiteBrush" Color="{StaticResource SnapVoxPaletteWhiteColor}" />
+
+    <Color x:Key="SnapVoxHitTestScrimColor">#01000000</Color>
+    <SolidColorBrush x:Key="SnapVoxHitTestScrimBrush" Color="{StaticResource SnapVoxHitTestScrimColor}" />
+    
+    <Color x:Key="SnapVoxMagnifierBackgroundColor">#000000</Color>
+    <SolidColorBrush x:Key="SnapVoxMagnifierBackgroundBrush" Color="{StaticResource SnapVoxMagnifierBackgroundColor}" />
+
     <!-- ── Scrollbar themes (ISSUE: broken scrollbar visuals) ──
          The Fluent scrollbar template renders a translucent overlay thumb and no visible
          arrows, which is unreadable on SnapVox's #1E1E1E canvas and reads as "scrolling is
@@ -179,18 +199,18 @@
          with 18x18 square arrow cells and chevrons drawn to the bar's own scale (8px span,
          2px stroke) so bar and arrows stay proportional. -->
     <ControlTheme x:Key="SnapVoxScrollBarVertical" TargetType="ScrollBar">
-        <Setter Property="Width" Value="18" />
-        <Setter Property="MinWidth" Value="18" />
+        <Setter Property="Width" Value="24" />
+        <Setter Property="MinWidth" Value="24" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
-                    <Grid Background="{TemplateBinding Background}" MinWidth="18">
+                    <Grid Background="{TemplateBinding Background}" MinWidth="24">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="18" />
+                            <RowDefinition Height="24" />
                             <RowDefinition Height="*" />
-                            <RowDefinition Height="18" />
+                            <RowDefinition Height="24" />
                         </Grid.RowDefinitions>
                         <RepeatButton Grid.Row="0" Name="PART_LineUpButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="3,3,0,0" Cursor="Hand">
                             <Path Data="M 5 11 L 9 7 L 13 11" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
@@ -226,18 +246,18 @@
     <x:Double x:Key="SnapVoxDeploymentTitleFontSize">20</x:Double>
 
     <ControlTheme x:Key="SnapVoxScrollBarHorizontal" TargetType="ScrollBar">
-        <Setter Property="Height" Value="18" />
-        <Setter Property="MinHeight" Value="18" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="MinHeight" Value="24" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
-                    <Grid Background="{TemplateBinding Background}" MinHeight="18">
+                    <Grid Background="{TemplateBinding Background}" MinHeight="24">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="18" />
+                            <ColumnDefinition Width="24" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="18" />
+                            <ColumnDefinition Width="24" />
                         </Grid.ColumnDefinitions>
                         <RepeatButton Grid.Column="0" Name="PART_LineLeftButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="3,0,0,3" Cursor="Hand">
                             <Path Data="M 11 5 L 7 9 L 11 13" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />

@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -68,60 +68,48 @@ namespace snapvox.editor.forms
                     var textBlock = window.FindControl<TextBlock>("NotificationText");
                     var icon = window.FindControl<TextBlock>("NotificationIcon");
                     var chrome = window.FindControl<Border>("NotificationChrome");
-                    var panel = window.FindControl<StackPanel>("NotificationPanel");
                     
                     var work = targetScreen.WorkingArea;
-                    double scaleFactor = Math.Sqrt(0.07);
-                    double targetWidth = work.Width * scaleFactor;
-                    double targetHeight = work.Height * scaleFactor;
-                    
-                    window.SizeToContent = SizeToContent.Manual;
-                    window.Width = targetWidth;
-                    window.Height = targetHeight;
-                    
-                    if (chrome != null)
-                    {
-                        chrome.Background = new SolidColorBrush(Color.FromArgb(220, 20, 20, 20));
-                        chrome.Width = targetWidth;
-                        chrome.Height = targetHeight;
-                        chrome.Padding = new Avalonia.Thickness(targetWidth * 0.05, targetHeight * 0.05);
-                        chrome.CornerRadius = new CornerRadius(targetHeight * 0.1);
-                    }
-                    
-                    if (panel != null)
-                    {
-                        panel.Orientation = Avalonia.Layout.Orientation.Vertical;
-                        panel.Spacing = targetHeight * 0.1;
-                        panel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-                        panel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
-                    }
                     
                     if (textBlock != null) 
                     {
                         textBlock.Text = message;
-                        textBlock.TextAlignment = Avalonia.Media.TextAlignment.Center;
                     }
 
+                    var whiteBrush = new SolidColorBrush(Color.Parse("#FFFFFF"));
+                    var vividCoralBrush = new SolidColorBrush(Color.Parse("#FF3355"));
+                    var vividCyanBrush = new SolidColorBrush(Color.Parse("#00D2FF"));
+                    var vividAmberBrush = new SolidColorBrush(Color.Parse("#FFB703"));
+                    IBrush[] colors = { whiteBrush, vividCoralBrush, vividCyanBrush, vividAmberBrush };
+
+                    if (textBlock != null) textBlock.Foreground = colors[0];
+                    if (icon != null) icon.Foreground = colors[0];
+                    if (chrome != null) chrome.BorderBrush = colors[0];
+
                     window.Show();
+                    window.UpdateLayout();
+
+                    double scaling = targetScreen.Scaling;
+                    double dipWidth = window.Bounds.Width > 0 ? window.Bounds.Width : 420;
+                    double dipHeight = window.Bounds.Height > 0 ? window.Bounds.Height : 100;
+                    double physWidth = dipWidth * scaling;
+                    double physHeight = dipHeight * scaling;
+
+                    int posX = (int)Math.Round(work.X + (work.Width - physWidth) / 2.0);
+                    int posY = (int)Math.Round(work.Y + (work.Height - physHeight) / 2.0);
+
+                    window.Position = new PixelPoint(posX, posY);
 
                     try
                     {
-                        window.Position = new PixelPoint(
-                            work.X + (work.Width - (int)window.Bounds.Width) / 2,
-                            work.Y + (work.Height - (int)window.Bounds.Height) / 2);
-
-                        var whiteBrush = Brushes.White;
-                        var redBrush = new SolidColorBrush(Color.Parse("#E00000"));
-                        var blueBrush = new SolidColorBrush(Color.Parse("#007ACC"));
-                        IBrush[] colors = { whiteBrush, redBrush, blueBrush };
-
                         int blinkTotalMs = GetOverlayDurationMs();
-                        int blinkStepDelay = Math.Max(50, blinkTotalMs / 4);
+                        int blinkStepDelay = Math.Max(60, blinkTotalMs / 4);
                         for (int i = 0; i < 4; i++)
                         {
-                            IBrush foreground = colors[i % 3];
+                            IBrush foreground = colors[i % colors.Length];
                             if (textBlock != null) textBlock.Foreground = foreground;
                             if (icon != null) icon.Foreground = foreground;
+                            if (chrome != null) chrome.BorderBrush = foreground;
                             await Task.Delay(blinkStepDelay);
                         }
                     }
@@ -176,9 +164,15 @@ namespace snapvox.editor.forms
                     var icon = window.FindControl<TextBlock>("NotificationIcon");
                     var viewbox = window.FindControl<Viewbox>("NotificationViewbox");
                     if (viewbox != null) viewbox.Stretch = Avalonia.Media.Stretch.None;
+                    
+                    Application.Current.TryFindResource("SnapVoxPanelDarkBrush", out var bgResource);
+                    Application.Current.TryFindResource("SnapVoxAccentBrush", out var fgResource);
+                    var bgBrush = (bgResource as IBrush) ?? new SolidColorBrush(Color.FromArgb(204, 45, 45, 48));
+                    var fgBrush = (fgResource as IBrush) ?? Brushes.Gold;
+
                     if (chrome != null)
                     {
-                        chrome.Background = new SolidColorBrush(Color.Parse("#CC2D2D30"));
+                        chrome.Background = bgBrush;
                         chrome.Padding = new Thickness(14, 8);
                         chrome.MinWidth = 180;
                     }
@@ -186,13 +180,13 @@ namespace snapvox.editor.forms
                         textBlock.Text = message; 
                         textBlock.FontSize = 14;
                         textBlock.FontWeight = FontWeight.SemiBold;
-                        textBlock.Foreground = new SolidColorBrush(Color.Parse("#FFF2B84B")); 
+                        textBlock.Foreground = fgBrush; 
                         textBlock.MaxWidth = 300;
                     }
                     if (icon != null) { 
                         icon.Text = "\uE946";
                         icon.FontSize = 16;
-                        icon.Foreground = new SolidColorBrush(Color.Parse("#FFF2B84B"));
+                        icon.Foreground = fgBrush;
                     }
 
                     window.Opacity = 0;
@@ -240,5 +234,8 @@ namespace snapvox.editor.forms
     }
 
 }
+
+
+
 
 

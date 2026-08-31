@@ -9,7 +9,7 @@ namespace snapvox.helpers;
 /// </summary>
 internal static class InstallHostContext
 {
-    public static bool HeadlessInstallerActive { get; set; }
+
 
     public static bool IsStandaloneInstallerHost()
     {
