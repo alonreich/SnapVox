@@ -236,8 +236,9 @@ namespace snapvox.Forms
                 textBox.Background = Brushes.Transparent;
             }
 
+            ClearHotkeyConflictStyles();
             var warning = this.FindControl<TextBlock>("TxtHotkeyWarning");
-            if (warning != null) warning.IsVisible = false;
+            if (warning != null) { warning.Text = string.Empty; warning.IsVisible = false; }
             OverlayHelper.ShowNotification("Hotkeys reset. Save to apply.", this);
         }
 
@@ -258,9 +259,9 @@ namespace snapvox.Forms
                     textBox.Text = combined;
                     e.Handled = true;
 
-                    if (textBox.Name == "TxtRegionKey" || textBox.Name == "TxtWindowKey" || textBox.Name == "TxtFullscreenKey" || textBox.Name == "TxtLastRegionKey" || textBox.Name == "TxtClipboardKey")
+                    if (GlobalHotkeyBoxNames.Contains(textBox.Name, StringComparer.Ordinal))
                     {
-                        ValidateGlobalHotkey(textBox, combined);
+                        ValidateGlobalHotkeys();
                     }
                     else
                     {
@@ -270,32 +271,71 @@ namespace snapvox.Forms
             }
         }
 
-        private void ValidateGlobalHotkey(TextBox textBox, string hotkey)
+        private static readonly string[] GlobalHotkeyBoxNames =
+        {
+            "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey", "TxtLastRegionKey", "TxtClipboardKey"
+        };
+
+        private void ValidateGlobalHotkeys()
         {
             var warning = this.FindControl<TextBlock>("TxtHotkeyWarning");
-            bool conflict = false;
-            try
-            {
-                conflict = !HotkeyManager.IsHotkeyAvailable(hotkey);
-            }
-            catch { conflict = true; }
+            ClearHotkeyConflictStyles();
 
-            textBox.Classes.Remove("hotkey-conflict");
-            if (conflict)
+            var seen = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+            string firstMessage = null;
+
+            foreach (var name in GlobalHotkeyBoxNames)
             {
-                textBox.Classes.Add("hotkey-conflict");
-                textBox.Tag = "conflict";
-                if (warning != null)
+                var box = this.FindControl<TextBox>(name);
+                string hotkey = box?.Text;
+                if (box == null || string.IsNullOrWhiteSpace(hotkey) || string.Equals(hotkey, "None", StringComparison.OrdinalIgnoreCase))
                 {
-                    warning.Text = $"\"{hotkey}\" is taken by another app or by another SnapVox box.";
-                    warning.IsVisible = true;
+                    continue;
                 }
+
+                string message = null;
+
+                string normalized = HotkeyManager.NormalizeHotkey(hotkey);
+                if (normalized.Length == 0)
+                {
+                    message = $"\"{hotkey}\" is not a shortcut Windows can register.";
+                }
+                else if (seen.ContainsKey(normalized))
+                {
+                    message = $"\"{hotkey}\" is already assigned to another SnapVox shortcut on this tab.";
+                }
+                else
+                {
+                    seen[normalized] = name;
+
+                    bool taken;
+                    try
+                    {
+                        taken = !HotkeyManager.IsHotkeyAvailable(hotkey);
+                    }
+                    catch
+                    {
+                        taken = true;
+                    }
+
+                    if (taken) message = $"\"{hotkey}\" is already in use by another application.";
+                }
+
+                if (message == null)
+                {
+                    box.Tag = null;
+                    continue;
+                }
+
+                box.Classes.Add("hotkey-conflict");
+                box.Tag = "conflict";
+                firstMessage ??= message;
             }
-            else
+
+            if (warning != null)
             {
-                textBox.Tag = null;
-                ClearHotkeyConflictStyles();
-                if (warning != null) warning.IsVisible = false;
+                warning.Text = firstMessage ?? string.Empty;
+                warning.IsVisible = firstMessage != null;
             }
         }
 
@@ -306,6 +346,7 @@ namespace snapvox.Forms
                 if (tb.Name != null && tb.Name.StartsWith("Txt", StringComparison.Ordinal))
                 {
                     tb.Classes.Remove("hotkey-conflict");
+                    if (tb.Tag is string tag && tag == "conflict") tb.Tag = null;
                 }
             }
         }
@@ -433,18 +474,22 @@ namespace snapvox.Forms
             _saveInProgress = true;
             try
             {
-                var globalKeys = new[] { "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey", "TxtLastRegionKey", "TxtClipboardKey" };
-                foreach (var name in globalKeys)
+                ValidateGlobalHotkeys();
+                foreach (var name in GlobalHotkeyBoxNames)
                 {
                     var tb = this.FindControl<TextBox>(name);
                     if (tb != null && tb.Tag is string tag && tag == "conflict")
                     {
+                        var warningText = this.FindControl<TextBlock>("TxtHotkeyWarning")?.Text;
                         await ConfirmDialog.ShowAlertAsync(
                             this,
                             "Hotkey Conflict",
-                            $"The shortcut key of {tb.Text} is already taken by another app. Please release this key from the other app or select a different key and try again.",
+                            string.IsNullOrWhiteSpace(warningText)
+                                ? $"The shortcut {tb.Text} cannot be used. Pick a different key and try again."
+                                : warningText + " Pick a different key and try again.",
                             "OK",
                             true).ConfigureAwait(true);
+                        tb.Focus();
                         return;
                     }
                 }
@@ -519,8 +564,7 @@ namespace snapvox.Forms
                 
                 if (oldRegion != _config.RegionHotkey || oldWindow != _config.WindowHotkey || oldFull != _config.FullscreenHotkey || oldLast != _config.LastregionHotkey || oldClip != _config.ClipboardHotkey)
                 {
-                    HotkeyManager.Stop();
-                    HotkeyManager.Start();
+                    await HotkeyManager.RestartAsync().ConfigureAwait(true);
                 }
                 
                 _loadedFingerprint = BuildFingerprint();

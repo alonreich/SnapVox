@@ -118,6 +118,32 @@
             <Setter Property="BorderThickness" Value="2,2,1,1" />
             <Setter Property="BorderBrush" Value="#88000000" />
         </Style>
+
+        <Style Selector="Button.cropmode">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="6,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="MinWidth" Value="92" />
+            <Setter Property="MinHeight" Value="{DynamicResource SnapVoxMinTouchTarget}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.cropmode /template/ ContentPresenter">
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.cropmode:hover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverBrush}" />
+        </Style>
+        <Style Selector="Button.cropmode:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxPressedBrush}" />
+        </Style>
+        <Style Selector="Button.cropmode.selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#660078D7" />
+            <Setter Property="BorderBrush" Value="#CC0078D7" />
+        </Style>
         
         
 
@@ -132,13 +158,22 @@
             <Setter Property="BorderBrush" Value="#88000000" />
         </Style>
         
-        <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar">
+        <Style Selector="ScrollBar">
             <Setter Property="AllowAutoHide" Value="False" />
         </Style>
-        <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar[Orientation=Vertical]">
+        <Style Selector="ScrollBar[Orientation=Vertical]">
             <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarVertical}" />
         </Style>
-        <Style Selector="ScrollViewer#EditorScrollViewer ScrollBar[Orientation=Horizontal]">
+        <Style Selector="ScrollBar[Orientation=Horizontal]">
+            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarHorizontal}" />
+        </Style>
+        <Style Selector="FlyoutPresenter ScrollBar">
+            <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Vertical]">
+            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarVertical}" />
+        </Style>
+        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Horizontal]">
             <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarHorizontal}" />
         </Style>
         <Style Selector="Button.color-preset">
@@ -312,7 +347,7 @@
         <Border DockPanel.Dock="Top" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,0,0,1" Cursor="Arrow">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Name="TopToolbarStackPanel" Grid.Column="0" Orientation="Horizontal" Margin="10,0" Spacing="7" VerticalAlignment="Center">
-                    <Button Classes="toolbar" Name="DownloadButton" AutomationProperties.Name="Save image to Downloads" ToolTip.Tip="Save image to Downloads (Ctrl+S)" Click="OnDownloadClick" IsDefault="False">
+                    <Button Classes="toolbar" Name="DownloadButton" AutomationProperties.Name="Save" ToolTip.Tip="Save (Ctrl+S)" Click="OnDownloadClick" IsDefault="False">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/download.svg" />
                     </Button>
                     <Button Classes="toolbar" Name="CopyButton" AutomationProperties.Name="Copy image to clipboard" ToolTip.Tip="Copy image to clipboard (Ctrl+C)" Click="OnCopyClick" IsDefault="False">
@@ -343,9 +378,84 @@
                     </Button>
 
                     <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="3,0" />
-                    <Button Classes="toolbar" Name="CropTool" AutomationProperties.Name="Crop tool" ToolTip.Tip="Crop region. Esc exits this tool." Click="OnToolClick" Tag="Crop">
+                    <Button Classes="toolbar" Name="CropTool" AutomationProperties.Name="Crop tool" ToolTip.Tip="Crop region. Opens a menu of crop shapes. Esc exits this tool." Click="OnToolClick" Tag="Crop">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/crop.svg" />
                     </Button>
+                    <Popup Name="CropModePopup" Placement="BottomEdgeAlignedLeft" VerticalOffset="8" HorizontalOffset="-6" IsLightDismissEnabled="False">
+                        <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="12,10" MaxWidth="720">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="CROP SHAPE" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
+                                <StackPanel Name="CropModeButtons" Orientation="Horizontal" Spacing="4">
+                                <Button Classes="cropmode" Name="CropModeRegular" Tag="Regular" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
+                                        AutomationProperties.Name="Free crop"
+                                        AutomationProperties.HelpText="Free crop. Drag any box you like - the picture keeps exactly what is inside it, in whatever shape you drew."
+                                        ToolTip.Tip="Free crop. Drag any box you like - the picture keeps exactly what is inside it, in whatever shape you drew.">
+                                    <StackPanel Orientation="Vertical" Spacing="5">
+                                        <svg:Svg Width="30" Height="30" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-free.svg" />
+                                        <TextBlock Text="Regular" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="84" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="cropmode" Name="CropModeKeepRatio" Tag="KeepRatio" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
+                                        AutomationProperties.Name="Keep the current shape"
+                                        AutomationProperties.HelpText="Same shape as now. The box is locked to this picture's current shape, so the result looks like the original - just a smaller piece of it."
+                                        ToolTip.Tip="Same shape as now. The box is locked to this picture's current shape, so the result looks like the original - just a smaller piece of it.">
+                                    <StackPanel Orientation="Vertical" Spacing="5">
+                                        <svg:Svg Width="30" Height="30" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-keep-ratio.svg" />
+                                        <TextBlock Text="Keep Ratio" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="84" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="cropmode" Name="CropModeSquare" Tag="Square" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
+                                        AutomationProperties.Name="Square crop"
+                                        AutomationProperties.HelpText="Perfect square. Width and height come out equal - the shape profile pictures and app icons use."
+                                        ToolTip.Tip="Perfect square. Width and height come out equal - the shape profile pictures and app icons use.">
+                                    <StackPanel Orientation="Vertical" Spacing="5">
+                                        <svg:Svg Width="30" Height="30" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-square.svg" />
+                                        <TextBlock Text="1:1" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="84" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="cropmode" Name="CropModeWide" Tag="Wide" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
+                                        AutomationProperties.Name="Wide screen crop"
+                                        AutomationProperties.HelpText="Wide screen. The long, letterbox shape of a TV or a YouTube video."
+                                        ToolTip.Tip="Wide screen. The long, letterbox shape of a TV or a YouTube video.">
+                                    <StackPanel Orientation="Vertical" Spacing="5">
+                                        <svg:Svg Width="30" Height="30" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-wide.svg" />
+                                        <TextBlock Text="16:9" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="84" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="cropmode" Name="CropModeTall" Tag="Tall" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
+                                        AutomationProperties.Name="Tall phone crop"
+                                        AutomationProperties.HelpText="Tall phone screen. The upright shape of a Story, a Reel or a TikTok."
+                                        ToolTip.Tip="Tall phone screen. The upright shape of a Story, a Reel or a TikTok.">
+                                    <StackPanel Orientation="Vertical" Spacing="5">
+                                        <svg:Svg Width="30" Height="30" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-tall.svg" />
+                                        <TextBlock Text="9:16" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="84" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="cropmode" Name="CropModeVerticalStrip" Tag="VerticalStrip" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
+                                        AutomationProperties.Name="Crop out vertically, keeping a tall column"
+                                        AutomationProperties.HelpText="Keep a tall column. You set the left and right edges, everything outside them is cut away, and the full height of the picture is kept."
+                                        ToolTip.Tip="Keep a tall column. You set the left and right edges, everything outside them is cut away, and the full height of the picture is kept.">
+                                    <StackPanel Orientation="Vertical" Spacing="5">
+                                        <svg:Svg Width="30" Height="30" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-column.svg" />
+                                        <TextBlock Text="Crop Out Vertically" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="84" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="cropmode" Name="CropModeHorizontalStrip" Tag="HorizontalStrip" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
+                                        AutomationProperties.Name="Crop out horizontally, keeping a wide band"
+                                        AutomationProperties.HelpText="Keep a wide band. You set the top and bottom edges, everything above and below is cut away, and the full width of the picture is kept."
+                                        ToolTip.Tip="Keep a wide band. You set the top and bottom edges, everything above and below is cut away, and the full width of the picture is kept.">
+                                    <StackPanel Orientation="Vertical" Spacing="5">
+                                        <svg:Svg Width="30" Height="30" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-band.svg" />
+                                        <TextBlock Text="Crop Out Horizontally" FontSize="11" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="84" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
+                                </StackPanel>
+                                <Border Background="{DynamicResource SnapVoxCanvasBrush}" CornerRadius="4" Padding="10,7">
+                                    <TextBlock Name="CropModeDescription" TextWrapping="Wrap" MaxWidth="660" FontSize="12" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     <Button Classes="toolbar" Name="ResizeButton" AutomationProperties.Name="Resize image" ToolTip.Tip="Resize image (changes the picture's real pixel size)" Click="OnResizeClick">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/resize.svg" />
                     </Button>
@@ -559,16 +669,16 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/emoji.svg" />
                         <Button.Flyout>
                             <Flyout Placement="Right">
-                                <ScrollViewer MaxHeight="300" AllowAutoHide="False" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                                <ScrollViewer Name="EmojiScrollViewer" MaxHeight="320" Width="298" AllowAutoHide="False" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
                                     <ScrollViewer.Styles>
                                         <Style Selector="ScrollBar">
                                             <Setter Property="AllowAutoHide" Value="False" />
                                         </Style>
-                                        <Style Selector="ScrollBar:vertical">
+                                        <Style Selector="ScrollBar[Orientation=Vertical]">
                                             <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarVertical}" />
                                         </Style>
                                     </ScrollViewer.Styles>
-                                    <ItemsControl Name="EmojiGrid">
+                                    <ItemsControl Name="EmojiGrid" Margin="0,0,4,0">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
                                                 <WrapPanel ItemWidth="54" ItemHeight="54" />
@@ -594,23 +704,21 @@
         </Border>
 
         <ScrollViewer Name="EditorScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-            <Panel Background="{StaticResource CheckerboardBrush}">
-                <Grid Name="MainGrid">
-                    
+            <Panel Name="ScrollContentPanel" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{StaticResource CheckerboardBrush}">
+                <Grid Name="MainGrid" HorizontalAlignment="Left" VerticalAlignment="Top">
                     <Panel Name="ZoomContainer" HorizontalAlignment="Left" VerticalAlignment="Top">
-                        
-                        <Border Name="SnipBorder" BorderBrush="{DynamicResource SnapVoxFrameBorderBrush}" BorderThickness="3">
-                            <Image Name="EditorImage" AutomationProperties.Name="Captured image" Margin="0" Stretch="None" />
+                        <Border Name="SnipBorder" BorderBrush="{DynamicResource SnapVoxFrameBorderBrush}" BorderThickness="3" HorizontalAlignment="Left" VerticalAlignment="Top">
+                            <Image Name="EditorImage" AutomationProperties.Name="Captured image" Margin="0" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
                         </Border>
                         <Canvas Name="AnnotationCanvas" Background="Transparent" 
+                                HorizontalAlignment="Left" VerticalAlignment="Top"
                                 PointerPressed="OnCanvasPointerPressed" 
                                 PointerMoved="OnCanvasPointerMoved" 
                                 PointerReleased="OnCanvasPointerReleased"
                                 ClipToBounds="True">
-                                
                         </Canvas>
 
-                        <Canvas Name="OverlayCanvas" ClipToBounds="False" ZIndex="10000">
+                        <Canvas Name="OverlayCanvas" ClipToBounds="False" ZIndex="10000" HorizontalAlignment="Left" VerticalAlignment="Top">
                             <Border Name="ContextToolbar" IsVisible="False" ZIndex="10001" Background="{DynamicResource SnapVoxPanelDarkBrush}" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" CornerRadius="4" Padding="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Classes="action context-apply" Name="ContextApplyButton" Click="OnContextApplyClick" AutomationProperties.Name="Apply" ToolTip.Tip="Apply (Enter)">

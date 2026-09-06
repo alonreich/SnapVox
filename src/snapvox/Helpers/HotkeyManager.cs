@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using snapvox.native;
 using Avalonia.Threading;
 using snapvox.native.foundation;
@@ -20,8 +22,11 @@ namespace snapvox.helpers
         private static IntPtr _hwnd;
         private static Thread _msgLoopThread;
         private static volatile bool _running;
+        private static readonly object StartStopSync = new object();
+        private static readonly ManualResetEventSlim LoopExited = new ManualResetEventSlim(true);
 
         private static volatile string[] _lastFailedHotkeys = Array.Empty<string>();
+        private static volatile string[] _ownedHotkeys = Array.Empty<string>();
         private static volatile bool _registrationCompleted;
 
         private const int WM_HOTKEY = 0x0312;
@@ -32,6 +37,8 @@ namespace snapvox.helpers
         private const int HOTKEY_FULLSCREEN = 3;
         private const int HOTKEY_LASTREGION = 4;
         private const int HOTKEY_CLIPBOARD = 5;
+        private const int HOTKEY_PROBE = 9999;
+        private static readonly TimeSpan LoopShutdownTimeout = TimeSpan.FromSeconds(3);
 
         private const int MOD_ALT = 0x0001;
         private const int MOD_CONTROL = 0x0002;
@@ -126,15 +133,34 @@ namespace snapvox.helpers
 
         public static void Start()
         {
-            if (_running)
+            lock (StartStopSync)
             {
-                return;
-            }
+                if (_running)
+                {
+                    return;
+                }
 
-            _registrationCompleted = false;
-            _running = true;
-            _msgLoopThread = new Thread(MessageLoop) { IsBackground = true, Name = "HotkeyLoop" };
-            _msgLoopThread.Start();
+                if (!LoopExited.Wait(LoopShutdownTimeout))
+                {
+                    BootstrapDebug.Log("HotkeyManager: previous message loop did not release its hotkeys in time; continuing anyway.");
+                }
+
+                _registrationCompleted = false;
+                _ownedHotkeys = Array.Empty<string>();
+                _running = true;
+                LoopExited.Reset();
+                _msgLoopThread = new Thread(MessageLoop) { IsBackground = true, Name = "HotkeyLoop" };
+                _msgLoopThread.Start();
+            }
+        }
+
+        public static Task RestartAsync()
+        {
+            return Task.Run(() =>
+            {
+                Stop();
+                Start();
+            });
         }
 
         private static void MessageLoop()
@@ -142,6 +168,7 @@ namespace snapvox.helpers
             BootstrapDebug.Log("HotkeyManager: MessageLoop starting.");
             string className = "LG_Hotkey_Host_V3_" + Guid.NewGuid().ToString("N")[..8];
             IntPtr classNamePtr = Marshal.StringToHGlobalUni(className);
+            IntPtr ownedWindow = IntPtr.Zero;
 
             try
             {
@@ -153,16 +180,19 @@ namespace snapvox.helpers
 
                 if (RegisterClassExW(&wc) == 0)
                 {
-                    BootstrapDebug.Log("Failed to register hotkey class. Error: " + Marshal.GetLastWin32Error());
-                    className = "Static";
-                }
-
-                _hwnd = CreateWindowExW(0, className, "LG_Hotkey_Host", 0, 0, 0, 0, 0, (IntPtr)(-3), IntPtr.Zero, wc.hInstance, IntPtr.Zero);
-                if (_hwnd == IntPtr.Zero)
-                {
-                    BootstrapDebug.Log("Failed to create hotkey host window. Error: " + Marshal.GetLastWin32Error());
+                    ReportHotkeyHostFailure("register the hotkey listener class", Marshal.GetLastWin32Error());
                     return;
                 }
+
+                IntPtr hostWindow = CreateWindowExW(0, className, "LG_Hotkey_Host", 0, 0, 0, 0, 0, (IntPtr)(-3), IntPtr.Zero, wc.hInstance, IntPtr.Zero);
+                if (hostWindow == IntPtr.Zero)
+                {
+                    ReportHotkeyHostFailure("create the hotkey listener window", Marshal.GetLastWin32Error());
+                    return;
+                }
+
+                _hwnd = hostWindow;
+                ownedWindow = hostWindow;
 
                 RegisterAll();
 
@@ -180,54 +210,135 @@ namespace snapvox.helpers
             finally
             {
                 Marshal.FreeHGlobal(classNamePtr);
-                UnregisterAll();
-                if (_hwnd != IntPtr.Zero)
+                if (ownedWindow != IntPtr.Zero)
                 {
-                    DestroyWindow(_hwnd);
-                    _hwnd = IntPtr.Zero;
+                    UnregisterAll(ownedWindow);
+                    DestroyWindow(ownedWindow);
+                    Interlocked.CompareExchange(ref _hwnd, IntPtr.Zero, ownedWindow);
                 }
 
+                _running = false;
+                _ownedHotkeys = Array.Empty<string>();
+                LoopExited.Set();
                 BootstrapDebug.Log("HotkeyManager: MessageLoop exited.");
+            }
+        }
+
+        private static void ReportHotkeyHostFailure(string action, int win32Error)
+        {
+            BootstrapDebug.Log($"HotkeyManager: failed to {action}. Error: {win32Error}");
+
+            string[] configured;
+            try
+            {
+                var cfg = IniConfig.GetIniSection<CoreConfiguration>();
+                configured = new[] { cfg.RegionHotkey, cfg.WindowHotkey, cfg.FullscreenHotkey, cfg.LastregionHotkey, cfg.ClipboardHotkey }
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .ToArray();
+            }
+            catch
+            {
+                configured = new[] { "PrintScreen" };
+            }
+
+            _lastFailedHotkeys = configured;
+            _registrationCompleted = true;
+
+            try
+            {
+                ToastHelper.ShowToast(
+                    "SnapVox Hotkeys Unavailable",
+                    $"Windows refused to {action} (error {win32Error}). Global capture shortcuts are off for this session - use the tray icon, and restart SnapVox to try again.");
+            }
+            catch
+            {
             }
         }
 
         public static bool IsHotkeyAvailable(string hotkeyString)
         {
             if (string.IsNullOrWhiteSpace(hotkeyString) || string.Equals(hotkeyString, "None", StringComparison.OrdinalIgnoreCase)) return true;
+
+            if (IsOwnedBySnapVox(hotkeyString))
+            {
+                return true;
+            }
+
             try
             {
-                uint fsModifiers = MOD_NOREPEAT;
-                if (hotkeyString.Contains("Alt", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_ALT;
-                if (hotkeyString.Contains("Ctrl", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_CONTROL;
-                if (hotkeyString.Contains("Shift", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_SHIFT;
-                if (hotkeyString.Contains("Win", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_WIN;
-                string keyPart = hotkeyString.Split('+').Last().Trim();
-                if (Enum.TryParse<Keys>(keyPart, true, out var vk))
+                if (!TryParseHotkey(hotkeyString, out uint fsModifiers, out uint virtualKey))
                 {
-                    bool success = RegisterHotKey(IntPtr.Zero, 9999, fsModifiers, (uint)vk);
-                    if (success) UnregisterHotKey(IntPtr.Zero, 9999);
-                    return success;
+                    return false;
                 }
+
+                bool success = RegisterHotKey(IntPtr.Zero, HOTKEY_PROBE, fsModifiers, virtualKey);
+                if (success) UnregisterHotKey(IntPtr.Zero, HOTKEY_PROBE);
+                return success;
             }
             catch { }
             return false;
         }
 
+        public static bool IsOwnedBySnapVox(string hotkeyString)
+        {
+            string normalized = NormalizeHotkey(hotkeyString);
+            if (normalized.Length == 0) return false;
+
+            string[] owned = _ownedHotkeys;
+            for (int i = 0; i < owned.Length; i++)
+            {
+                if (string.Equals(owned[i], normalized, StringComparison.Ordinal)) return true;
+            }
+
+            return false;
+        }
+
+        public static string NormalizeHotkey(string hotkeyString)
+        {
+            if (!TryParseHotkey(hotkeyString, out uint fsModifiers, out uint virtualKey)) return string.Empty;
+            return fsModifiers.ToString(CultureInfo.InvariantCulture) + ":" + virtualKey.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static bool TryParseHotkey(string hotkeyString, out uint fsModifiers, out uint virtualKey)
+        {
+            fsModifiers = MOD_NOREPEAT;
+            virtualKey = 0;
+
+            if (string.IsNullOrWhiteSpace(hotkeyString) || string.Equals(hotkeyString, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (hotkeyString.Contains("Alt", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_ALT;
+            if (hotkeyString.Contains("Ctrl", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_CONTROL;
+            if (hotkeyString.Contains("Shift", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_SHIFT;
+            if (hotkeyString.Contains("Win", StringComparison.OrdinalIgnoreCase)) fsModifiers |= MOD_WIN;
+
+            string keyPart = hotkeyString.Split('+').Last().Trim();
+            if (!Enum.TryParse<Keys>(keyPart, true, out var vk)) return false;
+
+            virtualKey = (uint)vk;
+            return true;
+        }
+
         public static void Stop()
         {
-            if (!_running)
+            lock (StartStopSync)
             {
-                return;
-            }
+                if (!_running)
+                {
+                    return;
+                }
 
-            _running = false;
-            IntPtr hwnd = _hwnd;
-            if (hwnd != IntPtr.Zero)
-            {
-                PostMessageW(hwnd, WM_APP_EXIT, IntPtr.Zero, IntPtr.Zero);
-            }
+                _running = false;
+                IntPtr hwnd = _hwnd;
+                if (hwnd != IntPtr.Zero)
+                {
+                    PostMessageW(hwnd, WM_APP_EXIT, IntPtr.Zero, IntPtr.Zero);
+                }
 
-            _msgLoopThread = null;
+                _msgLoopThread = null;
+            }
         }
 
         public static bool RegistrationCompleted => _registrationCompleted;
@@ -252,19 +363,22 @@ namespace snapvox.helpers
             if (cfg.DisableHotkeys)
             {
                 _lastFailedHotkeys = System.Array.Empty<string>();
+                _ownedHotkeys = System.Array.Empty<string>();
                 _registrationCompleted = true;
                 BootstrapDebug.Log("HotkeyManager: DisableHotkeys is set. No global hotkeys registered.");
                 return;
             }
 
             var failures = new System.Collections.Generic.List<string>();
+            var owned = new System.Collections.Generic.List<string>();
 
-            if (!RegisterOne(HOTKEY_REGION, cfg.RegionHotkey)) failures.Add(cfg.RegionHotkey);
-            if (!RegisterOne(HOTKEY_WINDOW, cfg.WindowHotkey)) failures.Add(cfg.WindowHotkey);
-            if (!RegisterOne(HOTKEY_FULLSCREEN, cfg.FullscreenHotkey)) failures.Add(cfg.FullscreenHotkey);
-            if (!RegisterOne(HOTKEY_LASTREGION, cfg.LastregionHotkey)) failures.Add(cfg.LastregionHotkey);
-            if (!RegisterOne(HOTKEY_CLIPBOARD, cfg.ClipboardHotkey)) failures.Add(cfg.ClipboardHotkey);
+            RegisterTracked(HOTKEY_REGION, cfg.RegionHotkey, failures, owned);
+            RegisterTracked(HOTKEY_WINDOW, cfg.WindowHotkey, failures, owned);
+            RegisterTracked(HOTKEY_FULLSCREEN, cfg.FullscreenHotkey, failures, owned);
+            RegisterTracked(HOTKEY_LASTREGION, cfg.LastregionHotkey, failures, owned);
+            RegisterTracked(HOTKEY_CLIPBOARD, cfg.ClipboardHotkey, failures, owned);
 
+            _ownedHotkeys = owned.ToArray();
             _lastFailedHotkeys = failures.ToArray();
             _registrationCompleted = true;
 
@@ -282,6 +396,18 @@ namespace snapvox.helpers
             }
         }
 
+        private static void RegisterTracked(int id, string hotkeyString, System.Collections.Generic.List<string> failures, System.Collections.Generic.List<string> owned)
+        {
+            if (RegisterOne(id, hotkeyString))
+            {
+                string normalized = NormalizeHotkey(hotkeyString);
+                if (normalized.Length > 0 && !owned.Contains(normalized)) owned.Add(normalized);
+                return;
+            }
+
+            failures.Add(hotkeyString);
+        }
+
         private static bool RegisterOne(int id, string hotkeyString)
         {
             if (string.IsNullOrWhiteSpace(hotkeyString) || string.Equals(hotkeyString, "None", StringComparison.OrdinalIgnoreCase))
@@ -291,32 +417,10 @@ namespace snapvox.helpers
 
             try
             {
-                uint fsModifiers = MOD_NOREPEAT;
-                if (hotkeyString.Contains("Alt", StringComparison.OrdinalIgnoreCase))
-                {
-                    fsModifiers |= MOD_ALT;
-                }
-
-                if (hotkeyString.Contains("Ctrl", StringComparison.OrdinalIgnoreCase))
-                {
-                    fsModifiers |= MOD_CONTROL;
-                }
-
-                if (hotkeyString.Contains("Shift", StringComparison.OrdinalIgnoreCase))
-                {
-                    fsModifiers |= MOD_SHIFT;
-                }
-
-                if (hotkeyString.Contains("Win", StringComparison.OrdinalIgnoreCase))
-                {
-                    fsModifiers |= MOD_WIN;
-                }
-
-                string keyPart = hotkeyString.Split('+').Last().Trim();
-                if (Enum.TryParse<Keys>(keyPart, true, out var vk))
+                if (TryParseHotkey(hotkeyString, out uint fsModifiers, out uint virtualKey))
                 {
                     UnregisterHotKey(_hwnd, id);
-                    if (RegisterHotKey(_hwnd, id, fsModifiers, (uint)vk))
+                    if (RegisterHotKey(_hwnd, id, fsModifiers, virtualKey))
                     {
                         BootstrapDebug.Log($"Registered hotkey '{hotkeyString}' (ID: {id})");
                         return true;
@@ -334,16 +438,16 @@ namespace snapvox.helpers
             return false;
         }
 
-        private static void UnregisterAll()
+        private static void UnregisterAll(IntPtr hwnd)
         {
-            if (_hwnd == IntPtr.Zero)
+            if (hwnd == IntPtr.Zero)
             {
                 return;
             }
 
             for (int i = 1; i <= 5; i++)
             {
-                UnregisterHotKey(_hwnd, i);
+                UnregisterHotKey(hwnd, i);
             }
         }
 

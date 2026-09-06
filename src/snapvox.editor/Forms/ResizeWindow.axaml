@@ -4,7 +4,7 @@
         Title="Resize Image"
         AutomationProperties.Name="Resize image"
         SizeToContent="WidthAndHeight"
-        MinWidth="360" MinHeight="290"
+        MinWidth="430" MinHeight="300"
         Background="{DynamicResource SnapVoxPanelDarkBrush}"
         WindowStartupLocation="CenterOwner"
         Topmost="True"
@@ -26,20 +26,28 @@
                     <TextBox Name="HeightInput" Grid.Column="3" MinWidth="80" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Watermark="px" AutomationProperties.Name="New height in pixels" ToolTip.Tip="New height in pixels" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"/>
                 </Grid>
 
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Button Content="50%" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="50" AutomationProperties.Name="Scale to 50 percent"/>
-                    <Button Content="100%" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="100" AutomationProperties.Name="Scale to 100 percent"/>
-                    <Button Content="200%" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="200" AutomationProperties.Name="Scale to 200 percent"/>
-                    <Button Content="Fit" MinWidth="58" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="Fit" AutomationProperties.Name="Fit to screen"/>
+                <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="20%" MinWidth="56" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="20" AutomationProperties.Name="Scale to 20 percent" ToolTip.Tip="Five times smaller"/>
+                        <Button Content="50%" MinWidth="56" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="50" AutomationProperties.Name="Scale to 50 percent" ToolTip.Tip="Half size"/>
+                        <Button Content="100%" MinWidth="56" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="100" AutomationProperties.Name="Scale to 100 percent" ToolTip.Tip="Original size"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="200%" MinWidth="56" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="200" AutomationProperties.Name="Scale to 200 percent" ToolTip.Tip="Twice as big"/>
+                        <Button Content="500%" MinWidth="56" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="500" AutomationProperties.Name="Scale to 500 percent" ToolTip.Tip="Five times bigger"/>
+                        <Button Content="Fit" MinWidth="56" MinHeight="{DynamicResource SnapVoxMinTouchTarget}" Cursor="Hand" HorizontalContentAlignment="Center" Click="OnPresetClick" Tag="Fit" AutomationProperties.Name="Fit to screen" ToolTip.Tip="Biggest size that still fits on this screen"/>
+                    </StackPanel>
                 </StackPanel>
             </StackPanel>
             
             <StackPanel Grid.Column="1" Margin="20,0,0,0" HorizontalAlignment="Center">
                 <TextBlock Name="PercentText" Text="100%" HorizontalAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" FontWeight="Bold" Margin="0,0,0,6"/>
-                <!-- ISSUE_008: slider constrained to safe 33%–300% range, magnetic snap at 100% handled in code-behind. -->
-                <Slider Name="SizeSlider" Orientation="Vertical" Height="100" Cursor="Hand" AutomationProperties.Name="Scale percentage"
-                        Minimum="33" Maximum="300" Value="100" IsVisible="True" 
-                        ToolTip.Tip="Scale smoothly from 33% to 300%" />
+                <!-- Log-scaled track: -100 = 20% (five times smaller), 0 = 100%, +100 = 500% (five times bigger).
+                     100% therefore sits dead centre, where the magnetic snap in the code-behind catches it. -->
+                <Slider Name="SizeSlider" Orientation="Vertical" MinHeight="140" Cursor="Hand" AutomationProperties.Name="Scale percentage"
+                        Minimum="-100" Maximum="100" Value="0" IsVisible="True" 
+                        ToolTip.Tip="Drag down to shrink to 20%, up to enlarge to 500%. Centre snaps back to 100%." />
+                <TextBlock Name="ScaleHintText" Text="20% – 500%" HorizontalAlignment="Center" Margin="0,6,0,0" FontSize="11" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
             </StackPanel>
         </Grid>
 

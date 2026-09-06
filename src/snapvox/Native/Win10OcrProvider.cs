@@ -63,7 +63,10 @@ namespace snapvox.native
 
         public static bool AreRequiredLanguagesAvailable()
         {
-            return IsEnglishLanguageAvailable() || IsHebrewLanguageAvailable();
+            // RecognizeCoreAsync hard-requires the English recognizer and treats Hebrew as an
+            // optional second pass, so reporting "available" on a Hebrew-only machine would
+            // advertise an engine that can only ever return null.
+            return IsEnglishLanguageAvailable();
         }
 
         public static bool IsEnglishLanguageAvailable()

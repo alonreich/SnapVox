@@ -8,6 +8,7 @@ using Avalonia.Media.Imaging;
 using Brushes = Avalonia.Media.Brushes;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using snapvox.native.foundation;
 using snapvox.foundation.core;
 using snapvox.foundation.core.AvaloniaShims;
@@ -38,6 +39,18 @@ namespace snapvox.editor.forms
     public enum EditorTool
     {
         None, Arrow, Text, FreeDraw, Highlight, Blur, Counter, Line, Emoji, Rectangle, Ellipse, Crop
+    }
+
+    /// <summary>Shape the crop box is locked to. Chosen from the menu under the Crop button.</summary>
+    public enum CropMode
+    {
+        Regular,
+        KeepRatio,
+        Square,
+        Wide,
+        Tall,
+        VerticalStrip,
+        HorizontalStrip
     }
 
     public partial class ImageEditorWindow : Window
@@ -269,6 +282,7 @@ namespace snapvox.editor.forms
             UpdateContextToolbarHotkeyTooltips();
             RefreshColorPresetsPanel();
             InitializeCustomColorFlyout();
+            InitializeCropModes();
             UpdateSnapToggleVisual();
             PopulateEmojiGrid();
 
@@ -709,6 +723,15 @@ namespace snapvox.editor.forms
                 return;
             }
 
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                if (e.Key == Key.Z) { OnUndoClick(null, null); e.Handled = true; return; }
+                if (e.Key == Key.Y) { OnRedoClick(null, null); e.Handled = true; return; }
+                if (e.Key == Key.C) { OnCopyClick(null, null); e.Handled = true; return; }
+                if (e.Key == Key.S) { OnDownloadClick(null, null); e.Handled = true; return; }
+                if (e.Key == Key.V) { OnPasteClick(null, null); e.Handled = true; return; }
+            }
+
             if (e.Key == Key.Space && !e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
             {
                 _isSpaceDown = true;
@@ -813,6 +836,7 @@ namespace snapvox.editor.forms
 
         private void ResetToolsAndSelection()
         {
+            HideCropModePopup();
             _currentTool = EditorTool.None;
             _selectedControl = null;
             RemovePreviewShape();
@@ -851,16 +875,39 @@ namespace snapvox.editor.forms
 
         private async void ShowZoomHintDebounced()
         {
-            _zoomHintCts?.Cancel();
-            _zoomHintCts = new CancellationTokenSource();
-            var ct = _zoomHintCts.Token;
+            var previous = System.Threading.Interlocked.Exchange(ref _zoomHintCts, null);
+            if (previous != null)
+            {
+                try { previous.Cancel(); } catch (ObjectDisposedException) { }
+                previous.Dispose();
+            }
+
+            var cts = new CancellationTokenSource();
+            _zoomHintCts = cts;
+            var ct = cts.Token;
 
             try
             {
                 await Task.Delay(500, ct);
+                if (ct.IsCancellationRequested || !IsVisible) return;
                 OverlayHelper.ShowLightToast($"Zoom: {(int)(_zoomFactor * 100)}% (Middle-drag to pan)", this);
             }
-            catch (TaskCanceledException) { }
+            catch (OperationCanceledException) { }
+            finally
+            {
+                if (System.Threading.Interlocked.CompareExchange(ref _zoomHintCts, null, cts) == cts)
+                {
+                    cts.Dispose();
+                }
+            }
+        }
+
+        private void CancelZoomHint()
+        {
+            var pending = System.Threading.Interlocked.Exchange(ref _zoomHintCts, null);
+            if (pending == null) return;
+            try { pending.Cancel(); } catch (ObjectDisposedException) { }
+            pending.Dispose();
         }
 
         
@@ -928,13 +975,44 @@ namespace snapvox.editor.forms
                 _canvas.Width = _image.Width;
                 _canvas.Height = _image.Height;
 
+                var snipBorder = this.FindControl<Border>("SnipBorder");
+                if (snipBorder != null)
+                {
+                    snipBorder.Width = _image.Width;
+                    snipBorder.Height = _image.Height;
+                }
+
+                var overlayCanvas = this.FindControl<Canvas>("OverlayCanvas");
+                if (overlayCanvas != null)
+                {
+                    overlayCanvas.Width = _image.Width;
+                    overlayCanvas.Height = _image.Height;
+                }
+
                 var zoomContainer = this.FindControl<Panel>("ZoomContainer");
                 if (zoomContainer != null)
                 {
-                    zoomContainer.Width = _image.Width * _zoomFactor;
-                    zoomContainer.Height = _image.Height * _zoomFactor;
+                    zoomContainer.Width = _image.Width;
+                    zoomContainer.Height = _image.Height;
                     zoomContainer.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative);
                     zoomContainer.RenderTransform = new ScaleTransform(_zoomFactor, _zoomFactor);
+                }
+
+                double scaledW = _image.Width * _zoomFactor;
+                double scaledH = _image.Height * _zoomFactor;
+
+                var scrollContentPanel = this.FindControl<Panel>("ScrollContentPanel");
+                if (scrollContentPanel != null)
+                {
+                    scrollContentPanel.Width = scaledW;
+                    scrollContentPanel.Height = scaledH;
+                }
+
+                var mainGrid = this.FindControl<Grid>("MainGrid");
+                if (mainGrid != null)
+                {
+                    mainGrid.Width = scaledW;
+                    mainGrid.Height = scaledH;
                 }
 
                 var zoomText = this.FindControl<Button>("ZoomText");
@@ -945,14 +1023,6 @@ namespace snapvox.editor.forms
             }
         }
 
-        
-        
-        
-        
-        
-        
-        
-        
         private void ZoomTowards(double requestedZoom)
         {
             double oldZoom = _zoomFactor;
@@ -969,22 +1039,13 @@ namespace snapvox.editor.forms
             var oldOffset = scrollViewer.Offset;
             ApplyZoom();
 
-            
-            
-            
-            
-            
             scrollViewer.UpdateLayout();
 
-            
             double ratio = _zoomFactor / oldZoom;
             double desiredX = oldOffset.X * ratio;
             double desiredY = oldOffset.Y * ratio;
             ApplyTopLeftAnchoredOffset(scrollViewer, desiredX, desiredY);
 
-            
-            
-            
             Dispatcher.UIThread.Post(
                 () => ApplyTopLeftAnchoredOffset(scrollViewer, desiredX, desiredY),
                 DispatcherPriority.Loaded);
@@ -997,15 +1058,11 @@ namespace snapvox.editor.forms
             double contentWidth = _image.Width * _zoomFactor;
             double contentHeight = _image.Height * _zoomFactor;
 
-            
-            
-            
-            double x = contentWidth <= scrollViewer.Viewport.Width + 0.5
-                ? 0
-                : Math.Clamp(desiredX, 0, Math.Max(0, contentWidth - scrollViewer.Viewport.Width));
-            double y = contentHeight <= scrollViewer.Viewport.Height + 0.5
-                ? 0
-                : Math.Clamp(desiredY, 0, Math.Max(0, contentHeight - scrollViewer.Viewport.Height));
+            double maxX = Math.Max(0, contentWidth - scrollViewer.Viewport.Width);
+            double maxY = Math.Max(0, contentHeight - scrollViewer.Viewport.Height);
+
+            double x = Math.Clamp(desiredX, 0, maxX);
+            double y = Math.Clamp(desiredY, 0, maxY);
             scrollViewer.Offset = new Avalonia.Vector(x, y);
         }
 
@@ -1089,7 +1146,19 @@ namespace snapvox.editor.forms
                 if (cancel != null) cancel.IsEnabled = true;
             }
 
-            if (saved) return;
+            if (saved)
+            {
+                // The user explicitly picked "Save and close" here, so honour that even when the
+                // "close editor after an action" preference is off (that preference governs the
+                // toolbar buttons, not this prompt).
+                if (!IniConfig.GetIniSection<CoreConfiguration>().CloseEditorOnAction)
+                {
+                    _forceClose = true;
+                    Close();
+                }
+
+                return;
+            }
 
             _isClosingPromptOpen = false;
             var message = this.FindControl<TextBlock>("ClosePromptMessage");
@@ -1142,7 +1211,7 @@ namespace snapvox.editor.forms
                 Dispatcher.UIThread.Post(AutoFitWindowToContent, DispatcherPriority.Loaded);
             }
         }
-        private void OnWindowClosed(object sender, EventArgs e) { UiClipboard.Unregister(this); ReleaseImageResources(); }
+        private void OnWindowClosed(object sender, EventArgs e) { CancelZoomHint(); UiClipboard.Unregister(this); ReleaseImageResources(); }
 
         private string _sourceTitle;
         public async Task SetImageAsync(ImageSharpImage image, RECT captureRect, string sourceTitle = null)
@@ -2046,6 +2115,8 @@ namespace snapvox.editor.forms
 
         private void OnCanvasPointerPressed(object sender, PointerPressedEventArgs e)
         {
+            HideCropModePopup();
+
             if (IsEditorOperationInProgress) return;
 
             var pos = e.GetPosition(_canvas);
@@ -2160,6 +2231,7 @@ namespace snapvox.editor.forms
                 if (_currentTool == EditorTool.Crop && _image != null)
                 {
                     _startPoint = new AvaloniaPoint(Math.Clamp(_startPoint.X, 0, _image.Width), Math.Clamp(_startPoint.Y, 0, _image.Height));
+                    _startPoint = ApplyCropModeToStart(_startPoint);
                 }
                 var brush = _toolBrushes[_currentTool];
                 HideToolGhost(); 
@@ -3344,6 +3416,289 @@ namespace snapvox.editor.forms
         
         
         
+
+        private CropMode _cropMode = CropMode.Regular;
+        private bool _suppressCropModePopup;
+        private Avalonia.Controls.Primitives.Popup _cropModePopup;
+        private TextBlock _cropModeDescription;
+
+        private static readonly System.Collections.Generic.Dictionary<CropMode, string> CropModeDescriptions = new System.Collections.Generic.Dictionary<CropMode, string>
+        {
+            [CropMode.Regular] = "Free crop. Drag any box you like - the picture keeps exactly what is inside it, in whatever shape you drew.",
+            [CropMode.KeepRatio] = "Same shape as now. The box is locked to this picture's current shape, so the result looks like the original - just a smaller piece of it.",
+            [CropMode.Square] = "Perfect square. Width and height come out equal - the shape profile pictures and app icons use.",
+            [CropMode.Wide] = "Wide screen. The long, letterbox shape of a TV or a YouTube video.",
+            [CropMode.Tall] = "Tall phone screen. The upright shape of a Story, a Reel or a TikTok.",
+            [CropMode.VerticalStrip] = "Keep a tall column. You set the left and right edges, everything outside them is cut away, and the full height of the picture is kept.",
+            [CropMode.HorizontalStrip] = "Keep a wide band. You set the top and bottom edges, everything above and below is cut away, and the full width of the picture is kept."
+        };
+
+        private static readonly System.Collections.Generic.Dictionary<CropMode, string> CropModeLabels = new System.Collections.Generic.Dictionary<CropMode, string>
+        {
+            [CropMode.Regular] = "REGULAR",
+            [CropMode.KeepRatio] = "KEEP RATIO",
+            [CropMode.Square] = "1:1",
+            [CropMode.Wide] = "16:9",
+            [CropMode.Tall] = "9:16",
+            [CropMode.VerticalStrip] = "CROP OUT VERTICALLY",
+            [CropMode.HorizontalStrip] = "CROP OUT HORIZONTALLY"
+        };
+
+        private void InitializeCropModes()
+        {
+            _cropModePopup = this.FindControl<Avalonia.Controls.Primitives.Popup>("CropModePopup");
+            _cropModeDescription = this.FindControl<TextBlock>("CropModeDescription");
+
+            var cropButton = this.FindControl<Button>("CropTool");
+            if (_cropModePopup != null && cropButton != null) _cropModePopup.PlacementTarget = cropButton;
+
+            // The menu is not light-dismiss (that would swallow the first drag click on the
+            // canvas), so close it explicitly on any press that lands outside it.
+            AddHandler(InputElement.PointerPressedEvent, OnPointerPressedOutsideCropMenu, RoutingStrategies.Tunnel);
+
+            try
+            {
+                var config = IniConfig.GetIniSection<CoreConfiguration>();
+                if (config == null || !Enum.TryParse<CropMode>(config.LastCropMode, true, out _cropMode)) _cropMode = CropMode.Regular;
+            }
+            catch
+            {
+                _cropMode = CropMode.Regular;
+            }
+
+            UpdateCropModeVisuals();
+        }
+
+        private void UpdateCropModeVisuals()
+        {
+            var host = this.FindControl<StackPanel>("CropModeButtons");
+            if (host != null)
+            {
+                string active = _cropMode.ToString();
+                foreach (var child in host.Children)
+                {
+                    if (child is not Button modeButton) continue;
+                    modeButton.Classes.Remove("selected");
+                    if (modeButton.Tag as string == active) modeButton.Classes.Add("selected");
+                }
+            }
+
+            SetCropModeDescription(_cropMode);
+        }
+
+        private void SetCropModeDescription(CropMode mode)
+        {
+            if (_cropModeDescription == null) return;
+            _cropModeDescription.Text = CropModeDescriptions.TryGetValue(mode, out string text) ? text : string.Empty;
+        }
+
+        private void OnPointerPressedOutsideCropMenu(object sender, PointerPressedEventArgs e)
+        {
+            if (_cropModePopup == null || !_cropModePopup.IsOpen) return;
+            if (IsWithinVisual(e.Source, _cropModePopup.Child)) return;
+            if (IsWithinVisual(e.Source, this.FindControl<Button>("CropTool"))) return;
+            HideCropModePopup();
+        }
+
+        private static bool IsWithinVisual(object source, Visual root)
+        {
+            if (root == null) return false;
+            var visual = source as Visual;
+            while (visual != null)
+            {
+                if (ReferenceEquals(visual, root)) return true;
+                visual = visual.GetVisualParent();
+            }
+
+            return false;
+        }
+
+        private void ShowCropModePopup()
+        {
+            if (_cropModePopup == null) return;
+            UpdateCropModeVisuals();
+            _cropModePopup.IsOpen = true;
+        }
+
+        private void HideCropModePopup()
+        {
+            if (_cropModePopup != null) _cropModePopup.IsOpen = false;
+        }
+
+        private void OnCropModeHover(object sender, PointerEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string tag && Enum.TryParse<CropMode>(tag, true, out var mode)) SetCropModeDescription(mode);
+        }
+
+        private void OnCropModeHoverEnd(object sender, PointerEventArgs e)
+        {
+            SetCropModeDescription(_cropMode);
+        }
+
+        private void OnCropModeClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not string tag || !Enum.TryParse<CropMode>(tag, true, out var mode)) return;
+
+            _cropMode = mode;
+
+            try
+            {
+                var config = IniConfig.GetIniSection<CoreConfiguration>();
+                if (config != null)
+                {
+                    config.LastCropMode = mode.ToString();
+                    IniConfig.Save();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Could not remember the crop shape.", ex);
+            }
+
+            UpdateCropModeVisuals();
+            HideCropModePopup();
+
+            // Choosing a shape arms the crop tool, so the very next drag already uses it.
+            if (_currentTool != EditorTool.Crop)
+            {
+                var cropButton = this.FindControl<Button>("CropTool");
+                if (cropButton != null)
+                {
+                    _suppressCropModePopup = true;
+                    try { OnToolClick(cropButton, new RoutedEventArgs()); }
+                    finally { _suppressCropModePopup = false; }
+                }
+            }
+
+            ReshapeExistingCropObject();
+            OverlayHelper.ShowLightToast("CROP: " + (CropModeLabels.TryGetValue(mode, out string label) ? label : mode.ToString()), this);
+            _canvas?.Focus();
+        }
+
+        /// <summary>Re-fits an already-drawn crop box when the user switches shape mid-crop.</summary>
+        private void ReshapeExistingCropObject()
+        {
+            var cropObject = _selectedControl?.Tag as string == "CropObject"
+                ? _selectedControl
+                : _canvas?.Children.FirstOrDefault(c => c.Tag as string == "CropObject");
+            if (cropObject == null) return;
+
+            double canvasWidth = GetCropCanvasWidth();
+            double canvasHeight = GetCropCanvasHeight();
+            if (canvasWidth <= 0 || canvasHeight <= 0) return;
+
+            double left = Canvas.GetLeft(cropObject);
+            if (double.IsNaN(left)) left = cropObject.Bounds.X;
+            double top = Canvas.GetTop(cropObject);
+            if (double.IsNaN(top)) top = cropObject.Bounds.Y;
+            double width = double.IsNaN(cropObject.Width) ? cropObject.Bounds.Width : cropObject.Width;
+            double height = double.IsNaN(cropObject.Height) ? cropObject.Bounds.Height : cropObject.Height;
+
+            var fitted = ConstrainCropBox(left, top, width, height, canvasWidth, canvasHeight);
+            Canvas.SetLeft(cropObject, fitted.X);
+            Canvas.SetTop(cropObject, fitted.Y);
+            cropObject.Width = fitted.Width;
+            cropObject.Height = fitted.Height;
+            UpdateSelectionIndicator();
+        }
+
+        private double GetCropCanvasWidth() => _image != null ? _image.Width : (_canvas?.Bounds.Width ?? 0);
+
+        private double GetCropCanvasHeight() => _image != null ? _image.Height : (_canvas?.Bounds.Height ?? 0);
+
+        /// <summary>Width divided by height for the shape-locked modes; 0 when the mode is free.</summary>
+        private double GetCropAspectRatio()
+        {
+            switch (_cropMode)
+            {
+                case CropMode.Square: return 1.0;
+                case CropMode.Wide: return 16.0 / 9.0;
+                case CropMode.Tall: return 9.0 / 16.0;
+                case CropMode.KeepRatio:
+                    if (_image == null || _image.Height <= 0) return 0;
+                    return (double)_image.Width / _image.Height;
+                default: return 0;
+            }
+        }
+
+        /// <summary>Pins the drag origin to an edge for the two strip modes.</summary>
+        private AvaloniaPoint ApplyCropModeToStart(AvaloniaPoint start)
+        {
+            double canvasWidth = GetCropCanvasWidth();
+            double canvasHeight = GetCropCanvasHeight();
+            if (canvasWidth <= 0 || canvasHeight <= 0) return start;
+
+            if (_cropMode == CropMode.VerticalStrip) return new AvaloniaPoint(Math.Clamp(start.X, 0, canvasWidth), 0);
+            if (_cropMode == CropMode.HorizontalStrip) return new AvaloniaPoint(0, Math.Clamp(start.Y, 0, canvasHeight));
+            return start;
+        }
+
+        /// <summary>Forces the live drag to obey the chosen crop shape.</summary>
+        private AvaloniaPoint ApplyCropModeToEnd(AvaloniaPoint end)
+        {
+            double canvasWidth = GetCropCanvasWidth();
+            double canvasHeight = GetCropCanvasHeight();
+            if (canvasWidth <= 0 || canvasHeight <= 0) return end;
+
+            if (_cropMode == CropMode.VerticalStrip) return new AvaloniaPoint(Math.Clamp(end.X, 0, canvasWidth), canvasHeight);
+            if (_cropMode == CropMode.HorizontalStrip) return new AvaloniaPoint(canvasWidth, Math.Clamp(end.Y, 0, canvasHeight));
+
+            double ratio = GetCropAspectRatio();
+            if (ratio <= 0) return end;
+
+            int directionX = end.X >= _startPoint.X ? 1 : -1;
+            int directionY = end.Y >= _startPoint.Y ? 1 : -1;
+            double width = Math.Abs(end.X - _startPoint.X);
+            double height = Math.Abs(end.Y - _startPoint.Y);
+
+            // Grow to whichever axis the pointer pushed furthest, then force the locked shape.
+            if (width / ratio >= height) height = width / ratio; else width = height * ratio;
+
+            double maxWidth = directionX > 0 ? canvasWidth - _startPoint.X : _startPoint.X;
+            double maxHeight = directionY > 0 ? canvasHeight - _startPoint.Y : _startPoint.Y;
+            if (maxWidth <= 0 || maxHeight <= 0) return _startPoint;
+
+            if (width > maxWidth) { width = maxWidth; height = width / ratio; }
+            if (height > maxHeight) { height = maxHeight; width = height * ratio; }
+
+            return new AvaloniaPoint(_startPoint.X + directionX * width, _startPoint.Y + directionY * height);
+        }
+
+        /// <summary>Keeps a drawn crop box obeying its shape while it is moved or resized.</summary>
+        private Rect ConstrainCropBox(double left, double top, double width, double height, double canvasWidth, double canvasHeight)
+        {
+            if (_cropMode == CropMode.VerticalStrip)
+            {
+                width = Math.Clamp(width, 10, canvasWidth);
+                left = Math.Clamp(left, 0, Math.Max(0, canvasWidth - width));
+                return new Rect(left, 0, width, canvasHeight);
+            }
+
+            if (_cropMode == CropMode.HorizontalStrip)
+            {
+                height = Math.Clamp(height, 10, canvasHeight);
+                top = Math.Clamp(top, 0, Math.Max(0, canvasHeight - height));
+                return new Rect(0, top, canvasWidth, height);
+            }
+
+            double ratio = GetCropAspectRatio();
+            if (ratio <= 0) return new Rect(left, top, width, height);
+
+            double fittedHeight = width / ratio;
+            if (top + fittedHeight > canvasHeight)
+            {
+                fittedHeight = Math.Max(10, canvasHeight - top);
+                width = fittedHeight * ratio;
+                if (left + width > canvasWidth)
+                {
+                    width = Math.Max(10, canvasWidth - left);
+                    fittedHeight = width / ratio;
+                }
+            }
+
+            return new Rect(left, top, Math.Max(10, width), Math.Max(10, fittedHeight));
+        }
+
         private AvaloniaPoint ClampRectDrawEnd(AvaloniaPoint end)
         {
             if (_currentTool == EditorTool.Crop && _canvas != null)
@@ -3364,7 +3719,9 @@ namespace snapvox.editor.forms
             double y = _rectDrawDirY > 0 ? Math.Max(_startPoint.Y, end.Y)
                      : _rectDrawDirY < 0 ? Math.Min(_startPoint.Y, end.Y)
                      : end.Y;
-            return new AvaloniaPoint(x, y);
+
+            var locked = new AvaloniaPoint(x, y);
+            return _currentTool == EditorTool.Crop ? ApplyCropModeToEnd(locked) : locked;
         }
 
         private void UpdateArrowPreview(Canvas group, AvaloniaPoint end)
@@ -4123,6 +4480,11 @@ namespace snapvox.editor.forms
                 double h = double.IsNaN(_selectedControl.Height) ? _selectedControl.Bounds.Height : _selectedControl.Height;
                 newL = Math.Clamp(newL, 0, Math.Max(0, cw - w));
                 newT = Math.Clamp(newT, 0, Math.Max(0, ch - h));
+
+                var shapedNudge = ConstrainCropBox(newL, newT, w, h, cw, ch);
+                newL = shapedNudge.X; newT = shapedNudge.Y;
+                _selectedControl.Width = shapedNudge.Width;
+                _selectedControl.Height = shapedNudge.Height;
             }
             Canvas.SetLeft(_selectedControl, newL);
             Canvas.SetTop(_selectedControl, newT);
@@ -4142,7 +4504,7 @@ namespace snapvox.editor.forms
             double oldH = double.IsNaN(_selectedControl.Height) ? _selectedControl.Bounds.Height : _selectedControl.Height;
             double left = Canvas.GetLeft(_selectedControl); if (double.IsNaN(left)) left = _selectedControl.Bounds.X;
             double top = Canvas.GetTop(_selectedControl); if (double.IsNaN(top)) top = _selectedControl.Bounds.Y;
-            bool keepRatio = (_selectedControl is TextBlock) || (_selectedControl is Border b && b.Child is TextBlock);
+            bool keepRatio = (_selectedControl is TextBlock) || (_selectedControl is Border b && b.Child is TextBlock) || (_selectedControl is Avalonia.Controls.Image);
             double newW = oldW; double newH = oldH;
 
             if (keepRatio)
@@ -4210,6 +4572,10 @@ namespace snapvox.editor.forms
                 ct = Math.Clamp(ct, 0, Math.Max(0, ch - 10));
                 newW = Math.Clamp(newW, 10, cw - cl);
                 newH = Math.Clamp(newH, 10, ch - ct);
+
+                var shaped = ConstrainCropBox(cl, ct, newW, newH, cw, ch);
+                cl = shaped.X; ct = shaped.Y; newW = shaped.Width; newH = shaped.Height;
+
                 Canvas.SetLeft(_selectedControl, cl);
                 Canvas.SetTop(_selectedControl, ct);
             }
@@ -4794,13 +5160,36 @@ namespace snapvox.editor.forms
             }
         }
 
-        private async Task<string> GetEffectiveDownloadPathAsync()
+        private readonly struct DownloadTarget
+        {
+            public DownloadTarget(string path, bool isDownloadsFolder)
+            {
+                Path = path;
+                IsDownloadsFolder = isDownloadsFolder;
+            }
+
+            public string Path { get; }
+
+            /// <summary>False when we fell back to the temp folder, so the overlay can say so.</summary>
+            public bool IsDownloadsFolder { get; }
+        }
+
+        private async Task<DownloadTarget> GetEffectiveDownloadPathAsync()
         {
             var config = IniConfig.GetIniSection<CoreConfiguration>();
-            if (!string.IsNullOrEmpty(config.UserDownloadPath) && Directory.Exists(config.UserDownloadPath)) return config.UserDownloadPath;
+            if (!string.IsNullOrEmpty(config.UserDownloadPath) && Directory.Exists(config.UserDownloadPath))
+            {
+                return new DownloadTarget(config.UserDownloadPath, true);
+            }
 
-            string defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-            if (Directory.Exists(defaultPath)) return defaultPath;
+            // Ask the shell where Downloads actually is. Guessing %USERPROFILE%\Downloads makes
+            // every redirected setup (OneDrive, second drive, network share) look like a missing
+            // folder and triggers a pointless picker on the first save.
+            string defaultPath = KnownFolders.GetDownloadsPath();
+            if (!string.IsNullOrEmpty(defaultPath) && Directory.Exists(defaultPath))
+            {
+                return new DownloadTarget(defaultPath, true);
+            }
 
             if (this.StorageProvider.CanPickFolder)
             {
@@ -4815,10 +5204,12 @@ namespace snapvox.editor.forms
                 {
                     config.UserDownloadPath = selected;
                     IniConfig.Save();
-                    return selected;
+                    return new DownloadTarget(selected, true);
                 }
             }
-            return Path.Combine(Path.GetTempPath(), "SnapVox");
+
+            Log.Warn("[DOWNLOAD_FALLBACK] Downloads folder unavailable and no folder was chosen; saving to the SnapVox temp folder instead.");
+            return new DownloadTarget(Path.Combine(Path.GetTempPath(), "SnapVox"), false);
         }
 
         private async void OnDownloadClick(object sender, RoutedEventArgs e)
@@ -4837,9 +5228,10 @@ namespace snapvox.editor.forms
 
                 string fileName = $"Capture_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.{(IniConfig.GetIniSection<CoreConfiguration>().OutputFileAllowPng ? "png" : "jpg")}";
                 
-                string downloadsPath = await GetEffectiveDownloadPathAsync().ConfigureAwait(true);
-                Directory.CreateDirectory(downloadsPath);
-                string downloadedFilePath = Path.Combine(downloadsPath, fileName);
+                DownloadTarget target = await GetEffectiveDownloadPathAsync().ConfigureAwait(true);
+                bool savedToDownloads = target.IsDownloadsFolder;
+                Directory.CreateDirectory(target.Path);
+                string downloadedFilePath = Path.Combine(target.Path, fileName);
                 await SaveImageAsync(tempImage, downloadedFilePath).ConfigureAwait(true);
                 saved = true;
 
@@ -4847,16 +5239,23 @@ namespace snapvox.editor.forms
 
                 await UiClipboard.SetFilePathThenImageAsync(downloadedFilePath, tempImage, true).ConfigureAwait(true);
                 
-                Dispatcher.UIThread.Post(() => {
-                    OverlayHelper.ShowNotification("IMAGE SAVED TO DOWNLOADS", this);
-                });
-                
-                await Task.Delay(GetFinalActionCloseDelayMs()).ConfigureAwait(true);
+                string overlayMessage = savedToDownloads
+                    ? "IMAGE SAVED TO DOWNLOADS"
+                    : "IMAGE SAVED TO SNAPVOX TEMP FOLDER";
 
                 Dispatcher.UIThread.Post(() => {
-                    _forceClose = true;
-                    Close();
+                    OverlayHelper.ShowNotification(overlayMessage, this);
                 });
+
+                if (IniConfig.GetIniSection<CoreConfiguration>().CloseEditorOnAction)
+                {
+                    await Task.Delay(GetFinalActionCloseDelayMs()).ConfigureAwait(true);
+
+                    Dispatcher.UIThread.Post(() => {
+                        _forceClose = true;
+                        Close();
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -4890,13 +5289,16 @@ namespace snapvox.editor.forms
                 Dispatcher.UIThread.Post(() => {
                     OverlayHelper.ShowNotification("IMAGE SAVED TO CLIPBOARD", this);
                 });
-                
-                await Task.Delay(GetFinalActionCloseDelayMs()).ConfigureAwait(true);
 
-                Dispatcher.UIThread.Post(() => {
-                    _forceClose = true;
-                    Close();
-                });
+                if (IniConfig.GetIniSection<CoreConfiguration>().CloseEditorOnAction)
+                {
+                    await Task.Delay(GetFinalActionCloseDelayMs()).ConfigureAwait(true);
+
+                    Dispatcher.UIThread.Post(() => {
+                        _forceClose = true;
+                        Close();
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -5441,6 +5843,9 @@ namespace snapvox.editor.forms
                 UpdateCurrentColorDisplay(scb.Color);
                 UpdatePresetSelectionVisuals(scb.Color);
             }
+
+            if (_currentTool == EditorTool.Crop && !_suppressCropModePopup) ShowCropModePopup();
+            else HideCropModePopup();
 
             _ghostSettingsDirty = true; 
             _canvas?.Focus();
@@ -6112,18 +6517,30 @@ namespace snapvox.editor.forms
                 using var trimmedImage = isSnapVoxEditorImage ? TryTrimSnapVoxFrame(clipboardImage) : null;
                 var image = trimmedImage ?? clipboardImage;
                 var avaloniaBitmap = snapvox.editor.helpers.ImageSharpAvaloniaHelper.ToAvaloniaBitmap(image);
+                double canvasW = _canvas?.Bounds.Width > 0 ? _canvas.Bounds.Width : (_image?.Width ?? 800);
+                double canvasH = _canvas?.Bounds.Height > 0 ? _canvas.Bounds.Height : (_image?.Height ?? 600);
+
+                double w = image.Width;
+                double h = image.Height;
+                if (w > canvasW || h > canvasH)
+                {
+                    double ratio = Math.Min((canvasW * 0.85) / w, (canvasH * 0.85) / h);
+                    w *= ratio;
+                    h *= ratio;
+                }
+
                 var imageControl = new Avalonia.Controls.Image
                 {
                     Source = avaloniaBitmap,
-                    Width = image.Width,
-                    Height = image.Height,
-                    Stretch = Avalonia.Media.Stretch.Fill,
+                    Width = w,
+                    Height = h,
+                    Stretch = Avalonia.Media.Stretch.Uniform,
                     ZIndex = _currentZIndex++,
                     Tag = "PasteObject"
                 };
 
-                Canvas.SetLeft(imageControl, Math.Max(0, (_canvas.Bounds.Width - image.Width) / 2));
-                Canvas.SetTop(imageControl, Math.Max(0, (_canvas.Bounds.Height - image.Height) / 2));
+                Canvas.SetLeft(imageControl, Math.Max(0, (canvasW - w) / 2));
+                Canvas.SetTop(imageControl, Math.Max(0, (canvasH - h) / 2));
 
                 SaveUndoState(true);
                 _canvas.Children.Add(imageControl);
@@ -6611,8 +7028,7 @@ namespace snapvox.editor.forms
             if (GetUserAnnotations().Count == 0) return;
             var flattened = await GetFlattenedImageAsync().ConfigureAwait(true); 
             if (flattened == null) return;
-            _image?.Dispose(); 
-            _image = flattened; 
+            SetImageUnderLock(flattened);
             RemoveUserAnnotations(); 
             _selectedControl = null; 
             UpdateSelectionIndicator(); 

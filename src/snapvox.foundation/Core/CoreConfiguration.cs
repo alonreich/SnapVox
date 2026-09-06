@@ -93,6 +93,9 @@ namespace snapvox.foundation.core
         [IniProperty("LastPixelateStrength", DefaultValue = "25")]
         public int LastPixelateStrength { get; set; } = 25;
 
+        [IniProperty("LastCropMode", Description = "Crop shape last picked in the editor: Regular, KeepRatio, Square, Wide, Tall, VerticalStrip or HorizontalStrip.", DefaultValue = "Regular")]
+        public string LastCropMode { get; set; } = "Regular";
+
 #if USE_TESSERACT
         [IniProperty("OcrEngine", Description = "Default OCR Engine", DefaultValue = "Tesseract + Windows (Mixed EN/HE)")]
         public string OcrEngine { get; set; } = "Tesseract + Windows (Mixed EN/HE)";
@@ -111,6 +114,9 @@ namespace snapvox.foundation.core
 
         [IniProperty("AddFrameBorders", Description = "Add Frame Borders to Snips.", DefaultValue = "true")]
         public bool AddFrameBorders { get; set; } = true;
+
+        [IniProperty("BypassScreenTintOverlays", Description = "Capture true colours by excluding full-screen night-mode / warm-light tinting overlays (f.lux software mode, Iris, SunsetScreen and similar) from the shot.", DefaultValue = "true")]
+        public bool BypassScreenTintOverlays { get; set; } = true;
 
         [IniProperty("WarnBeforeClosingEditor", Description = "Warn before closing the image editor with unsaved changes.", DefaultValue = "false")]
         public bool WarnBeforeClosingEditor { get; set; } = false;

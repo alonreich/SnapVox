@@ -64,7 +64,7 @@ namespace snapvox
                 LogHelper.InitializeLog4Net();
                 var log = LogHelper.GetLogger(typeof(App));
                 log.Info("--- Application Bootstrap Starting ---");
-                log.Info($"Executable Path: {Process.GetCurrentProcess().MainModule?.FileName}");
+                log.Info($"Executable Path: {RuntimePathHelper.ExecutablePath}");
 
                 string[] args = desktop.Args ?? Array.Empty<string>();
                 log.Info($"Command line arguments: {string.Join(" ", args)}");
@@ -78,6 +78,7 @@ namespace snapvox
                     return;
                 }
                 InitializePersistentConfiguration();
+                ExecutionTrace.Start();
                 var options = snapvoxCommandLine.Parse(args);
                 UiClipboard.RegisterGetter(() => desktop.MainWindow?.Clipboard ?? (desktop.Windows.FirstOrDefault()?.Clipboard));
                 using (var instanceMutex = ResourceMutex.Create("snapvox_MainForm", "snapvox instance", true))
@@ -171,6 +172,7 @@ namespace snapvox
             {
                 ForceRedTrayIcon(false);
                 RetentionHelper.Stop();
+                ExecutionTrace.Stop();
                 foreach (var ocrProvider in ocrProviders)
                 {
                     if (ocrProvider is IAsyncDisposable asyncDisposable)
@@ -428,15 +430,34 @@ namespace snapvox
             } 
             catch { }
         }
+        private static snapvox.Forms.SettingsWindow _settingsWindow;
+
         private void OnSettingsClick(object sender, EventArgs e)
         {
             try
             {
+                var existing = _settingsWindow;
+                if (existing != null)
+                {
+                    existing.WindowState = WindowState.Normal;
+                    existing.Show();
+                    existing.Activate();
+                    existing.Focus();
+                    return;
+                }
+
                 var settingsWin = new snapvox.Forms.SettingsWindow();
+                _settingsWindow = settingsWin;
+                settingsWin.Closed += (_, _) =>
+                {
+                    if (ReferenceEquals(_settingsWindow, settingsWin)) _settingsWindow = null;
+                };
                 settingsWin.Show();
+                settingsWin.Activate();
             }
             catch (Exception ex)
             {
+                _settingsWindow = null;
                 LogHelper.GetLogger(typeof(App)).Error("Failed to open settings window", ex);
             }
         }
@@ -450,6 +471,6 @@ namespace snapvox
             } 
             catch { }
         }
-        public void OnExitClick(object sender, EventArgs e) { RetentionHelper.Stop(); _mainAppCts.Cancel(); HotkeyManager.Stop(); _desktop?.Shutdown(); }
+        public void OnExitClick(object sender, EventArgs e) { RetentionHelper.Stop(); ExecutionTrace.Stop(); _mainAppCts.Cancel(); HotkeyManager.Stop(); _desktop?.Shutdown(); }
     }
 }

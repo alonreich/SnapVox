@@ -24,6 +24,11 @@ namespace snapvox.helpers
     public static class CaptureHelper
     {
         private static readonly ILog Log = LogHelper.GetLogger(typeof(CaptureHelper));
+
+        /// <summary>Hardcoded snip frame: 3px navy (#000080) on every capture path.</summary>
+        public const int FrameBorderThickness = 3;
+        private static readonly SixLabors.ImageSharp.Color FrameBorderColor = SixLabors.ImageSharp.Color.FromRgb(0, 0, 128);
+
         private static readonly object LastRegionSync = new object();
         private static RECT _lastRegion = RECT.Empty;
 
@@ -38,6 +43,7 @@ namespace snapvox.helpers
         public static void CaptureRegion(bool fromHotkey)
         {
             LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
+            ScreenTintBypass.InvalidateCache();
             if (!forms.CaptureWindow.BeginCaptureSession()) return;
             _ = Task.Run(() => CaptureRegionAsync(fromHotkey));
         }
@@ -142,43 +148,45 @@ namespace snapvox.helpers
                     return;
                 }
 
-                SixLabors.ImageSharp.Image<Rgba32> snapshotForCropping = null;
-                lock (LastRegionSync) 
-                {
-                    if (_frozenSnapshot != null) snapshotForCropping = _frozenSnapshot.CloneAs<Rgba32>();
-                }
-                if (snapshotForCropping == null)
+                if (!IsFrozenSnapshotReady)
                 {
                     forms.CaptureWindow.EndCaptureSession();
                     return;
                 }
 
-                using var unifiedBackdrop = snapshotForCropping;
-                if (Config.AddFrameBorders)
-                {
-                    foreach (var screen in screensInfo)
-                    {
-                        DrawMonitorFrame(unifiedBackdrop, screen.Bounds, virtualBounds);
-                    }
-                }
-
+                bool addFrameBorders = Config.AddFrameBorders;
                 var backdrops = new List<(PixelRect Bounds, Avalonia.Media.Imaging.Bitmap Bitmap)>();
                 try
                 {
-
-
                     backdrops = await Task.Run(() =>
                     {
                         var slices = new List<(PixelRect Bounds, Avalonia.Media.Imaging.Bitmap Bitmap)>();
                         foreach (var screen in screensInfo)
                         {
-                            var cropRect = ClampCropRectangle(
-                                new Rectangle(screen.Bounds.X - virtualBounds.Left, screen.Bounds.Y - virtualBounds.Top, screen.Bounds.Width, screen.Bounds.Height),
-                                unifiedBackdrop.Width,
-                                unifiedBackdrop.Height);
-                            if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
-                            using var slice = unifiedBackdrop.Clone(x => x.Crop(cropRect));
-                            slices.Add((screen.Bounds, snapvox.editor.helpers.ImageSharpAvaloniaHelper.ToAvaloniaBitmap(slice)));
+                            ImageSharpImage slice = null;
+                            lock (LastRegionSync)
+                            {
+                                ImageSharpImage source = _frozenSnapshot;
+                                if (source == null) continue;
+
+                                var cropRect = ClampCropRectangle(
+                                    new Rectangle(screen.Bounds.X - virtualBounds.Left, screen.Bounds.Y - virtualBounds.Top, screen.Bounds.Width, screen.Bounds.Height),
+                                    source.Width,
+                                    source.Height);
+                                if (cropRect.Width <= 0 || cropRect.Height <= 0) continue;
+
+                                slice = source.Clone(x => x.Crop(cropRect));
+                            }
+
+                            try
+                            {
+                                if (addFrameBorders) ApplyFrameBorder(slice);
+                                slices.Add((screen.Bounds, snapvox.editor.helpers.ImageSharpAvaloniaHelper.ToAvaloniaBitmap(slice)));
+                            }
+                            finally
+                            {
+                                slice.Dispose();
+                            }
                         }
                         return slices;
                     }).ConfigureAwait(false);
@@ -224,36 +232,6 @@ namespace snapvox.helpers
 
 
 
-        private static void DrawMonitorFrame(Image<Rgba32> image, PixelRect bounds, RECT virtualBounds)
-        {
-            int x0 = Math.Clamp(bounds.X - virtualBounds.Left, 0, Math.Max(0, image.Width - 1));
-            int y0 = Math.Clamp(bounds.Y - virtualBounds.Top, 0, Math.Max(0, image.Height - 1));
-            int x1 = Math.Clamp(bounds.Right - virtualBounds.Left, 0, image.Width);
-            int y1 = Math.Clamp(bounds.Bottom - virtualBounds.Top, 0, image.Height);
-            if (x1 - x0 < 2 || y1 - y0 < 2) return;
-
-            var navy = new Rgba32(0, 0, 128, 255);
-            for (int t = 0; t < 3; t++)
-            {
-                FillRow(image, y0 + t, x0, x1, navy);
-                FillRow(image, y1 - 1 - t, x0, x1, navy);
-                FillColumn(image, x0 + t, y0, y1, navy);
-                FillColumn(image, x1 - 1 - t, y0, y1, navy);
-            }
-        }
-
-        private static void FillRow(Image<Rgba32> image, int y, int xStart, int xEnd, Rgba32 color)
-        {
-            if (y < 0 || y >= image.Height || xEnd <= xStart) return;
-            for (int x = Math.Max(0, xStart); x < Math.Min(image.Width, xEnd); x++) image[x, y] = color;
-        }
-
-        private static void FillColumn(Image<Rgba32> image, int x, int yStart, int yEnd, Rgba32 color)
-        {
-            if (x < 0 || x >= image.Width || yEnd <= yStart) return;
-            for (int y = Math.Max(0, yStart); y < Math.Min(image.Height, yEnd); y++) image[x, y] = color;
-        }
-
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
@@ -275,6 +253,7 @@ namespace snapvox.helpers
 
         public static void CaptureActiveWindow(bool fromHotkey)
         {
+            ScreenTintBypass.InvalidateCache();
             App.ForceRedTrayIcon(true);
             _ = Task.Run(async () =>
             {
@@ -357,10 +336,7 @@ namespace snapvox.helpers
 
                                 if (Config.AddFrameBorders)
                                 {
-
-
-                                    int frameW = owned.Width; int frameH = owned.Height; int t = 3;
-                                    if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                                    ApplyFrameBorder(owned);
                                 }
 
                                 RememberRegion(rawRect);
@@ -386,6 +362,7 @@ namespace snapvox.helpers
         public static void CaptureFullscreen(bool fromHotkey, ScreenCaptureMode mode)
         {
             LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
+            ScreenTintBypass.InvalidateCache();
             App.ForceRedTrayIcon(true);
             _ = Task.Run(async () =>
             {
@@ -419,10 +396,7 @@ namespace snapvox.helpers
 
                         if (Config.AddFrameBorders)
                         {
-
-
-                            int frameW = owned.Width; int frameH = owned.Height; int t = 3;
-                            if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                            ApplyFrameBorder(owned);
                         }
 
                         await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
@@ -477,6 +451,7 @@ namespace snapvox.helpers
 
         public static void CaptureLastRegion(bool fromHotkey)
         {
+            ScreenTintBypass.InvalidateCache();
             App.ForceRedTrayIcon(true);
             RECT lastRegion;
             lock (LastRegionSync) lastRegion = _lastRegion;
@@ -539,10 +514,7 @@ namespace snapvox.helpers
 
                         if (Config.AddFrameBorders)
                         {
-
-
-                            int frameW = owned.Width; int frameH = owned.Height; int t = 2;
-                            if (frameW > t * 2 && frameH > t * 2) owned.Mutate(x => x.Crop(new Rectangle(t, t, frameW - t * 2, frameH - t * 2)).Pad(frameW, frameH, SixLabors.ImageSharp.Color.FromRgb(0, 0, 128)));
+                            ApplyFrameBorder(owned);
                         }
                     }
 
@@ -593,6 +565,24 @@ namespace snapvox.helpers
                 editor?.Close();
                 Log.Fatal("ShowEditorForOwnedImage failed.", ex);
             }
+        }
+
+        /// <summary>
+        /// Bakes the 3px navy snip frame into <paramref name="image"/> in place. Crops the outer
+        /// ring away and pads it back with the frame colour, so content never shifts position.
+        /// </summary>
+        public static void ApplyFrameBorder(ImageSharpImage image)
+        {
+            if (image == null) return;
+
+            int width = image.Width;
+            int height = image.Height;
+            int thickness = FrameBorderThickness;
+            if (width <= thickness * 2 || height <= thickness * 2) return;
+
+            image.Mutate(x => x
+                .Crop(new Rectangle(thickness, thickness, width - thickness * 2, height - thickness * 2))
+                .Pad(width, height, FrameBorderColor));
         }
 
         private static Rectangle ClampCropRectangle(Rectangle rectangle, int imageWidth, int imageHeight)

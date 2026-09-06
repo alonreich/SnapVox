@@ -42,26 +42,79 @@ namespace snapvox.editor.forms
             return blinkTotalMs;
         }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        private static Window ResolveContextWindow(Window owner)
+        {
+            if (owner != null) return owner;
+            var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+            return desktop?.Windows.FirstOrDefault(w => w.IsActive) ?? desktop?.Windows.FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Picks the screen to show an overlay on. Falls back to the screen under the mouse when
+        /// SnapVox has no window open - which is exactly the case after a painter-mode OCR, where
+        /// the old code silently dropped the confirmation instead of showing it.
+        /// </summary>
+        private static Screen ResolveTargetScreen(Window contextWindow, out bool anchored)
+        {
+            anchored = false;
+
+            if (contextWindow != null)
+            {
+                try
+                {
+                    var fromWindow = contextWindow.Screens.ScreenFromWindow(contextWindow) ?? contextWindow.Screens.Primary;
+                    if (fromWindow != null)
+                    {
+                        anchored = true;
+                        return fromWindow;
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    return null;
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                var probe = new Window();
+                try
+                {
+                    Screen screen = null;
+                    if (GetCursorPos(out POINT cursor))
+                    {
+                        screen = probe.Screens.ScreenFromPoint(new PixelPoint(cursor.X, cursor.Y));
+                    }
+
+                    return screen ?? probe.Screens.Primary;
+                }
+                finally
+                {
+                    probe.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                snapvox.foundation.core.LogHelper.GetLogger(typeof(NotificationOverlayWindow)).Error("Could not resolve a screen for the notification overlay", ex);
+                return null;
+            }
+        }
+
         public static void ShowNotification(string message, Window owner)
         {
-            var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
-            var contextWindow = owner ?? desktop?.Windows.FirstOrDefault(w => w.IsActive) ?? desktop?.Windows.FirstOrDefault();
-            if (contextWindow == null) return;
-            
+            var contextWindow = ResolveContextWindow(owner);
+
             Dispatcher.UIThread.Post(async () =>
             {
                 try
                 {
-                    Screen targetScreen;
-                    try
-                    {
-                        targetScreen = contextWindow.Screens.ScreenFromWindow(contextWindow) ?? contextWindow.Screens.Primary;
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        return;
-                    }
-
+                    Screen targetScreen = ResolveTargetScreen(contextWindow, out _);
                     if (targetScreen == null) return;
 
                     var window = new NotificationOverlayWindow();
@@ -127,29 +180,22 @@ namespace snapvox.editor.forms
 
         public static void ShowLightToast(string message, Window owner)
         {
-            var desktop = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
-            var contextWindow = owner ?? desktop?.Windows.FirstOrDefault(w => w.IsActive) ?? desktop?.Windows.FirstOrDefault();
-            if (contextWindow == null) return;
+            var contextWindow = ResolveContextWindow(owner);
 
             Dispatcher.UIThread.Post(async () =>
             {
                 try
                 {
-                    Screen targetScreen;
-                    try
-                    {
-                        targetScreen = contextWindow.Screens.ScreenFromWindow(contextWindow) ?? contextWindow.Screens.Primary;
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        return;
-                    }
-
+                    Screen targetScreen = ResolveTargetScreen(contextWindow, out bool anchoredToWindow);
                     if (targetScreen == null) return;
                     var work = targetScreen.WorkingArea;
 
-                    var ownerBounds = contextWindow.Bounds;
-                    var ownerPos = contextWindow.Position;
+                    var ownerBounds = anchoredToWindow
+                        ? contextWindow.Bounds
+                        : new Rect(0, 0, work.Width, work.Height);
+                    var ownerPos = anchoredToWindow
+                        ? contextWindow.Position
+                        : new PixelPoint(work.X, work.Y);
 
                     int offset;
                     bool counted;
@@ -194,8 +240,6 @@ namespace snapvox.editor.forms
                     window.UpdateLayout();
 
                     var bounds = window.Bounds;
-                    [System.Runtime.InteropServices.DllImport("user32.dll")]
-                    static extern bool GetCursorPos(out POINT lpPoint);
                     GetCursorPos(out POINT cursor);
 
                     double relX = cursor.X - ownerPos.X;

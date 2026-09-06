@@ -25,6 +25,20 @@ namespace snapvox.editor.forms
         private int _originalWidth;
         private int _originalHeight;
 
+        /// <summary>Smallest and largest scale offered: five times smaller through five times bigger.</summary>
+        public const double MinScalePercent = 20.0;
+        public const double MaxScalePercent = 500.0;
+
+        /// <summary>
+        /// The slider track is logarithmic: -100 is 20%, 0 is 100%, +100 is 500%. A linear
+        /// 20-500 track would squeeze every shrink value into the bottom sixth of the track.
+        /// </summary>
+        private const double ScaleFactor = 5.0;
+        private const double SliderSnapWindow = 4.0;
+
+        /// <summary>Refuse a resize that would allocate an unreasonable bitmap.</summary>
+        private const long MaxResultPixels = 80_000_000L;
+
         public ResizeWindow()
         {
             InitializeComponent();
@@ -50,31 +64,40 @@ namespace snapvox.editor.forms
             _widthInput.PropertyChanged += OnWidthChanged;
             _heightInput.PropertyChanged += OnHeightChanged;
             _sizeSlider.PropertyChanged += OnSliderChanged;
+            _sizeSlider.Value = 0;
             UpdatePercentText(100);
             
             KeyDown += OnWindowKeyDown;
             Opened += (_, __) => _widthInput?.Focus();
         }
 
+        private static double SliderPositionToPercent(double position)
+        {
+            return 100.0 * Math.Pow(ScaleFactor, Math.Clamp(position, -100.0, 100.0) / 100.0);
+        }
+
+        private static double PercentToSliderPosition(double percent)
+        {
+            percent = Math.Clamp(percent, MinScalePercent, MaxScalePercent);
+            return Math.Clamp(100.0 * Math.Log(percent / 100.0) / Math.Log(ScaleFactor), -100.0, 100.0);
+        }
+
         private void OnSliderChanged(object sender, AvaloniaPropertyChangedEventArgs e)
         {
             if (e.Property.Name == "Value" && !_isUpdating && _ratioCheckbox.IsChecked == true)
             {
-                double val = _sizeSlider.Value;
-                if (Math.Abs(val - 100) < 3.5) val = 100;
+                double position = _sizeSlider.Value;
 
-                if (Math.Abs(_sizeSlider.Value - val) > 0.1)
+                // Magnetic snap back to the original size at the centre of the track.
+                if (Math.Abs(position) < SliderSnapWindow) position = 0;
+
+                if (Math.Abs(_sizeSlider.Value - position) > 0.01)
                 {
-                    _sizeSlider.Value = val;
+                    _sizeSlider.Value = position;
                     return;
                 }
 
-                double scale = val / 100.0;
-                _isUpdating = true;
-                _widthInput.Text = ((int)(_originalWidth * scale)).ToString();
-                _heightInput.Text = ((int)(_originalHeight * scale)).ToString();
-                UpdatePercentText(val);
-                _isUpdating = false;
+                ApplyScalePercent(SliderPositionToPercent(position), false);
             }
         }
 
@@ -91,9 +114,7 @@ namespace snapvox.editor.forms
                 return;
             }
 
-            percent = Math.Clamp(percent, _sizeSlider.Minimum, _sizeSlider.Maximum);
-            _sizeSlider.Value = percent;
-            ApplyScalePercent(percent);
+            ApplyScalePercent(percent, true);
         }
 
         private double GetFitPercent()
@@ -106,12 +127,15 @@ namespace snapvox.editor.forms
             return Math.Min(maxWidth / _originalWidth, maxHeight / _originalHeight) * 100.0;
         }
 
-        private void ApplyScalePercent(double percent)
+        private void ApplyScalePercent(double percent, bool moveSlider)
         {
+            percent = Math.Clamp(percent, MinScalePercent, MaxScalePercent);
             double scale = percent / 100.0;
+
             _isUpdating = true;
-            _widthInput.Text = Math.Max(1, (int)(_originalWidth * scale)).ToString();
-            _heightInput.Text = Math.Max(1, (int)(_originalHeight * scale)).ToString();
+            _widthInput.Text = Math.Max(1, (int)Math.Round(_originalWidth * scale)).ToString();
+            _heightInput.Text = Math.Max(1, (int)Math.Round(_originalHeight * scale)).ToString();
+            if (moveSlider && _sizeSlider != null) _sizeSlider.Value = PercentToSliderPosition(percent);
             UpdatePercentText(percent);
             _isUpdating = false;
         }
@@ -134,9 +158,9 @@ namespace snapvox.editor.forms
                 if (int.TryParse(_widthInput.Text, out int w))
                 {
                     _isUpdating = true;
-                    _heightInput.Text = ((int)(w / _ratio)).ToString();
+                    _heightInput.Text = Math.Max(1, (int)Math.Round(w / _ratio)).ToString();
                     double percent = _originalWidth == 0 ? 100 : w * 100.0 / _originalWidth;
-                    _sizeSlider.Value = Math.Clamp(percent, _sizeSlider.Minimum, _sizeSlider.Maximum);
+                    _sizeSlider.Value = PercentToSliderPosition(percent);
                     UpdatePercentText(percent);
                     _isUpdating = false;
                 }
@@ -150,9 +174,9 @@ namespace snapvox.editor.forms
                 if (int.TryParse(_heightInput.Text, out int h))
                 {
                     _isUpdating = true;
-                    _widthInput.Text = ((int)(h * _ratio)).ToString();
+                    _widthInput.Text = Math.Max(1, (int)Math.Round(h * _ratio)).ToString();
                     double percent = _originalHeight == 0 ? 100 : h * 100.0 / _originalHeight;
-                    _sizeSlider.Value = Math.Clamp(percent, _sizeSlider.Minimum, _sizeSlider.Maximum);
+                    _sizeSlider.Value = PercentToSliderPosition(percent);
                     UpdatePercentText(percent);
                     _isUpdating = false;
                 }
@@ -173,15 +197,36 @@ namespace snapvox.editor.forms
             }
         }
 
-        private void OnOkClick(object sender, RoutedEventArgs e)
+        private async void OnOkClick(object sender, RoutedEventArgs e)
         {
-            if (int.TryParse(_widthInput.Text, out int w) && int.TryParse(_heightInput.Text, out int h))
+            if (!int.TryParse(_widthInput.Text, out int w) || !int.TryParse(_heightInput.Text, out int h)) return;
+
+            if (w < 1 || h < 1)
             {
-                ResultWidth = w;
-                ResultHeight = h;
-                IsConfirmed = true;
-                Close();
+                await snapvox.editor.helpers.ConfirmDialog.ShowAlertAsync(
+                    this,
+                    "Size Too Small",
+                    "Width and height both have to be at least 1 pixel. Pick a larger size and try again.",
+                    "OK",
+                    true).ConfigureAwait(true);
+                return;
             }
+
+            if ((long)w * h > MaxResultPixels)
+            {
+                await snapvox.editor.helpers.ConfirmDialog.ShowAlertAsync(
+                    this,
+                    "Picture Would Be Too Big",
+                    $"{w} x {h} is about {(long)w * h / 1_000_000L} megapixels. SnapVox stops at {MaxResultPixels / 1_000_000L} megapixels because anything larger can run the computer out of memory. Choose a smaller percentage and try again.",
+                    "OK",
+                    true).ConfigureAwait(true);
+                return;
+            }
+
+            ResultWidth = w;
+            ResultHeight = h;
+            IsConfirmed = true;
+            Close();
         }
 
         private void OnCancelClick(object sender, RoutedEventArgs e)

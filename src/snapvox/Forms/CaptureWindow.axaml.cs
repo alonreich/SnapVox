@@ -289,6 +289,7 @@ namespace snapvox.forms
 
         public static bool BeginCaptureSession()
         {
+            snapvox.foundation.core.ScreenTintBypass.InvalidateCache();
             lock (CaptureSessionLock)
             {
                 if (_captureTrayIconHeld) return false;
@@ -1455,12 +1456,16 @@ namespace snapvox.forms
 
                 await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                ImageSharpImage imageForEditor = owned;
+                owned = null;
+                try
                 {
-                    ShowEditorForOwnedImage(owned, rect);
-                    owned = null;
+                    await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, rect));
+                }
+                finally
+                {
                     CaptureHelper.ClearFrozenSnapshot();
-                });
+                }
             }
             catch (Exception ex)
             {
@@ -1474,21 +1479,25 @@ namespace snapvox.forms
             }
         }
 
-        private static void ShowEditorForOwnedImage(ImageSharpImage image, RECT rect)
+        private static async Task ShowEditorForOwnedImageAsync(ImageSharpImage image, RECT rect)
         {
             ImageSharpImage imageForEditor = image;
             snapvox.editor.forms.ImageEditorWindow editor = null;
             try
             {
                 editor = new snapvox.editor.forms.ImageEditorWindow();
-                _ = editor.SetImageAsync(imageForEditor, rect);
+
+                // Load and size the snip BEFORE the window becomes visible, and await it so a
+                // failure surfaces instead of disappearing into an unobserved task.
+                await editor.SetImageAsync(imageForEditor, rect, CaptureHelper.LastActiveWindowTitle).ConfigureAwait(true);
                 imageForEditor = null;
                 editor.Show();
             }
-            catch
+            catch (Exception ex)
             {
                 imageForEditor?.Dispose();
                 editor?.Close();
+                Log.Fatal("ShowEditorForOwnedImage failed.", ex);
                 throw;
             }
         }

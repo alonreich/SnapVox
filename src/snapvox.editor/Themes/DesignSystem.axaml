@@ -203,6 +203,7 @@
         <Setter Property="MinWidth" Value="24" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
+        <Setter Property="AllowAutoHide" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
@@ -250,6 +251,7 @@
         <Setter Property="MinHeight" Value="24" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
+        <Setter Property="AllowAutoHide" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>

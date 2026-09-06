@@ -37,7 +37,10 @@ namespace snapvox.foundation.core
         private static string _logPath;
         private static string _logDirectory;
         private static int _started;
+        private static int _shutdown;
         private static long _droppedEntries;
+        private static long _entriesSinceLastPulse;
+        private const double HealthPulseIntervalMs = 60000d;
 
 
         private static DateTime _lastBudgetSweepUtc = DateTime.MinValue;
@@ -53,6 +56,7 @@ namespace snapvox.foundation.core
 
         public static void Start()
         {
+            Interlocked.Exchange(ref _shutdown, 0);
             EnsureInitialized();
             LogEvent("ExecutionTrace", "Start", AppDomain.CurrentDomain.FriendlyName);
         }
@@ -67,6 +71,8 @@ namespace snapvox.foundation.core
             Task writerTask;
             lock (SyncRoot)
             {
+                Interlocked.Exchange(ref _shutdown, 1);
+
                 if (Volatile.Read(ref _started) == 0)
                 {
                     return;
@@ -172,29 +178,58 @@ namespace snapvox.foundation.core
         private static long _workingSetMb;
         private static long _gcMemoryMb;
 
-        private static void LogHealth()
+        private static void RefreshHealthCounters()
         {
             try
             {
                 _gdiCount = unchecked((int)User32Api.GetGuiResourcesGdiCount());
                 _userCount = unchecked((int)User32Api.GetGuiResourcesUserCount());
+                CurrentProcess.Refresh();
                 _workingSetMb = CurrentProcess.WorkingSet64 / 1024L / 1024L;
                 _gcMemoryMb = GC.GetTotalMemory(false) / 1024L / 1024L;
             }
             catch { }
+        }
+
+        private static void LogHealth()
+        {
+            RefreshHealthCounters();
             WriteEntry("Health", "Pulse", 0L, null, BuildQueueSnapshot());
+        }
+
+        private static void OnHealthTimerElapsed()
+        {
+            try
+            {
+                if (Volatile.Read(ref _shutdown) != 0) return;
+
+                if (Interlocked.Exchange(ref _entriesSinceLastPulse, 0L) > 0L)
+                {
+                    LogHealth();
+                }
+                else
+                {
+                    RefreshHealthCounters();
+                }
+
+                TrySweepLogBudget();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("ExecutionTrace health pulse failed.", ex);
+            }
         }
 
         private static void EnsureInitialized()
         {
-            if (Volatile.Read(ref _started) == 1)
+            if (Volatile.Read(ref _started) == 1 || Volatile.Read(ref _shutdown) != 0)
             {
                 return;
             }
 
             lock (SyncRoot)
             {
-                if (Volatile.Read(ref _started) == 1)
+                if (Volatile.Read(ref _started) == 1 || Volatile.Read(ref _shutdown) != 0)
                 {
                     return;
                 }
@@ -220,10 +255,9 @@ namespace snapvox.foundation.core
                 Interlocked.Exchange(ref _started, 1);
                 LogHealth();
 
-                _healthTimer = new System.Timers.Timer(5000d);
+                _healthTimer = new System.Timers.Timer(HealthPulseIntervalMs);
                 _healthTimer.AutoReset = true;
-                _healthTimer.Elapsed += delegate { LogHealth(); };
-                _healthTimer.Elapsed += delegate { TrySweepLogBudget(); };
+                _healthTimer.Elapsed += delegate { OnHealthTimerElapsed(); };
                 _healthTimer.Start();
             }
         }
@@ -304,7 +338,11 @@ namespace snapvox.foundation.core
                     Sanitize(context),
                     Sanitize(exception == null ? string.Empty : exception.ToString()));
 
-                if (!entries.Writer.TryWrite(line))
+                if (entries.Writer.TryWrite(line))
+                {
+                    Interlocked.Increment(ref _entriesSinceLastPulse);
+                }
+                else
                 {
                     Interlocked.Increment(ref _droppedEntries);
                 }
