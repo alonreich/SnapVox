@@ -103,6 +103,7 @@ namespace snapvox
                     SimpleServiceProvider.Current.AddService<IOcrProvider>(ocrProviders);
                     await OcrInstallationHelper.InstallHebrewOcrAsync();
                     RetentionHelper.Start();
+                    snapvox.editor.forms.ImageEditorWindow.RequestRegionCaptureAction = () => CaptureHelper.CaptureRegion(true);
                     if (!IsNoTrayMode) 
                     { 
                         log.Info("Initializing Tray Icon and Hotkeys...");

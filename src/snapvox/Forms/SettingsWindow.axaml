@@ -48,6 +48,37 @@
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxDestructiveHoverBrush}"/>
             <Setter Property="BorderThickness" Value="2"/>
         </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ ButtonSpinner">
+            <Setter Property="MinWidth" Value="18"/>
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton">
+            <Setter Property="MinWidth" Value="18"/>
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton Path">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Height" Value="4"/>
+            <Setter Property="Stretch" Value="Uniform"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ TextBox#PART_TextBox">
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding" Value="6,2,2,2"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
+        </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
         <TextBlock Text="SnapVox Configuration" FontSize="{DynamicResource SnapVoxDialogTitleFontSize}" FontWeight="Bold" Margin="0,0,0,10" Grid.Row="0" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"/>
@@ -92,7 +123,7 @@
                                     <Border Name="FrameBorderColorPreview" Width="16" Height="16" CornerRadius="2" BorderBrush="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="1" Background="#434343" />
                                 </Button>
                                 <TextBlock Text="Thickness:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" Margin="4,0,0,0" />
-                                <NumericUpDown Name="NumFrameBorderThickness" Minimum="1" Maximum="30" Value="4" Increment="1" FormatString="0" Width="68" Height="24" VerticalAlignment="Center" ToolTip.Tip="Border thickness in pixels" />
+                                <NumericUpDown Name="NumFrameBorderThickness" Minimum="1" Maximum="30" Value="4" Increment="1" FormatString="0" Width="82" Height="28" VerticalAlignment="Center" ToolTip.Tip="Border thickness in pixels" />
                                 <TextBlock Text="px" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" />
                             </StackPanel>
                         </StackPanel>

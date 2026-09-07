@@ -287,14 +287,30 @@ namespace snapvox.forms
         {
         }
 
+        private static DateTime _captureSessionStartTime = DateTime.MinValue;
+
         public static bool BeginCaptureSession()
         {
             snapvox.foundation.core.ScreenTintBypass.InvalidateCache();
             lock (CaptureSessionLock)
             {
-                if (_captureTrayIconHeld) return false;
+                if (_captureTrayIconHeld)
+                {
+                    bool hasActiveOverlays;
+                    lock (_activeWindows) { hasActiveOverlays = _activeWindows.Count > 0; }
+                    if (!hasActiveOverlays && (DateTime.UtcNow - _captureSessionStartTime).TotalSeconds > 3.0)
+                    {
+                        _captureTrayIconHeld = false;
+                        _captureCompleted = false;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
                 _captureCompleted = false;
                 _captureTrayIconHeld = true;
+                _captureSessionStartTime = DateTime.UtcNow;
             }
 
             App.ForceRedTrayIcon(true);
@@ -958,15 +974,16 @@ namespace snapvox.forms
 
         private async Task CaptureAndCopyCurrentSelectionAsync(RECT target, IntPtr windowHandle = default)
         {
-            ImageSharpImage captured = windowHandle != IntPtr.Zero
-                ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, target)).ConfigureAwait(false)
-                : null;
-            if (captured != null && NativeCapture.IsLikelyBlankBlackFrame(captured))
+            ImageSharpImage captured = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(target)).ConfigureAwait(false);
+            if (captured == null && windowHandle != IntPtr.Zero)
             {
-                captured.Dispose();
-                captured = null;
+                captured = await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, target)).ConfigureAwait(false);
+                if (captured != null && NativeCapture.IsLikelyBlankBlackFrame(captured))
+                {
+                    captured.Dispose();
+                    captured = null;
+                }
             }
-            if (captured == null) captured = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(target)).ConfigureAwait(false);
             if (captured == null) captured = await Task.Run(() => NativeCapture.CaptureRegion(target)).ConfigureAwait(false);
             if (captured == null) return;
 
@@ -1404,22 +1421,24 @@ namespace snapvox.forms
             try
             {
                 var nativeRect = RECT.FromXYWH(rect.X, rect.Y, rect.Width, rect.Height);
-                ImageSharpImage exclusiveWindowShot = windowHandle != IntPtr.Zero
-                    ? await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, rect)).ConfigureAwait(false)
-                    : null;
-                if (exclusiveWindowShot != null && NativeCapture.IsLikelyBlankBlackFrame(exclusiveWindowShot))
+                ImageSharpImage frozenCaptured = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false);
+                if (frozenCaptured == null && windowHandle != IntPtr.Zero)
                 {
-                    exclusiveWindowShot.Dispose();
-                    exclusiveWindowShot = null;
+                    frozenCaptured = await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, rect)).ConfigureAwait(false);
+                    if (frozenCaptured != null && NativeCapture.IsLikelyBlankBlackFrame(frozenCaptured))
+                    {
+                        frozenCaptured.Dispose();
+                        frozenCaptured = null;
+                    }
                 }
-                ImageSharpImage frozenCaptured = exclusiveWindowShot == null
-                    ? await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false)
-                    : null;
+                if (frozenCaptured == null)
+                {
+                    frozenCaptured = await Task.Run(() => NativeCapture.CaptureRegion(nativeRect)).ConfigureAwait(false);
+                }
 
                 await CloseAllCaptureOverlaysAsync().ConfigureAwait(false);
                 if (rect.Width <= 0 || rect.Height <= 0)
                 {
-                    exclusiveWindowShot?.Dispose();
                     frozenCaptured?.Dispose();
                     CaptureHelper.ClearFrozenSnapshot();
                     return;
@@ -1428,11 +1447,10 @@ namespace snapvox.forms
                 CaptureHelper.RememberRegion(rect);
                 owned = await Task.Run(() =>
                 {
-                    ImageSharpImage captured = exclusiveWindowShot ?? frozenCaptured;
-                    if (captured == null) captured = NativeCapture.CaptureRegion(nativeRect);
+                    ImageSharpImage captured = frozenCaptured;
                     if (captured == null) return null;
                     var clone = captured.Clone(x => { });
-                    if (captured != null) captured.Dispose();
+                    captured.Dispose();
 
                     if (IniConfig.GetIniSection<CoreConfiguration>().KeepBackup)
                     {

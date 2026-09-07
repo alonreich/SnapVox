@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -28,6 +28,7 @@ namespace snapvox.helpers
         private static volatile string[] _lastFailedHotkeys = Array.Empty<string>();
         private static volatile string[] _ownedHotkeys = Array.Empty<string>();
         private static volatile bool _registrationCompleted;
+        private static volatile bool _shouldRun = false;
 
         private const int WM_HOTKEY = 0x0312;
         private const int WM_APP_EXIT = 0x8001;
@@ -148,6 +149,7 @@ namespace snapvox.helpers
                 _registrationCompleted = false;
                 _ownedHotkeys = Array.Empty<string>();
                 _running = true;
+                _shouldRun = true;
                 LoopExited.Reset();
                 _msgLoopThread = new Thread(MessageLoop) { IsBackground = true, Name = "HotkeyLoop" };
                 _msgLoopThread.Start();
@@ -197,8 +199,21 @@ namespace snapvox.helpers
                 RegisterAll();
 
                 MSG msg;
-                while (_running && GetMessage(out msg, IntPtr.Zero, 0, 0) > 0)
+                int ret;
+                while (_running && (ret = GetMessage(out msg, IntPtr.Zero, 0, 0)) != 0)
                 {
+                    if (ret == -1)
+                    {
+                        BootstrapDebug.Log($"HotkeyManager: GetMessage error: {Marshal.GetLastWin32Error()}");
+                        Thread.Sleep(50);
+                        continue;
+                    }
+
+                    if (msg.message == WM_HOTKEY)
+                    {
+                        HandleHotkey((int)msg.wParam);
+                    }
+
                     TranslateMessage(ref msg);
                     DispatchMessage(ref msg);
                 }
@@ -221,6 +236,18 @@ namespace snapvox.helpers
                 _ownedHotkeys = Array.Empty<string>();
                 LoopExited.Set();
                 BootstrapDebug.Log("HotkeyManager: MessageLoop exited.");
+
+                if (_shouldRun)
+                {
+                    BootstrapDebug.Log("HotkeyManager: loop exited while _shouldRun is true; scheduling auto-recovery...");
+                    Task.Delay(1000).ContinueWith(_ =>
+                    {
+                        if (_shouldRun)
+                        {
+                            Start();
+                        }
+                    });
+                }
             }
         }
 
@@ -331,6 +358,7 @@ namespace snapvox.helpers
                 }
 
                 _running = false;
+                _shouldRun = false;
                 IntPtr hwnd = _hwnd;
                 if (hwnd != IntPtr.Zero)
                 {

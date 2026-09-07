@@ -21,6 +21,7 @@ Thumbs.db
 # [Temporary Files]
 *.tmp
 *.bak
+payload.zip
 
 # [Git LFS]
 # We track DLLs and EXEs via LFS if they are outside build folders.

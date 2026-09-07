@@ -57,7 +57,16 @@ namespace snapvox.helpers
             LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
             ScreenTintBypass.InvalidateCache();
             if (!forms.CaptureWindow.BeginCaptureSession()) return;
-            _ = Task.Run(() => CaptureRegionAsync(fromHotkey));
+
+            ImageSharpImage instantSnapshot = null;
+            RECT instantVirtualBounds = RECT.Empty;
+            if (Config.CaptureDelay <= 0)
+            {
+                instantVirtualBounds = GetVirtualDesktopBounds();
+                instantSnapshot = NativeCapture.CaptureRegion(instantVirtualBounds, Config.CaptureMousepointer);
+            }
+
+            _ = Task.Run(() => CaptureRegionAsync(fromHotkey, instantSnapshot, instantVirtualBounds));
         }
 
         public static void ClearFrozenSnapshot()
@@ -110,16 +119,22 @@ namespace snapvox.helpers
             }
         }
 
-        private static async Task CaptureRegionAsync(bool fromHotkey)
+        private static async Task CaptureRegionAsync(bool fromHotkey, ImageSharpImage preCapturedSnapshot = null, RECT preCapturedBounds = default)
         {
             string sourceTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
             bool overlaysShown = false;
             try
             {
-                int delay = Config.CaptureDelay > 0 ? Config.CaptureDelay : (fromHotkey ? 0 : 350);
-                if (delay > 0) await Task.Delay(delay).ConfigureAwait(false);
-                RECT virtualBounds = GetVirtualDesktopBounds();
-                ImageSharpImage fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
+                ImageSharpImage fullSnapshot = preCapturedSnapshot;
+                RECT virtualBounds = preCapturedBounds;
+
+                if (fullSnapshot == null)
+                {
+                    int delay = Config.CaptureDelay > 0 ? Config.CaptureDelay : 0;
+                    if (delay > 0) await Task.Delay(delay).ConfigureAwait(false);
+                    virtualBounds = GetVirtualDesktopBounds();
+                    fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
+                }
                 try
                 {
                     if (fullSnapshot == null)

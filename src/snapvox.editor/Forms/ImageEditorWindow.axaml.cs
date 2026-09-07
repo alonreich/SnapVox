@@ -110,7 +110,7 @@ namespace snapvox.editor.forms
         
         
         private const double OverscrollPadding = 64.0;
-        private const double ZoomStepMultiplier = 1.15;
+        private const double ZoomStepMultiplier = 1.08;
         private const double MinZoomFactor = 0.10;
         private const double MaxZoomFactor = 6.0;
 
@@ -144,13 +144,60 @@ namespace snapvox.editor.forms
         private AvaloniaControl _previewControl;
 
         private Border _contextToolbar;
+        private Button _contextDuplicateButton;
+        private Button _contextDeleteButton;
+        private Button _contextApplyButton;
+        private Avalonia.Controls.Shapes.Path _contextDuplicateIcon;
+        private Avalonia.Controls.Shapes.Path _contextDeleteIcon;
+        private Avalonia.Controls.Shapes.Path _contextApplyIcon;
+        private Avalonia.Controls.Shapes.Rectangle _contextApplySeparator;
+        private Avalonia.Controls.Shapes.Rectangle _contextDuplicateSeparator;
+
+        private static readonly SolidColorBrush DarkBgToolbarBg = new(AvaloniaColor.Parse("#F8F9FA"));
+        private static readonly SolidColorBrush DarkBgToolbarBorder = new(AvaloniaColor.Parse("#007ACC"));
+        private static readonly SolidColorBrush DarkBgSep = new(AvaloniaColor.Parse("#D0D4DC"));
+        private static readonly SolidColorBrush DarkBgDupBtnBg = new(AvaloniaColor.Parse("#E7F0FD"));
+        private static readonly SolidColorBrush DarkBgDupBtnBorder = new(AvaloniaColor.Parse("#B6D4FE"));
+        private static readonly SolidColorBrush DarkBgDupIcon = new(AvaloniaColor.Parse("#0D6EFD"));
+        private static readonly SolidColorBrush DarkBgDelBtnBg = new(AvaloniaColor.Parse("#FFEAEA"));
+        private static readonly SolidColorBrush DarkBgDelBtnBorder = new(AvaloniaColor.Parse("#FFC2C2"));
+        private static readonly SolidColorBrush DarkBgDelIcon = new(AvaloniaColor.Parse("#DC3545"));
+        private static readonly SolidColorBrush DarkBgAppBtnBg = new(AvaloniaColor.Parse("#E8F5E9"));
+        private static readonly SolidColorBrush DarkBgAppBtnBorder = new(AvaloniaColor.Parse("#A5D6A7"));
+        private static readonly SolidColorBrush DarkBgAppIcon = new(AvaloniaColor.Parse("#2E7D32"));
+
+        private static readonly SolidColorBrush BrightBgToolbarBg = new(AvaloniaColor.Parse("#1A1C20"));
+        private static readonly SolidColorBrush BrightBgToolbarBorder = new(AvaloniaColor.Parse("#00B4D8"));
+        private static readonly SolidColorBrush BrightBgSep = new(AvaloniaColor.Parse("#3E4451"));
+        private static readonly SolidColorBrush BrightBgDupBtnBg = new(AvaloniaColor.Parse("#262A33"));
+        private static readonly SolidColorBrush BrightBgDupBtnBorder = new(AvaloniaColor.Parse("#3E4758"));
+        private static readonly SolidColorBrush BrightBgDupIcon = new(AvaloniaColor.Parse("#60A5FA"));
+        private static readonly SolidColorBrush BrightBgDelBtnBg = new(AvaloniaColor.Parse("#3D1418"));
+        private static readonly SolidColorBrush BrightBgDelBtnBorder = new(AvaloniaColor.Parse("#6B2129"));
+        private static readonly SolidColorBrush BrightBgDelIcon = new(AvaloniaColor.Parse("#FF6B6B"));
+        private static readonly SolidColorBrush BrightBgAppBtnBg = new(AvaloniaColor.Parse("#14321F"));
+        private static readonly SolidColorBrush BrightBgAppBtnBorder = new(AvaloniaColor.Parse("#1F5932"));
+        private static readonly SolidColorBrush BrightBgAppIcon = new(AvaloniaColor.Parse("#4ADE80"));
+
+        private static readonly SolidColorBrush MidBgToolbarBg = new(AvaloniaColor.Parse("#1E2126"));
+        private static readonly SolidColorBrush MidBgToolbarBorder = new(AvaloniaColor.Parse("#3880FF"));
+        private static readonly SolidColorBrush MidBgSep = new(AvaloniaColor.Parse("#444B59"));
+        private static readonly SolidColorBrush MidBgDupBtnBg = new(AvaloniaColor.Parse("#323742"));
+        private static readonly SolidColorBrush MidBgDupBtnBorder = new(AvaloniaColor.Parse("#4A5263"));
+        private static readonly SolidColorBrush MidBgDupIcon = new(AvaloniaColor.Parse("#FFFFFF"));
+        private static readonly SolidColorBrush MidBgDelBtnBg = new(AvaloniaColor.Parse("#8C1D28"));
+        private static readonly SolidColorBrush MidBgDelBtnBorder = new(AvaloniaColor.Parse("#AB2E3B"));
+        private static readonly SolidColorBrush MidBgDelIcon = new(AvaloniaColor.Parse("#FFFFFF"));
+        private static readonly SolidColorBrush MidBgAppBtnBg = new(AvaloniaColor.Parse("#1A6B35"));
+        private static readonly SolidColorBrush MidBgAppBtnBorder = new(AvaloniaColor.Parse("#288C48"));
+        private static readonly SolidColorBrush MidBgAppIcon = new(AvaloniaColor.Parse("#FFFFFF"));
+
         private Canvas _startHandle;
         private Canvas _endHandle;
         private bool _isDraggingStartPoint;
         private bool _isDraggingEndPoint;
 
         private bool _isSpaceDown;
-        private bool _isAltDown;
         private bool _isPanning;
         private AvaloniaPoint _panStartPoint;
         private Avalonia.Vector _panStartOffset;
@@ -202,7 +249,7 @@ namespace snapvox.editor.forms
         private const int PixelateStrengthMax = 29;
         private const int PixelateStrengthDefault = 25;
         private const double VectorHitTolerance = 12.0;
-        private const double VectorSnapThreshold = 12.0;
+        private const double VectorSnapThreshold = 6.0;
         private const double VectorSnapGap = 12.0;
         private const int SnapVoxFrameThickness = 3;
 
@@ -390,7 +437,8 @@ namespace snapvox.editor.forms
                 FontSize = 11,
                 FontWeight = FontWeight.Bold,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                TextAlignment = Avalonia.Media.TextAlignment.Center
             };
             _vectorInfoPopup = new Border
             {
@@ -706,19 +754,26 @@ namespace snapvox.editor.forms
 
             if (e.Key == Key.LeftAlt || e.Key == Key.RightAlt || !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
             {
-                _isAltDown = false;
                 UpdateMagnetButtonState(false);
                 RefreshActiveDragAltHint(false);
             }
         }
 
+        public static Action RequestRegionCaptureAction { get; set; }
+
         private void OnWindowKeyDown(object sender, KeyEventArgs e)
         {
             var config = IniConfig.GetIniSection<CoreConfiguration>();
 
+            if (e.Key == Key.PrintScreen || e.Key == Key.Snapshot)
+            {
+                RequestRegionCaptureAction?.Invoke();
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == Key.LeftAlt || e.Key == Key.RightAlt || e.KeyModifiers.HasFlag(KeyModifiers.Alt))
             {
-                _isAltDown = true;
                 UpdateMagnetButtonState(true);
                 RefreshActiveDragAltHint(true);
             }
@@ -776,6 +831,18 @@ namespace snapvox.editor.forms
             }
 
             if (e.Key == Key.Escape) { ResetToolsAndSelection(); e.Handled = true; return; }
+            if (e.Key == Key.Tab && _selectedControl != null && _contextToolbar != null && _contextToolbar.IsVisible)
+            {
+                var applyBtn = this.FindControl<Button>("ContextApplyButton");
+                var dupBtn = this.FindControl<Button>("ContextDuplicateButton");
+                var focusTarget = (applyBtn != null && applyBtn.IsVisible) ? applyBtn : dupBtn;
+                if (focusTarget != null && focusTarget.IsVisible)
+                {
+                    focusTarget.Focus();
+                    e.Handled = true;
+                    return;
+                }
+            }
             if (_selectedControl != null && MatchesHotkey(e, config.DeleteObjectHotkey)) { OnDeleteClick(null, null); e.Handled = true; return; }
             if (_selectedControl != null && MatchesHotkey(e, config.DuplicateObjectHotkey)) { OnDuplicateClick(null, null); e.Handled = true; return; }
 
@@ -944,15 +1011,24 @@ namespace snapvox.editor.forms
             var scrollViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
             if (scrollViewer == null || _image == null) return;
 
-            bool zoomIn = e.Delta.Y > 0;
             var pointerInScroller = e.GetPosition(scrollViewer);
-            SetFocalPoint(pointerInScroller);
 
-            double step = zoomIn ? ZoomStepMultiplier : (1.0 / ZoomStepMultiplier);
-            if (Math.Abs(e.Delta.Y) > 1.0)
+            // Anchor stability: during active smooth zooming, preserve existing unscaled focal point if cursor has not moved far
+            if (_smoothZoomTimer != null && _smoothZoomTimer.IsEnabled && _zoomFocalViewportPoint.HasValue)
             {
-                step = Math.Pow(step, Math.Abs(e.Delta.Y));
+                var prevVp = _zoomFocalViewportPoint.Value;
+                if (Math.Abs(prevVp.X - pointerInScroller.X) > 20 || Math.Abs(prevVp.Y - pointerInScroller.Y) > 20)
+                {
+                    SetFocalPoint(pointerInScroller);
+                }
             }
+            else
+            {
+                SetFocalPoint(pointerInScroller);
+            }
+
+            double delta = Math.Clamp(e.Delta.Y, -2.5, 2.5);
+            double step = Math.Pow(ZoomStepMultiplier, delta);
             SmoothZoomTowards(_targetZoom * step);
 
             ShowZoomHintDebounced();
@@ -989,9 +1065,21 @@ namespace snapvox.editor.forms
 
             if (vpW <= 1 || vpH <= 1)
             {
-                padX = 0;
-                padY = 0;
-                return;
+                double winW = Bounds.Width > 0 ? Bounds.Width : Width;
+                double winH = Bounds.Height > 0 ? Bounds.Height : Height;
+                double estW = Math.Max(100, winW - 60);
+                double estH = Math.Max(100, winH - 152);
+                if (estW > 1 && estH > 1)
+                {
+                    vpW = estW;
+                    vpH = estH;
+                }
+                else
+                {
+                    padX = 0;
+                    padY = 0;
+                    return;
+                }
             }
 
             // Center when image fits within viewport; otherwise provide comfortable overscroll padding
@@ -1135,17 +1223,52 @@ namespace snapvox.editor.forms
         private void OnSmoothZoomTick(object sender, EventArgs e)
         {
             double diff = _targetZoom - _zoomFactor;
-            if (Math.Abs(diff) < 0.001)
+            if (Math.Abs(diff) < 0.0005)
             {
                 _zoomFactor = _targetZoom;
                 _smoothZoomTimer?.Stop();
             }
             else
             {
-                _zoomFactor += diff * 0.28;
+                _zoomFactor += diff * 0.20;
             }
 
             ApplyZoomAndFocalOffset();
+        }
+
+        private void CenterImageInScrollViewer()
+        {
+            if (_image == null) return;
+            var scrollViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
+            if (scrollViewer == null) return;
+
+            _zoomFocalViewportPoint = null;
+            _zoomFocalUnscaledPoint = null;
+
+            ApplyZoom();
+
+            GetViewportPadding(_zoomFactor, out double padX, out double padY, out double scaledW, out double scaledH);
+            double totalW = Math.Max(scrollViewer.Viewport.Width, scaledW + 2 * padX);
+            double totalH = Math.Max(scrollViewer.Viewport.Height, scaledH + 2 * padY);
+
+            double maxOffsetX = Math.Max(0, totalW - scrollViewer.Viewport.Width);
+            double maxOffsetY = Math.Max(0, totalH - scrollViewer.Viewport.Height);
+
+            if (maxOffsetX <= 0 && maxOffsetY <= 0)
+            {
+                scrollViewer.Offset = new Avalonia.Vector(0, 0);
+                _initialCenterPending = false;
+            }
+            else
+            {
+                double targetX = (totalW - scrollViewer.Viewport.Width) / 2.0;
+                double targetY = (totalH - scrollViewer.Viewport.Height) / 2.0;
+                scrollViewer.Offset = new Avalonia.Vector(Math.Clamp(targetX, 0, maxOffsetX), Math.Clamp(targetY, 0, maxOffsetY));
+                if (scrollViewer.Extent.Width >= totalW - 2 && scrollViewer.Extent.Height >= totalH - 2)
+                {
+                    _initialCenterPending = false;
+                }
+            }
         }
 
         private void ApplyZoomAndFocalOffset()
@@ -1187,17 +1310,21 @@ namespace snapvox.editor.forms
             else
             {
                 GetViewportPadding(_zoomFactor, out double padX, out double padY, out double scaledW, out double scaledH);
-                double maxOffsetX = Math.Max(0, (scaledW + 2 * padX) - scrollViewer.Viewport.Width);
-                double maxOffsetY = Math.Max(0, (scaledH + 2 * padY) - scrollViewer.Viewport.Height);
+                double totalW = Math.Max(scrollViewer.Viewport.Width, scaledW + 2 * padX);
+                double totalH = Math.Max(scrollViewer.Viewport.Height, scaledH + 2 * padY);
+
+                double maxOffsetX = Math.Max(0, totalW - scrollViewer.Viewport.Width);
+                double maxOffsetY = Math.Max(0, totalH - scrollViewer.Viewport.Height);
+
                 if (maxOffsetX <= 0 && maxOffsetY <= 0)
                 {
                     scrollViewer.Offset = new Avalonia.Vector(0, 0);
                 }
                 else
                 {
-                    double initialX = scaledW < scrollViewer.Viewport.Width ? 0 : padX;
-                    double initialY = scaledH < scrollViewer.Viewport.Height ? 0 : padY;
-                    scrollViewer.Offset = new Avalonia.Vector(Math.Clamp(initialX, 0, maxOffsetX), Math.Clamp(initialY, 0, maxOffsetY));
+                    double targetX = (totalW - scrollViewer.Viewport.Width) / 2.0;
+                    double targetY = (totalH - scrollViewer.Viewport.Height) / 2.0;
+                    scrollViewer.Offset = new Avalonia.Vector(Math.Clamp(targetX, 0, maxOffsetX), Math.Clamp(targetY, 0, maxOffsetY));
                 }
             }
         }
@@ -1208,10 +1335,50 @@ namespace snapvox.editor.forms
             SmoothZoomTowards(requestedZoom);
         }
 
+        private bool _initialCenterPending = true;
+
+        private void OnScrollViewerLayoutUpdated(object sender, EventArgs e)
+        {
+            if (!_initialCenterPending || _image == null) return;
+            var scroller = this.FindControl<ScrollViewer>("EditorScrollViewer");
+            if (scroller == null || scroller.Viewport.Width <= 1 || scroller.Viewport.Height <= 1) return;
+
+            GetViewportPadding(_zoomFactor, out double padX, out double padY, out double scaledW, out double scaledH);
+            double totalW = Math.Max(scroller.Viewport.Width, scaledW + 2 * padX);
+            double totalH = Math.Max(scroller.Viewport.Height, scaledH + 2 * padY);
+
+            if (scroller.Extent.Width >= totalW - 2 && scroller.Extent.Height >= totalH - 2)
+            {
+                _initialCenterPending = false;
+                double maxOffsetX = Math.Max(0, totalW - scroller.Viewport.Width);
+                double maxOffsetY = Math.Max(0, totalH - scroller.Viewport.Height);
+
+                if (maxOffsetX <= 0 && maxOffsetY <= 0)
+                {
+                    scroller.Offset = new Avalonia.Vector(0, 0);
+                }
+                else
+                {
+                    double targetX = (totalW - scroller.Viewport.Width) / 2.0;
+                    double targetY = (totalH - scroller.Viewport.Height) / 2.0;
+                    scroller.Offset = new Avalonia.Vector(Math.Clamp(targetX, 0, maxOffsetX), Math.Clamp(targetY, 0, maxOffsetY));
+                }
+            }
+        }
+
         private void OnScrollViewerSizeChanged()
         {
             if (_image == null) return;
             if (_smoothZoomTimer != null && _smoothZoomTimer.IsEnabled) return;
+            if (_initialCenterPending)
+            {
+                var scroller = this.FindControl<ScrollViewer>("EditorScrollViewer");
+                if (scroller != null && scroller.Viewport.Width > 1 && scroller.Viewport.Height > 1)
+                {
+                    CenterImageInScrollViewer();
+                    return;
+                }
+            }
             ApplyZoomAndFocalOffset();
         }
 
@@ -1243,7 +1410,7 @@ namespace snapvox.editor.forms
         private void SetClosePromptVisible(bool visible)
         {
             var prompt = this.FindControl<Grid>("ClosePromptOverlay");
-            var content = this.FindControl<DockPanel>("EditorContentRoot");
+            var content = this.FindControl<Control>("EditorContentRoot");
             if (content != null) content.IsEnabled = !visible;
             if (prompt == null) return;
 
@@ -1348,6 +1515,7 @@ namespace snapvox.editor.forms
                 if (zoomViewer != null)
                 {
                     zoomViewer.SizeChanged += (_, _) => OnScrollViewerSizeChanged();
+                    zoomViewer.LayoutUpdated += OnScrollViewerLayoutUpdated;
                 }
             }
 
@@ -1355,8 +1523,23 @@ namespace snapvox.editor.forms
             {
                 Dispatcher.UIThread.Post(AutoFitWindowToContent, DispatcherPriority.Loaded);
             }
+            else
+            {
+                Dispatcher.UIThread.Post(CenterImageInScrollViewer, DispatcherPriority.Loaded);
+            }
         }
-        private void OnWindowClosed(object sender, EventArgs e) { _smoothZoomTimer?.Stop(); CancelZoomHint(); UiClipboard.Unregister(this); ReleaseImageResources(); }
+        private void OnWindowClosed(object sender, EventArgs e) 
+        { 
+            _smoothZoomTimer?.Stop(); 
+            CancelZoomHint(); 
+            UiClipboard.Unregister(this); 
+            var zoomViewer = this.FindControl<ScrollViewer>("EditorScrollViewer");
+            if (zoomViewer != null)
+            {
+                zoomViewer.LayoutUpdated -= OnScrollViewerLayoutUpdated;
+            }
+            ReleaseImageResources(); 
+        }
 
         private string _sourceTitle;
         public async Task SetImageAsync(ImageSharpImage image, RECT captureRect, string sourceTitle = null)
@@ -1367,6 +1550,7 @@ namespace snapvox.editor.forms
             SetImageUnderLock(image);
             _zoomFactor = 1.0;
             _targetZoom = 1.0;
+            _initialCenterPending = true;
             await UpdateDisplayAsync().ConfigureAwait(true);
             PositionWindow(captureRect);
         }
@@ -1479,7 +1663,10 @@ namespace snapvox.editor.forms
                 || ReferenceEquals(control, _startHandle)
                 || ReferenceEquals(control, _endHandle)
                 || ReferenceEquals(control, _toolGhostLayer)
-                || ReferenceEquals(control, _snapGuideLayer);
+                || ReferenceEquals(control, _snapGuideLayer)
+                || ReferenceEquals(control, _snapDotsLayer)
+                || ReferenceEquals(control, _rubberBandVisual)
+                || _multiSelectionIndicators.Contains(control);
         }
 
         private readonly List<AvaloniaControl> _annotationScratch = new List<AvaloniaControl>(32);
@@ -1536,6 +1723,9 @@ namespace snapvox.editor.forms
             if (_endHandle != null) chrome.Add(_endHandle);
             if (_toolGhostLayer != null) chrome.Add(_toolGhostLayer);
             if (_snapGuideLayer != null) chrome.Add(_snapGuideLayer);
+            if (_snapDotsLayer != null) chrome.Add(_snapDotsLayer);
+            if (_rubberBandVisual != null) chrome.Add(_rubberBandVisual);
+            chrome.AddRange(_multiSelectionIndicators);
 
             var state = new List<(AvaloniaControl Control, bool WasVisible)>();
             foreach (var control in chrome)
@@ -1627,6 +1817,13 @@ namespace snapvox.editor.forms
 
         private EditorSnapshot CreateSnapshot(bool cloneImage)
         {
+            if (_selectedControl is Canvas group && group.Tag as string == "MultiSelectGroup")
+            {
+                UngroupMultiSelectGroup(group);
+                _selectedControl = null;
+                UpdateSelectionIndicator();
+            }
+
             return new EditorSnapshot
             {
                 Image = cloneImage ? WithImage(img => img.Clone(x => { })) : null,
@@ -1637,6 +1834,11 @@ namespace snapvox.editor.forms
         private async void RestoreSnapshot(EditorSnapshot snapshot)
         {
             if (snapshot == null) return;
+
+            if (_selectedControl is Canvas activeGroup && activeGroup.Tag as string == "MultiSelectGroup")
+            {
+                UngroupMultiSelectGroup(activeGroup);
+            }
 
             RemoveUserAnnotations();
             _selectedControl = null;
@@ -1650,7 +1852,17 @@ namespace snapvox.editor.forms
                 SetImageUnderLock(restored);
             }
 
-            foreach (var annotation in snapshot.Annotations) _canvas.Children.Add(annotation);
+            foreach (var annotation in snapshot.Annotations)
+            {
+                if (annotation is Canvas g && g.Tag as string == "MultiSelectGroup")
+                {
+                    UngroupMultiSelectGroup(g);
+                }
+                else
+                {
+                    _canvas.Children.Add(annotation);
+                }
+            }
             snapshot.Annotations.Clear();
 
             await UpdateDisplayAsync().ConfigureAwait(true);
@@ -1814,7 +2026,12 @@ namespace snapvox.editor.forms
             foreach (var child in source.Children.OfType<AvaloniaControl>())
             {
                 var childClone = CloneAnnotationControl(child);
-                if (childClone != null) clone.Children.Add(childClone);
+                if (childClone != null)
+                {
+                    Canvas.SetLeft(childClone, Canvas.GetLeft(child));
+                    Canvas.SetTop(childClone, Canvas.GetTop(child));
+                    clone.Children.Add(childClone);
+                }
             }
             return clone;
         }
@@ -1865,13 +2082,34 @@ namespace snapvox.editor.forms
                 TextWrapping = source.TextWrapping,
                 Tag = CloneControlTag(source.Tag),
                 IsHitTestVisible = source.IsHitTestVisible,
+                FlowDirection = source.FlowDirection,
                 TextAlignment = source.TextAlignment,
                 VerticalContentAlignment = source.VerticalContentAlignment
             };
         }
 
+        private void EnableTextBoxEditing(Border border, TextBox textBox)
+        {
+            if (textBox == null) return;
+            textBox.IsReadOnly = false;
+            textBox.CaretBrush = textBox.Foreground ?? Brushes.White;
+            textBox.Cursor = IbeamCursor;
+            textBox.Focus();
+            textBox.CaretIndex = textBox.Text?.Length ?? 0;
+        }
+
         private void AttachTextBoxBehavior(Border border, TextBox textBox, CoreConfiguration config)
         {
+            border.DoubleTapped += (s, e) =>
+            {
+                EnableTextBoxEditing(border, textBox);
+                e.Handled = true;
+            };
+            textBox.DoubleTapped += (s, e) =>
+            {
+                EnableTextBoxEditing(border, textBox);
+                e.Handled = true;
+            };
             textBox.LostFocus += (s, e) =>
             {
                 if (string.IsNullOrWhiteSpace(textBox.Text))
@@ -1894,10 +2132,12 @@ namespace snapvox.editor.forms
                 string text = textBox.Text ?? "";
                 if (!string.IsNullOrEmpty(text)) {
                     char first = text.FirstOrDefault(c => char.IsLetter(c));
-                    if (first != default && first >= 0x0590 && first <= 0x05FF) {
+                    if (first != default && ((first >= 0x0590 && first <= 0x05FF) || (first >= 0x0600 && first <= 0x06FF))) {
                         textBox.FlowDirection = FlowDirection.RightToLeft;
+                        textBox.TextAlignment = Avalonia.Media.TextAlignment.Right;
                     } else {
                         textBox.FlowDirection = FlowDirection.LeftToRight;
+                        textBox.TextAlignment = Avalonia.Media.TextAlignment.Left;
                     }
                 }
                 FitTextBoxToBorder(border, textBox);
@@ -2035,8 +2275,8 @@ namespace snapvox.editor.forms
         
         
         
-        private const double MinEditorWindowWidth = 620;
-        private const double MinEditorWindowHeight = 400;
+        private const double MinEditorWindowWidth = 880;
+        private const double MinEditorWindowHeight = 520;
 
         private bool _autoFitPending;
         private int _autoFitRetries;
@@ -2113,15 +2353,21 @@ namespace snapvox.editor.forms
             double chromeHeight = Height - scroller.Viewport.Height;
             double desiredWidth = Math.Clamp(chromeWidth + _image.Width * _zoomFactor, MinEditorWindowWidth, _autoFitMaxWidth);
             double desiredHeight = Math.Clamp(chromeHeight + _image.Height * _zoomFactor, MinEditorWindowHeight, _autoFitMaxHeight);
-            if (Math.Abs(desiredWidth - Width) <= 2 && Math.Abs(desiredHeight - Height) <= 2) return;
+            if (Math.Abs(desiredWidth - Width) <= 2 && Math.Abs(desiredHeight - Height) <= 2)
+            {
+                _initialCenterPending = true;
+                CenterImageInScrollViewer();
+                return;
+            }
 
             Width = desiredWidth;
             Height = desiredHeight;
 
-            
             double centerX = _autoFitWorkingArea.X + (_autoFitWorkingArea.Width - Width * _autoFitScaling) / 2;
             double centerY = _autoFitWorkingArea.Y + (_autoFitWorkingArea.Height - Height * _autoFitScaling) / 2;
             Position = new PixelPoint((int)centerX, (int)centerY);
+            _initialCenterPending = true;
+            Dispatcher.UIThread.Post(CenterImageInScrollViewer, DispatcherPriority.Render);
         }
 
         
@@ -2330,7 +2576,24 @@ namespace snapvox.editor.forms
                 }
 
                 _selectedControl = clicked; 
-                BringToFront(_selectedControl); 
+                if (clicked is Border b && b.Child is TextBox tb)
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        EnableTextBoxEditing(b, tb);
+                        _isDraggingSelected = false;
+                        UpdateSelectionIndicator();
+                        e.Handled = true;
+                        return;
+                    }
+                    else if (!tb.IsReadOnly)
+                    {
+                        _isDraggingSelected = false;
+                        UpdateSelectionIndicator();
+                        return;
+                    }
+                }
+
                 _isDraggingSelected = true; 
                 _dragUndoCaptured = false; 
                 _dragLastPoint = pos; 
@@ -2340,6 +2603,8 @@ namespace snapvox.editor.forms
                 if (double.IsNaN(_dragUnsnappedTop)) _dragUnsnappedTop = _selectedControl.Bounds.Y;
                 UpdateSelectionIndicator(); 
                 UpdateHoverIndicator(null);
+                HideToolGhost();
+                HideSnapHint();
                 bool altPressed = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
                 UpdateMagnetButtonState(altPressed);
                 RefreshActiveDragAltHint(altPressed);
@@ -2359,8 +2624,8 @@ namespace snapvox.editor.forms
                         existingBrush = arrowLine.Stroke ?? arrowHead?.Fill;
                     }
                 }
-                else if (_selectedControl is Border b) existingBrush = b.BorderBrush ?? b.Background;
-                else if (_selectedControl is TextBlock tb) existingBrush = tb.Foreground;
+                else if (_selectedControl is Border bShape) existingBrush = bShape.BorderBrush ?? bShape.Background;
+                else if (_selectedControl is TextBlock tbBlock) existingBrush = tbBlock.Foreground;
 
                 if (existingBrush is SolidColorBrush scb)
                 {
@@ -2393,10 +2658,10 @@ namespace snapvox.editor.forms
                 bool altPressed = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
                 UpdateMagnetButtonState(altPressed);
                 _dragLastPoint = pos;
-                RefreshActiveDragAltHint(altPressed);
-                if (_currentTool == EditorTool.Counter) { PlaceCounter(ApplyStampSnap(EditorTool.Counter, _startPoint), brush); _isDrawing = false; _ghostSettingsDirty = true; }
-                else if (_currentTool == EditorTool.Emoji) { PlaceEmoji(ApplyStampSnap(EditorTool.Emoji, _startPoint), _pendingEmoji); _isDrawing = false; _ghostSettingsDirty = true; }
-                else if (_currentTool == EditorTool.Text) { PlaceText(ApplyStampSnap(EditorTool.Text, _startPoint), brush); _isDrawing = false; }
+                HideSnapHint();
+                if (_currentTool == EditorTool.Counter) { PlaceCounter(_startPoint, brush); _isDrawing = false; _ghostSettingsDirty = true; }
+                else if (_currentTool == EditorTool.Emoji) { PlaceEmoji(_startPoint, _pendingEmoji); _isDrawing = false; _ghostSettingsDirty = true; }
+                else if (_currentTool == EditorTool.Text) { PlaceText(_startPoint, brush); _isDrawing = false; }
                 else if (_currentTool == EditorTool.FreeDraw) { _activePolyline = new Avalonia.Controls.Shapes.Polyline { Stroke = brush, StrokeThickness = _currentThickness, IsHitTestVisible = true, ZIndex = _currentZIndex++ }; Canvas.SetLeft(_activePolyline, _startPoint.X); Canvas.SetTop(_activePolyline, _startPoint.Y); _activePolyline.Points.Add(new AvaloniaPoint(0, 0)); AddAnnotation(_activePolyline); }
                 else BeginPreviewShape(_startPoint, brush);
                 e.Pointer.Capture(_canvas);
@@ -2935,7 +3200,7 @@ namespace snapvox.editor.forms
             }
         }
 
-        private AvaloniaPoint ApplyVectorConstraints(AvaloniaPoint proposed, AvaloniaPoint anchor, KeyModifiers modifiers)
+        private AvaloniaPoint ApplyVectorConstraints(AvaloniaPoint proposed, AvaloniaPoint anchor, KeyModifiers modifiers, bool allowTargetSnap = true)
         {
             var config = IniConfig.GetIniSection<CoreConfiguration>();
             if (!config.MagneticSnappingEnabled) return proposed;
@@ -2945,18 +3210,18 @@ namespace snapvox.editor.forms
                 return SnapToEightDirectionsStrict(proposed, anchor);
             }
 
-            
-            
             if (modifiers.HasFlag(KeyModifiers.Alt)) return proposed;
 
-            AvaloniaPoint snapped = SnapToNearbyTarget(proposed, anchor);
-            if (snapped != proposed) 
+            if (allowTargetSnap)
             {
-                return PullBackFromTarget(anchor, snapped);
+                AvaloniaPoint snapped = SnapToNearbyTarget(proposed, anchor);
+                if (snapped != proposed) 
+                {
+                    return PullBackFromTarget(anchor, snapped);
+                }
             }
             
-            snapped = SoftSnapToEightDirections(proposed, anchor);
-            return snapped;
+            return SoftSnapToEightDirections(proposed, anchor);
         }
 
         private static AvaloniaPoint SnapToEightDirectionsStrict(AvaloniaPoint proposed, AvaloniaPoint anchor)
@@ -2985,6 +3250,7 @@ namespace snapvox.editor.forms
             {
                 return new AvaloniaPoint(anchor.X + Math.Cos(snappedAngle) * length, anchor.Y + Math.Sin(snappedAngle) * length);
             }
+
             return proposed;
         }
 
@@ -2993,14 +3259,14 @@ namespace snapvox.editor.forms
             AvaloniaPoint? bestTarget = null;
             double bestDistance = 8.0;
 
-            var vectorTargets = BuildVectorSnapTargets();
+            var vectorTargets = BuildVectorSnapTargets(_selectedControl, proposed);
             for (int i = 0; i < vectorTargets.Count; i++)
             {
                 var target = vectorTargets[i];
-                double distance = Distance(proposed, target);
-                if (distance < bestDistance)
+                double d = Distance(proposed, target);
+                if (d < bestDistance)
                 {
-                    bestDistance = distance;
+                    bestDistance = d;
                     bestTarget = target;
                 }
             }
@@ -3017,23 +3283,38 @@ namespace snapvox.editor.forms
             return new AvaloniaPoint(target.X - dx / length * VectorSnapGap, target.Y - dy / length * VectorSnapGap);
         }
 
-        private List<AvaloniaPoint> BuildVectorSnapTargets()
+        private List<AvaloniaPoint> BuildVectorSnapTargets(AvaloniaControl activeControl = null, AvaloniaPoint? activePoint = null)
         {
             var targets = _vectorSnapScratch;
             targets.Clear();
+
+            const double proximity = 110.0;
+            Rect activeBounds = default;
+            bool hasActiveBounds = false;
+            if (activeControl != null && TryGetControlBounds(activeControl, out activeBounds))
+            {
+                hasActiveBounds = true;
+            }
+            else if (activePoint.HasValue)
+            {
+                activeBounds = new Rect(activePoint.Value.X - 1, activePoint.Value.Y - 1, 2, 2);
+                hasActiveBounds = true;
+            }
+
+            if (!hasActiveBounds) return targets;
 
             if (_image != null)
             {
                 double w = _image.Width;
                 double h = _image.Height;
-                targets.Add(new AvaloniaPoint(0, 0));
-                targets.Add(new AvaloniaPoint(w / 2, 0));
-                targets.Add(new AvaloniaPoint(w, 0));
-                targets.Add(new AvaloniaPoint(w, h / 2));
-                targets.Add(new AvaloniaPoint(w, h));
-                targets.Add(new AvaloniaPoint(w / 2, h));
-                targets.Add(new AvaloniaPoint(0, h));
-                targets.Add(new AvaloniaPoint(0, h / 2));
+                if (activeBounds.X < proximity && activeBounds.Y < proximity) targets.Add(new AvaloniaPoint(0, 0));
+                if (Math.Abs(activeBounds.X + activeBounds.Width / 2 - w / 2) < proximity && activeBounds.Y < proximity) targets.Add(new AvaloniaPoint(w / 2, 0));
+                if (activeBounds.Right > w - proximity && activeBounds.Y < proximity) targets.Add(new AvaloniaPoint(w, 0));
+                if (activeBounds.Right > w - proximity && Math.Abs(activeBounds.Y + activeBounds.Height / 2 - h / 2) < proximity) targets.Add(new AvaloniaPoint(w, h / 2));
+                if (activeBounds.Right > w - proximity && activeBounds.Bottom > h - proximity) targets.Add(new AvaloniaPoint(w, h));
+                if (Math.Abs(activeBounds.X + activeBounds.Width / 2 - w / 2) < proximity && activeBounds.Bottom > h - proximity) targets.Add(new AvaloniaPoint(w / 2, h));
+                if (activeBounds.X < proximity && activeBounds.Bottom > h - proximity) targets.Add(new AvaloniaPoint(0, h));
+                if (activeBounds.X < proximity && Math.Abs(activeBounds.Y + activeBounds.Height / 2 - h / 2) < proximity) targets.Add(new AvaloniaPoint(0, h / 2));
             }
 
             var annotations = RentAnnotationBuffer(out bool pooled);
@@ -3045,6 +3326,11 @@ namespace snapvox.editor.forms
                     var annotation = annotations[i];
                     if (ReferenceEquals(annotation, _selectedControl)) continue;
                     if (!TryGetControlBounds(annotation, out var bounds)) continue;
+
+                    double dx = Math.Max(0, Math.Max(activeBounds.X - bounds.Right, bounds.X - activeBounds.Right));
+                    double dy = Math.Max(0, Math.Max(activeBounds.Y - bounds.Bottom, bounds.Y - activeBounds.Bottom));
+                    double dist = Math.Sqrt(dx * dx + dy * dy);
+                    if (dist > proximity) continue;
 
                     bool isRound = annotation is Avalonia.Controls.Shapes.Ellipse || GetToolFromControl(annotation) == EditorTool.Counter || GetToolFromControl(annotation) == EditorTool.Emoji;
                     if (isRound)
@@ -3086,7 +3372,7 @@ namespace snapvox.editor.forms
             return targets;
         }
 
-        private void RefreshSnapTargetsList()
+        private void RefreshSnapTargetsList(AvaloniaControl activeControl = null, AvaloniaPoint? activePoint = null)
         {
             if (_snapDotsLayer == null)
             {
@@ -3094,20 +3380,31 @@ namespace snapvox.editor.forms
                 _canvas.Children.Add(_snapDotsLayer);
             }
 
-            bool shouldShow = IsVectorTool(_currentTool) || IsVectorControl(_selectedControl);
-            if (!shouldShow || _image == null)
+            bool isManipulating = (_isDraggingSelected && _selectedControl != null) ||
+                                  (_isResizing && _selectedControl != null) ||
+                                  _isDraggingStartPoint ||
+                                  _isDraggingEndPoint;
+
+            if (!isManipulating || _image == null)
+            {
+                _snapDotsLayer.IsVisible = false;
+                _snapDotTargets.Clear();
+                return;
+            }
+
+            _snapDotTargets.Clear();
+            _snapDotTargets.AddRange(BuildVectorSnapTargets(activeControl ?? _selectedControl, activePoint));
+
+            if (_snapDotTargets.Count == 0)
             {
                 _snapDotsLayer.IsVisible = false;
                 return;
             }
 
             _snapDotsLayer.IsVisible = true;
-            _snapDotTargets.Clear();
-            _snapDotTargets.AddRange(BuildVectorSnapTargets());
-
             while (_snapDotsLayer.Children.Count < _snapDotTargets.Count)
             {
-                var dot = new Avalonia.Controls.Shapes.Ellipse { Width = 6, Height = 6, IsHitTestVisible = false };
+                var dot = new Avalonia.Controls.Shapes.Ellipse { Width = 5, Height = 5, IsHitTestVisible = false };
                 _snapDotsLayer.Children.Add(dot);
             }
             while (_snapDotsLayer.Children.Count > _snapDotTargets.Count)
@@ -3118,47 +3415,57 @@ namespace snapvox.editor.forms
             for (int i = 0; i < _snapDotTargets.Count; i++)
             {
                 var dot = (Avalonia.Controls.Shapes.Ellipse)_snapDotsLayer.Children[i];
-                Canvas.SetLeft(dot, _snapDotTargets[i].X - 3);
-                Canvas.SetTop(dot, _snapDotTargets[i].Y - 3);
+                Canvas.SetLeft(dot, _snapDotTargets[i].X - 2.5);
+                Canvas.SetTop(dot, _snapDotTargets[i].Y - 2.5);
                 dot.Fill = SnapDotDimBrush;
                 dot.Stroke = null;
                 dot.StrokeThickness = 0;
-                dot.Width = 6;
-                dot.Height = 6;
+                dot.Width = 5;
+                dot.Height = 5;
                 dot.ZIndex = 0;
+                dot.IsVisible = false;
             }
         }
 
-        private void HighlightSnapDot(AvaloniaPoint? snappedPoint)
+        private void HighlightSnapDot(AvaloniaPoint? snappedPoint, AvaloniaPoint? cursorPoint = null)
         {
             if (_snapDotsLayer == null || !_snapDotsLayer.IsVisible) return;
             
             for (int i = 0; i < _snapDotTargets.Count; i++)
             {
                 var dot = (Avalonia.Controls.Shapes.Ellipse)_snapDotsLayer.Children[i];
-                bool isSnapped = snappedPoint.HasValue && Distance(_snapDotTargets[i], snappedPoint.Value) < 1.0;
+                var target = _snapDotTargets[i];
+                bool isSnapped = snappedPoint.HasValue && Distance(target, snappedPoint.Value) < 2.0;
+                double dToCursor = cursorPoint.HasValue ? Distance(target, cursorPoint.Value) : 999.0;
+                bool isNear = !isSnapped && dToCursor < 16.0;
                 
                 if (isSnapped)
                 {
-                    dot.Fill = Brushes.DeepSkyBlue;
+                    dot.IsVisible = true;
+                    dot.Fill = new SolidColorBrush(AvaloniaColor.Parse("#00E5FF"));
                     dot.Stroke = Brushes.White;
-                    dot.StrokeThickness = 1;
-                    dot.Width = 8;
-                    dot.Height = 8;
-                    Canvas.SetLeft(dot, _snapDotTargets[i].X - 4);
-                    Canvas.SetTop(dot, _snapDotTargets[i].Y - 4);
-                    dot.ZIndex = 1;
+                    dot.StrokeThickness = 2.0;
+                    dot.Width = 11;
+                    dot.Height = 11;
+                    Canvas.SetLeft(dot, target.X - 5.5);
+                    Canvas.SetTop(dot, target.Y - 5.5);
+                    dot.ZIndex = 10;
+                }
+                else if (isNear)
+                {
+                    dot.IsVisible = true;
+                    dot.Fill = new SolidColorBrush(AvaloniaColor.Parse("#00B0FF"));
+                    dot.Stroke = Brushes.White;
+                    dot.StrokeThickness = 1.0;
+                    dot.Width = 8.5;
+                    dot.Height = 8.5;
+                    Canvas.SetLeft(dot, target.X - 4.25);
+                    Canvas.SetTop(dot, target.Y - 4.25);
+                    dot.ZIndex = 5;
                 }
                 else
                 {
-                    dot.Fill = SnapDotDimBrush;
-                    dot.Stroke = null;
-                    dot.StrokeThickness = 0;
-                    dot.Width = 6;
-                    dot.Height = 6;
-                    Canvas.SetLeft(dot, _snapDotTargets[i].X - 3);
-                    Canvas.SetTop(dot, _snapDotTargets[i].Y - 3);
-                    dot.ZIndex = 0;
+                    dot.IsVisible = false;
                 }
             }
         }
@@ -3264,6 +3571,8 @@ namespace snapvox.editor.forms
             if (_vectorInfoPopup != null) _vectorInfoPopup.IsVisible = false;
         }
 
+        private void HideSnapHint() => HideVectorInfo();
+
         private void UpdateMagnetButtonState(bool altPressed)
         {
             var snapBtn = this.FindControl<Button>("SnapToggleBtn");
@@ -3307,24 +3616,10 @@ namespace snapvox.editor.forms
                     ShowSnapHint(_dragLastPoint, altPressed);
                 }
             }
-            else if (_isDrawing)
+            else
             {
-                if (IsVectorTool(_currentTool))
-                {
-                    UpdateVectorInfo(_startPoint, _dragLastPoint, altPressed);
-                }
-                else
-                {
-                    ShowSnapHint(_dragLastPoint, altPressed);
-                }
-            }
-            else if (_currentTool != EditorTool.None)
-            {
-                var config = _cachedCoreConfig ??= IniConfig.GetIniSection<CoreConfiguration>();
-                if (config.MagneticSnappingEnabled)
-                {
-                    ShowSnapHint(_dragLastPoint, altPressed);
-                }
+                HideSnapHint();
+                HideVectorInfo();
             }
         }
 
@@ -3336,29 +3631,44 @@ namespace snapvox.editor.forms
             _vectorInfoPopup.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative);
             _vectorInfoPopup.RenderTransform = new ScaleTransform(invZoom, invZoom);
 
+            string hintText;
+            double popupWidth;
+            double popupHeight = 28.0;
+
             if (altPressed)
             {
-                _vectorInfoText.Text = "⚡ Free Move (Snapping OFF)";
+                hintText = "⚡ Snapping OFF";
                 _vectorInfoPopup.BorderBrush = new SolidColorBrush(AvaloniaColor.Parse("#FFC107"));
+                popupWidth = 140.0;
             }
             else
             {
-                _vectorInfoText.Text = "🧲 Snapping Active  •  Hold [Alt] to disable";
+                hintText = "Hold [Alt] to disable snapping";
                 _vectorInfoPopup.BorderBrush = new SolidColorBrush(AvaloniaColor.Parse("#00B4D8"));
+                popupWidth = 210.0;
             }
 
-            _vectorInfoPopup.Measure(new AvaloniaSize(double.PositiveInfinity, double.PositiveInfinity));
-            double unscaledW = Math.Max(70, _vectorInfoPopup.DesiredSize.Width);
-            double unscaledH = Math.Max(24, _vectorInfoPopup.DesiredSize.Height);
-            double popupWidth = unscaledW / safeZoom;
-            double popupHeight = unscaledH / safeZoom;
+            _vectorInfoText.Width = double.NaN;
+            _vectorInfoText.Height = double.NaN;
+            _vectorInfoText.Text = hintText;
 
-            double left = pos.X + 16 / safeZoom;
-            double top = pos.Y - popupHeight - 10 / safeZoom;
+            _vectorInfoPopup.Width = popupWidth;
+            _vectorInfoPopup.Height = popupHeight;
+
+            double visualW = popupWidth * invZoom;
+            double visualH = popupHeight * invZoom;
+
+            double left = pos.X + 16 * invZoom;
+            double top = pos.Y - visualH - 8 * invZoom;
+            if (top < 0)
+            {
+                top = pos.Y + 24 * invZoom;
+            }
+
             if (_image != null)
             {
-                left = Math.Clamp(left, 0, Math.Max(0, _image.Width - popupWidth));
-                top = Math.Clamp(top, 0, Math.Max(0, _image.Height - popupHeight));
+                left = Math.Clamp(left, 0, Math.Max(0, _image.Width - visualW));
+                top = Math.Clamp(top, 0, Math.Max(0, _image.Height - visualH));
             }
             Canvas.SetLeft(_vectorInfoPopup, left);
             Canvas.SetTop(_vectorInfoPopup, top);
@@ -3378,30 +3688,43 @@ namespace snapvox.editor.forms
             double angle = Math.Atan2(end.Y - start.Y, end.X - start.X) * 180.0 / Math.PI;
             if (angle < 0) angle += 360;
 
+            string infoText;
             if (altPressed)
             {
-                _vectorInfoText.Text = $"{length:0} px  •  {angle:0}°\n⚡ Free Draw (Snapping OFF)";
+                infoText = $"{length:0} px  •  {angle:0}°\n⚡ Free Draw (Snapping OFF)";
                 _vectorInfoPopup.BorderBrush = new SolidColorBrush(AvaloniaColor.Parse("#FFC107"));
             }
             else
             {
-                _vectorInfoText.Text = $"{length:0} px  •  {angle:0}°\n🧲 Hold [Alt] to disable snap";
+                infoText = $"{length:0} px  •  {angle:0}°\n🧲 Hold [Alt] to disable snap";
                 _vectorInfoPopup.BorderBrush = new SolidColorBrush(AvaloniaColor.Parse("#00B4D8"));
             }
 
-            _vectorInfoPopup.Measure(new AvaloniaSize(double.PositiveInfinity, double.PositiveInfinity));
-            double unscaledW = Math.Max(70, _vectorInfoPopup.DesiredSize.Width);
-            double unscaledH = Math.Max(24, _vectorInfoPopup.DesiredSize.Height);
-            double popupWidth = unscaledW / safeZoom;
-            double popupHeight = unscaledH / safeZoom;
+            _vectorInfoText.Width = double.NaN;
+            _vectorInfoText.Height = double.NaN;
+            _vectorInfoText.Text = infoText;
 
-            double left = (start.X + end.X) / 2 + 12 / safeZoom;
-            double top = (start.Y + end.Y) / 2 - popupHeight - 8 / safeZoom;
+            double popupWidth = 205.0;
+            double popupHeight = 44.0;
+
+            _vectorInfoPopup.Width = popupWidth;
+            _vectorInfoPopup.Height = popupHeight;
+
+            double visualW = popupWidth * invZoom;
+            double visualH = popupHeight * invZoom;
+
+            double left = (start.X + end.X) / 2 + 12 * invZoom;
+            double top = (start.Y + end.Y) / 2 - visualH - 8 * invZoom;
+
+            if (top < 0)
+            {
+                top = (start.Y + end.Y) / 2 + 20 * invZoom;
+            }
 
             if (_image != null)
             {
-                left = Math.Clamp(left, 0, Math.Max(0, _image.Width - popupWidth));
-                top = Math.Clamp(top, 0, Math.Max(0, _image.Height - popupHeight));
+                left = Math.Clamp(left, 0, Math.Max(0, _image.Width - visualW));
+                top = Math.Clamp(top, 0, Math.Max(0, _image.Height - visualH));
             }
 
             Canvas.SetLeft(_vectorInfoPopup, left);
@@ -3725,6 +4048,27 @@ namespace snapvox.editor.forms
         {
             if (_cropModePopup == null) return;
             UpdateCropModeVisuals();
+
+            var cropButton = this.FindControl<Button>("CropTool");
+            if (cropButton != null && Bounds.Width > 0)
+            {
+                var pt = cropButton.TranslatePoint(new AvaloniaPoint(0, 0), this);
+                if (pt.HasValue)
+                {
+                    double btnLeft = pt.Value.X;
+                    const double popupWidth = 652.0;
+                    if (btnLeft + popupWidth > Bounds.Width - 10)
+                    {
+                        double overflow = (btnLeft + popupWidth) - (Bounds.Width - 10);
+                        _cropModePopup.HorizontalOffset = Math.Max(-btnLeft + 10, -overflow - 6);
+                    }
+                    else
+                    {
+                        _cropModePopup.HorizontalOffset = -6;
+                    }
+                }
+            }
+
             _cropModePopup.IsOpen = true;
         }
 
@@ -4031,11 +4375,11 @@ namespace snapvox.editor.forms
             if (_toolGhost == null)
             {
                 HideToolGhost();
+                SetEditorCursor(CrossCursor);
                 return;
             }
 
             AvaloniaPoint effective = IsStampTool(_currentTool) ? ApplyStampSnap(_currentTool, pos) : pos;
-            var config = _cachedCoreConfig ??= IniConfig.GetIniSection<CoreConfiguration>();
 
             switch (_currentTool)
             {
@@ -4045,6 +4389,7 @@ namespace snapvox.editor.forms
                     break;
                 case EditorTool.Counter: 
                 {
+                    var config = _cachedCoreConfig ??= IniConfig.GetIniSection<CoreConfiguration>();
                     double size = config.LastCounterSize > 0 ? config.LastCounterSize : 42;
                     Canvas.SetLeft(_toolGhost, effective.X - size / 2);
                     Canvas.SetTop(_toolGhost, effective.Y - size / 2);
@@ -4057,11 +4402,7 @@ namespace snapvox.editor.forms
             }
 
             _toolGhostLayer.IsVisible = true;
-            SetEditorCursor(NoneCursor); 
-            if (config.MagneticSnappingEnabled)
-            {
-                ShowSnapHint(effective, _isAltDown);
-            }
+            SetEditorCursor(NoneCursor);
         }
 
         private void RebuildToolGhost()
@@ -4111,293 +4452,14 @@ namespace snapvox.editor.forms
                     break;
                 }
 
-                case EditorTool.Text:
-                {
-                    
-                    
-                    
-                    
-                    
-                    double persistedSize = config.LastTextSize > 0 ? config.LastTextSize : 16;
-                    double sampleSize = Math.Clamp(persistedSize, 9, 20);
-                    var sample = new StackPanel
-                    {
-                        Orientation = Avalonia.Layout.Orientation.Horizontal,
-                        Spacing = 3,
-                        Margin = new Thickness(7, 0, 0, 0),
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                        IsHitTestVisible = false
-                    };
-                    sample.Children.Add(new Avalonia.Controls.Shapes.Rectangle { Width = 1.5, Height = sampleSize, Fill = brush }); 
-                    sample.Children.Add(new TextBlock { Text = "Aa", Foreground = brush, FontSize = sampleSize, FontWeight = FontWeight.SemiBold, IsHitTestVisible = false });
-                    var content = new Grid { IsHitTestVisible = false };
-                    content.Children.Add(sample);
-                    content.Children.Add(new TextBlock
-                    {
-                        Text = $"{(int)persistedSize}px",
-                        FontSize = 9,
-                        Foreground = new SolidColorBrush(AvaloniaColor.FromArgb(170, 170, 170, 170)),
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom,
-                        Margin = new Thickness(0, 0, 4, 1),
-                        IsHitTestVisible = false
-                    });
-                    _toolGhost = new Border
-                    {
-                        Width = 140,
-                        Height = 36,
-                        BorderBrush = brush,
-                        BorderThickness = new Thickness(_toolFillModes[EditorTool.Text] ? _currentThickness : 0),
-                        Background = _toolFillModes[EditorTool.Text]
-                            ? new SolidColorBrush(AvaloniaColor.FromArgb(100, 30, 30, 30))
-                            : new SolidColorBrush(AvaloniaColor.FromArgb(30, 0, 0, 0)),
-                        Opacity = 0.65,
-                        Child = content
-                    };
-                    break;
-                }
-
-                case EditorTool.FreeDraw:
-                    _toolGhost = CreatePencilGhost(brush);
-                    break;
-
-                case EditorTool.Line:
-                {
-                    
-                    
-                    
-                    
-                    
-                    var host = CreateGhostIconHost();
-                    double thickness = Math.Max(2, _currentThickness);
-                    host.Children.Add(CreateGhostOriginDot(brush));
-                    host.Children.Add(new Avalonia.Controls.Shapes.Line
-                    {
-                        StartPoint = new AvaloniaPoint(0, 0),
-                        EndPoint = new AvaloniaPoint(18, 0),
-                        Stroke = brush,
-                        StrokeThickness = thickness,
-                        StrokeLineCap = PenLineCap.Round
-                    });
-                    host.Children.Add(new Avalonia.Controls.Shapes.Line
-                    {
-                        StartPoint = new AvaloniaPoint(0, 0),
-                        EndPoint = new AvaloniaPoint(14, -14),
-                        Stroke = brush,
-                        StrokeThickness = thickness,
-                        StrokeLineCap = PenLineCap.Round
-                    });
-                    _toolGhost = host;
-                    break;
-                }
-
-                case EditorTool.Arrow:
-                    _toolGhost = CreateArrowGhostIcon(brush);
-                    break;
-
-                case EditorTool.Rectangle:
-                {
-                    var host = CreateGhostIconHost();
-                    host.Children.Add(CreateGhostOriginDot(brush));
-                    host.Children.Add(CreateCornerIconShape(new Avalonia.Controls.Shapes.Rectangle
-                    {
-                        Width = 38,
-                        Height = 26,
-                        Stroke = brush,
-                        StrokeThickness = Math.Max(1.5, _currentThickness),
-                        StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 3 },
-                        Fill = _toolFillModes[EditorTool.Rectangle] ? brush : null
-                    }));
-                    _toolGhost = host;
-                    break;
-                }
-
-                case EditorTool.Ellipse:
-                {
-                    var host = CreateGhostIconHost();
-                    host.Children.Add(CreateGhostOriginDot(brush));
-                    host.Children.Add(CreateCornerIconShape(new Avalonia.Controls.Shapes.Ellipse
-                    {
-                        Width = 38,
-                        Height = 26,
-                        Stroke = brush,
-                        StrokeThickness = Math.Max(1.5, _currentThickness),
-                        StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 3 },
-                        Fill = _toolFillModes[EditorTool.Ellipse] ? brush : null
-                    }));
-                    _toolGhost = host;
-                    break;
-                }
-
-                case EditorTool.Highlight:
-                {
-                    var host = CreateGhostIconHost();
-                    host.Children.Add(CreateGhostOriginDot(brush));
-                    host.Children.Add(CreateCornerIconShape(new Border
-                    {
-                        Width = 44,
-                        Height = 22,
-                        CornerRadius = new CornerRadius(4),
-                        Background = brush,
-                        BorderThickness = new Thickness(1),
-                        BorderBrush = new SolidColorBrush(AvaloniaColor.FromArgb(140, 0, 0, 0))
-                    }));
-                    _toolGhost = host;
-                    break;
-                }
-
-                case EditorTool.Blur:
-                {
-                    var host = CreateGhostIconHost();
-                    host.Children.Add(CreateGhostOriginDot(Brushes.DeepSkyBlue));
-                    host.Children.Add(CreateCornerIconShape(new Avalonia.Controls.Shapes.Rectangle
-                    {
-                        Width = 38,
-                        Height = 26,
-                        Fill = new SolidColorBrush(AvaloniaColor.FromArgb(120, 100, 100, 100)),
-                        Stroke = Brushes.DeepSkyBlue,
-                        StrokeThickness = 1.5,
-                        StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 3 }
-                    }));
-                    _toolGhost = host;
-                    break;
-                }
-
-                case EditorTool.Crop:
-                {
-                    var host = CreateGhostIconHost();
-                    host.Children.Add(CreateGhostOriginDot(Brushes.Yellow));
-                    host.Children.Add(CreateCornerIconShape(new Avalonia.Controls.Shapes.Rectangle
-                    {
-                        Width = 38,
-                        Height = 26,
-                        Stroke = Brushes.Yellow,
-                        StrokeThickness = 1.5,
-                        StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 3 },
-                        Fill = new SolidColorBrush(AvaloniaColor.FromArgb(40, 0, 0, 0))
-                    }));
-                    _toolGhost = host;
-                    break;
-                }
-
                 default:
+                    // Vector drawing tools (Arrow, Line, Rectangle, Ellipse, FreeDraw, Highlight, Blur, Crop)
+                    // use the clean universal crosshair cursor with zero clutter or pre-draw ghosting.
                     _toolGhost = null;
                     break;
             }
 
             if (_toolGhost != null) _toolGhostLayer.Children.Add(_toolGhost);
-        }
-
-        private Canvas CreateGhostIconHost()
-        {
-            return new Canvas
-            {
-                RenderTransform = _ghostIconScale,
-                Opacity = 0.8,
-                IsHitTestVisible = false
-            };
-        }
-
-        private static AvaloniaControl CreateCornerIconShape(AvaloniaControl shape)
-        {
-            Canvas.SetLeft(shape, 0);
-            Canvas.SetTop(shape, 0);
-            return shape;
-        }
-
-        private static AvaloniaControl CreateCenteredIconShape(AvaloniaControl shape, double width, double height)
-        {
-            Canvas.SetLeft(shape, -width / 2);
-            Canvas.SetTop(shape, -height / 2);
-            return shape;
-        }
-
-        private Canvas CreatePencilGhost(IBrush brush)
-        {
-            
-            
-            var host = CreateGhostIconHost();
-            host.Opacity = 0.9;
-            host.Children.Add(new Avalonia.Controls.Shapes.Polygon
-            {
-                Points = new List<AvaloniaPoint> { new(0, 0), new(5, -2), new(2, -5) },
-                Fill = new SolidColorBrush(AvaloniaColor.FromRgb(70, 70, 70))
-            });
-            host.Children.Add(new Avalonia.Controls.Shapes.Polygon
-            {
-                Points = new List<AvaloniaPoint> { new(5, -2), new(2, -5), new(18, -21), new(21, -18) },
-                Fill = brush,
-                Stroke = new SolidColorBrush(AvaloniaColor.FromRgb(50, 50, 50)),
-                StrokeThickness = 0.8
-            });
-            host.Children.Add(new Avalonia.Controls.Shapes.Polygon
-            {
-                Points = new List<AvaloniaPoint> { new(18, -21), new(21, -18), new(24, -21), new(21, -24) },
-                Fill = new SolidColorBrush(AvaloniaColor.FromRgb(232, 147, 140))
-            });
-            return host;
-        }
-
-        private Canvas CreateArrowGhostIcon(IBrush brush)
-        {
-            
-            
-            
-            
-            
-            var host = CreateGhostIconHost();
-            double thickness = Math.Max(2, _currentThickness);
-            host.Children.Add(CreateGhostOriginDot(brush));
-            host.Children.Add(CreateGhostArrowSegment(new AvaloniaPoint(0, 0), new AvaloniaPoint(18, 0), brush, thickness));
-            host.Children.Add(CreateGhostArrowSegment(new AvaloniaPoint(0, 0), new AvaloniaPoint(14, -14), brush, thickness));
-            return host;
-        }
-
-        private static AvaloniaControl CreateGhostOriginDot(IBrush brush)
-        {
-            
-            
-            
-            var dot = new Avalonia.Controls.Shapes.Ellipse { Width = 5, Height = 5, Fill = brush, IsHitTestVisible = false };
-            Canvas.SetLeft(dot, -2.5);
-            Canvas.SetTop(dot, -2.5);
-            return dot;
-        }
-
-        private static Canvas CreateGhostArrowSegment(AvaloniaPoint start, AvaloniaPoint end, IBrush brush, double thickness)
-        {
-            var segment = new Canvas { IsHitTestVisible = false };
-            double dx = end.X - start.X, dy = end.Y - start.Y;
-            double length = Math.Sqrt(dx * dx + dy * dy);
-            if (length < 1) return segment;
-
-            double ux = dx / length, uy = dy / length;
-            double headLength = Math.Clamp(thickness * 3.0, 6, 10);
-            double headWidth = headLength * 0.55;
-
-            
-            
-            var shaftEnd = new AvaloniaPoint(end.X - headLength * 0.6 * ux, end.Y - headLength * 0.6 * uy);
-            segment.Children.Add(new Avalonia.Controls.Shapes.Line
-            {
-                StartPoint = start,
-                EndPoint = shaftEnd,
-                Stroke = brush,
-                StrokeThickness = thickness,
-                StrokeLineCap = PenLineCap.Round
-            });
-
-            var tip = end;
-            var wing1 = new AvaloniaPoint(end.X - headLength * ux + headWidth * uy, end.Y - headLength * uy - headWidth * ux);
-            var wing2 = new AvaloniaPoint(end.X - headLength * ux - headWidth * uy, end.Y - headLength * uy + headWidth * ux);
-            segment.Children.Add(new Avalonia.Controls.Shapes.Polygon
-            {
-                Points = new List<AvaloniaPoint> { tip, wing1, wing2 },
-                Fill = brush,
-                IsHitTestVisible = false
-            });
-            return segment;
         }
 
         private void OnCanvasPointerMoved(object sender, PointerEventArgs e)
@@ -4465,6 +4527,33 @@ namespace snapvox.editor.forms
 
             if (!_isDraggingSelected && !_isResizing && !_isDraggingStartPoint && !_isDraggingEndPoint && !_isDrawing)
             {
+                if (_resizeHandles != null && _resizeHandles.Count == 4 && _resizeHandles[0].IsVisible)
+                {
+                    int hoveredHandle = -1;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var h = _resizeHandles[i];
+                        double hl = Canvas.GetLeft(h);
+                        double ht = Canvas.GetTop(h);
+                        if (!double.IsNaN(hl) && !double.IsNaN(ht) &&
+                            pos.X >= hl - 4 && pos.X <= hl + h.Width + 4 &&
+                            pos.Y >= ht - 4 && pos.Y <= ht + h.Height + 4)
+                        {
+                            hoveredHandle = i;
+                            break;
+                        }
+                    }
+
+                    if (hoveredHandle >= 0)
+                    {
+                        HideToolGhost();
+                        HideSnapGuides();
+                        HideVectorInfo();
+                        SetEditorCursor(hoveredHandle == 0 || hoveredHandle == 2 ? TopLeftCursor : TopRightCursor);
+                        return;
+                    }
+                }
+
                 if (e.Source is AvaloniaControl src && (_resizeHandles.Contains(src) || src == _startHandle || src == _endHandle)) return;
                 var hovered = FindSelectableControlAt(pos);
                 
@@ -4484,11 +4573,6 @@ namespace snapvox.editor.forms
                     if (_currentTool != EditorTool.None)
                     {
                         UpdateToolGhost(pos);
-                        var config = _cachedCoreConfig ??= IniConfig.GetIniSection<CoreConfiguration>();
-                        if (config.MagneticSnappingEnabled && !IsStampTool(_currentTool))
-                        {
-                            ShowSnapHint(pos, _isAltDown);
-                        }
                     }
                     else
                     {
@@ -4519,6 +4603,7 @@ namespace snapvox.editor.forms
             }
             if (_isDraggingStartPoint || _isDraggingEndPoint)
             {
+                HideToolGhost();
                 double dx = pos.X - _dragLastPoint.X; double dy = pos.Y - _dragLastPoint.Y;
                 if ((Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01) && !_dragUndoCaptured) { SaveUndoState(true); _dragUndoCaptured = true; }
 
@@ -4529,11 +4614,11 @@ namespace snapvox.editor.forms
                 {
                     if (_isDraggingStartPoint)
                     {
-                        start = ApplyVectorConstraints(pos, end, e.KeyModifiers);
+                        start = ApplyVectorConstraints(pos, end, e.KeyModifiers, allowTargetSnap: !altPressed);
                     }
                     else
                     {
-                        end = ApplyVectorConstraints(pos, start, e.KeyModifiers);
+                        end = ApplyVectorConstraints(pos, start, e.KeyModifiers, allowTargetSnap: !altPressed);
                     }
 
                     SetVectorAbsolutePoints(_selectedControl, start, end);
@@ -4543,18 +4628,19 @@ namespace snapvox.editor.forms
                 _dragLastPoint = pos;
                 UpdateSelectionIndicator();
                 
-                RefreshSnapTargetsList();
+                RefreshSnapTargetsList(_selectedControl, pos);
                 AvaloniaPoint? snappedPoint = null;
                 if (!altPressed)
                 {
                     var t = SnapToNearbyTarget(pos, pos);
                     if (t != pos) snappedPoint = t;
                 }
-                HighlightSnapDot(snappedPoint);
+                HighlightSnapDot(snappedPoint, pos);
                 return;
             }
             if (_isResizing && _selectedControl != null)
             {
+                HideToolGhost();
                 double dx = pos.X - _dragLastPoint.X;
                 double dy = pos.Y - _dragLastPoint.Y;
                 if ((Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01) && !_resizeUndoCaptured)
@@ -4577,10 +4663,13 @@ namespace snapvox.editor.forms
                 if (IsHighlightControl(_selectedControl)) RefreshHighlightAnnotation(_selectedControl);
                 _dragLastPoint = pos;
                 UpdateSelectionIndicator();
+                RefreshSnapTargetsList(_selectedControl, pos);
+                HighlightSnapDot(null, pos);
                 return;
             }
             if (_isDraggingSelected && _selectedControl != null)
             {
+                HideToolGhost();
                 double dx = pos.X - _dragLastPoint.X;
                 double dy = pos.Y - _dragLastPoint.Y;
                 if ((Math.Abs(dx) > 0.01 || Math.Abs(dy) > 0.01) && !_dragUndoCaptured)
@@ -4635,42 +4724,31 @@ namespace snapvox.editor.forms
                 if (IsHighlightControl(_selectedControl)) RefreshHighlightAnnotation(_selectedControl);
                 _dragLastPoint = pos;
                 UpdateSelectionIndicator();
+                RefreshSnapTargetsList(_selectedControl, pos);
+                HighlightSnapDot(snapped != new AvaloniaPoint(_dragUnsnappedLeft, _dragUnsnappedTop) ? snapped : null, pos);
                 return;
             }
             if (!_isDrawing) 
             {
-                RefreshSnapTargetsList();
-                HighlightSnapDot(null);
+                if (_snapDotsLayer != null) _snapDotsLayer.IsVisible = false;
+                _snapDotTargets.Clear();
                 return;
             }
             if (_currentTool == EditorTool.FreeDraw && _activePolyline != null) _activePolyline.Points.Add(new AvaloniaPoint(pos.X - _startPoint.X, pos.Y - _startPoint.Y));
             else
             {
-                var previewEnd = IsVectorTool(_currentTool) ? ApplyVectorConstraints(pos, _startPoint, e.KeyModifiers) : pos;
+                var previewEnd = IsVectorTool(_currentTool) ? ApplyVectorConstraints(pos, _startPoint, e.KeyModifiers, allowTargetSnap: false) : pos;
                 previewEnd = ClampRectDrawEnd(previewEnd); 
                 UpdatePreviewShape(previewEnd);
                 
                 HideSnapGuides();
-                bool altPressed = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
-                UpdateMagnetButtonState(altPressed);
+                HideSnapHint();
+                if (_snapDotsLayer != null) _snapDotsLayer.IsVisible = false;
                 _dragLastPoint = previewEnd;
                 if (IsVectorTool(_currentTool)) 
                 {
-                    UpdateVectorInfo(_startPoint, previewEnd, altPressed);
+                    UpdateVectorInfo(_startPoint, previewEnd, false);
                 }
-                else
-                {
-                    ShowSnapHint(previewEnd, altPressed);
-                }
-                
-                RefreshSnapTargetsList();
-                AvaloniaPoint? snappedPoint = null;
-                if (IsVectorTool(_currentTool) && !altPressed)
-                {
-                    var t = SnapToNearbyTarget(pos, pos);
-                    if (t != pos) snappedPoint = t;
-                }
-                HighlightSnapDot(snappedPoint);
             }
         }
 
@@ -5005,34 +5083,32 @@ namespace snapvox.editor.forms
             _isDraggingEndPoint = false;
             UpdateMagnetButtonState(false);
             e.Pointer.Capture(null);
+            HideSnapGuides();
+            HideVectorInfo();
+            HideSnapHint();
+            if (_snapDotsLayer != null) _snapDotsLayer.IsVisible = false;
+            _snapDotTargets.Clear();
 
             if (wasTransformingSelection)
             {
                 UpdateSelectionIndicator();
                 UpdateThicknessPanelVisibility();
-                HideVectorInfo();
-                HideSnapGuides();
             }
 
             if (_isDraggingSelected)
             {
                 _isDraggingSelected = false;
                 _dragUndoCaptured = false;
-                
                 UpdateSelectionIndicator();
-                HideVectorInfo();
                 return;
             }
 
             if (!_isDrawing) return;
             _isDrawing = false;
             var endPoint = e.GetPosition(_canvas);
-            if (IsVectorTool(_currentTool)) endPoint = ApplyVectorConstraints(endPoint, _startPoint, e.KeyModifiers);
+            if (IsVectorTool(_currentTool)) endPoint = ApplyVectorConstraints(endPoint, _startPoint, e.KeyModifiers, allowTargetSnap: false);
             endPoint = ClampRectDrawEnd(endPoint); 
             RemovePreviewShape();
-            HideVectorInfo();
-            
-            HideSnapGuides();
             if (_currentTool != EditorTool.FreeDraw) CommitShape(_startPoint, endPoint);
             _activePolyline = null;
         }
@@ -5267,24 +5343,103 @@ namespace snapvox.editor.forms
         private void ApplyContextToolbarContrastTheme(Border toolbar, double lum)
         {
             if (toolbar == null) return;
-            bool isDarkBackground = lum < 0.45;
 
-            toolbar.Background = isDarkBackground
-                ? new SolidColorBrush(AvaloniaColor.Parse("#F8F9FA"))
-                : new SolidColorBrush(AvaloniaColor.Parse("#1A1C20"));
+            var dupBtn = _contextDuplicateButton ??= this.FindControl<Button>("ContextDuplicateButton");
+            var delBtn = _contextDeleteButton ??= this.FindControl<Button>("ContextDeleteButton");
+            var appBtn = _contextApplyButton ??= this.FindControl<Button>("ContextApplyButton");
+            var dupIcon = _contextDuplicateIcon ??= this.FindControl<Avalonia.Controls.Shapes.Path>("ContextDuplicateIcon");
+            var delIcon = _contextDeleteIcon ??= this.FindControl<Avalonia.Controls.Shapes.Path>("ContextDeleteIcon");
+            var appIcon = _contextApplyIcon ??= this.FindControl<Avalonia.Controls.Shapes.Path>("ContextApplyIcon");
+            var sep1 = _contextApplySeparator ??= this.FindControl<Avalonia.Controls.Shapes.Rectangle>("ContextApplySeparator");
+            var sep2 = _contextDuplicateSeparator ??= this.FindControl<Avalonia.Controls.Shapes.Rectangle>("ContextDuplicateSeparator");
 
-            toolbar.BorderBrush = isDarkBackground
-                ? new SolidColorBrush(AvaloniaColor.Parse("#007ACC"))
-                : new SolidColorBrush(AvaloniaColor.Parse("#00B4D8"));
+            if (lum < 0.38)
+            {
+                // DARK background underneath -> Crisp light card with high-contrast colored iconography
+                toolbar.Background = DarkBgToolbarBg;
+                toolbar.BorderBrush = DarkBgToolbarBorder;
+                if (sep1 != null) sep1.Fill = DarkBgSep;
+                if (sep2 != null) sep2.Fill = DarkBgSep;
 
-            var separatorBrush = isDarkBackground
-                ? new SolidColorBrush(AvaloniaColor.Parse("#D0D0D0"))
-                : new SolidColorBrush(AvaloniaColor.Parse("#3E4451"));
+                if (dupBtn != null)
+                {
+                    dupBtn.Background = DarkBgDupBtnBg;
+                    dupBtn.BorderBrush = DarkBgDupBtnBorder;
+                }
+                if (dupIcon != null) dupIcon.Fill = DarkBgDupIcon;
 
-            var sep1 = this.FindControl<Avalonia.Controls.Shapes.Rectangle>("ContextApplySeparator");
-            if (sep1 != null) sep1.Fill = separatorBrush;
-            var sep2 = this.FindControl<Avalonia.Controls.Shapes.Rectangle>("ContextDuplicateSeparator");
-            if (sep2 != null) sep2.Fill = separatorBrush;
+                if (delBtn != null)
+                {
+                    delBtn.Background = DarkBgDelBtnBg;
+                    delBtn.BorderBrush = DarkBgDelBtnBorder;
+                }
+                if (delIcon != null) delIcon.Fill = DarkBgDelIcon;
+
+                if (appBtn != null)
+                {
+                    appBtn.Background = DarkBgAppBtnBg;
+                    appBtn.BorderBrush = DarkBgAppBtnBorder;
+                }
+                if (appIcon != null) appIcon.Fill = DarkBgAppIcon;
+            }
+            else if (lum > 0.65)
+            {
+                // BRIGHT / LIGHT background underneath -> Sleek dark card with luminous iconography
+                toolbar.Background = BrightBgToolbarBg;
+                toolbar.BorderBrush = BrightBgToolbarBorder;
+                if (sep1 != null) sep1.Fill = BrightBgSep;
+                if (sep2 != null) sep2.Fill = BrightBgSep;
+
+                if (dupBtn != null)
+                {
+                    dupBtn.Background = BrightBgDupBtnBg;
+                    dupBtn.BorderBrush = BrightBgDupBtnBorder;
+                }
+                if (dupIcon != null) dupIcon.Fill = BrightBgDupIcon;
+
+                if (delBtn != null)
+                {
+                    delBtn.Background = BrightBgDelBtnBg;
+                    delBtn.BorderBrush = BrightBgDelBtnBorder;
+                }
+                if (delIcon != null) delIcon.Fill = BrightBgDelIcon;
+
+                if (appBtn != null)
+                {
+                    appBtn.Background = BrightBgAppBtnBg;
+                    appBtn.BorderBrush = BrightBgAppBtnBorder;
+                }
+                if (appIcon != null) appIcon.Fill = BrightBgAppIcon;
+            }
+            else
+            {
+                // MIDTONE background (0.38 - 0.65) -> Rich dark slate with crisp white iconography
+                toolbar.Background = MidBgToolbarBg;
+                toolbar.BorderBrush = MidBgToolbarBorder;
+                if (sep1 != null) sep1.Fill = MidBgSep;
+                if (sep2 != null) sep2.Fill = MidBgSep;
+
+                if (dupBtn != null)
+                {
+                    dupBtn.Background = MidBgDupBtnBg;
+                    dupBtn.BorderBrush = MidBgDupBtnBorder;
+                }
+                if (dupIcon != null) dupIcon.Fill = MidBgDupIcon;
+
+                if (delBtn != null)
+                {
+                    delBtn.Background = MidBgDelBtnBg;
+                    delBtn.BorderBrush = MidBgDelBtnBorder;
+                }
+                if (delIcon != null) delIcon.Fill = MidBgDelIcon;
+
+                if (appBtn != null)
+                {
+                    appBtn.Background = MidBgAppBtnBg;
+                    appBtn.BorderBrush = MidBgAppBtnBorder;
+                }
+                if (appIcon != null) appIcon.Fill = MidBgAppIcon;
+            }
         }
 
         private void OnDuplicateClick(object sender, RoutedEventArgs e)
@@ -5350,15 +5505,38 @@ namespace snapvox.editor.forms
         private void OnDeleteClick(object sender, RoutedEventArgs e)
         {
             if (_selectedControl == null) return;
+            try
+            {
+                var target = _selectedControl;
+                _selectedControl = null;
+                _hoveredControl = null;
+                UpdateHoverIndicator(null);
+                _canvas?.Focus();
 
-            SaveUndoState(true);
-            DisposeAnnotationResources(_selectedControl);
-            _canvas.Children.Remove(_selectedControl);
-            _selectedControl = null;
-            UpdateSelectionIndicator();
-            UpdateThicknessPanelVisibility();
-            OverlayHelper.ShowLightToast("Deleted", this);
-            Log.Info("Object deleted via toolbar button.");
+                SaveUndoState(true);
+
+                if (target is Canvas group && group.Tag as string == "MultiSelectGroup")
+                {
+                    foreach (var child in group.Children.OfType<AvaloniaControl>().ToList())
+                    {
+                        DisposeAnnotationResources(child);
+                    }
+                }
+                else
+                {
+                    DisposeAnnotationResources(target);
+                }
+
+                _canvas?.Children.Remove(target);
+                UpdateSelectionIndicator();
+                UpdateThicknessPanelVisibility();
+                OverlayHelper.ShowLightToast("Deleted", this);
+                Log.Info("Object deleted via toolbar button.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("OnDeleteClick failed.", ex);
+            }
         }
 
         private bool IsEditorOperationInProgress => System.Threading.Volatile.Read(ref _isBusy) != 0;
@@ -5615,8 +5793,66 @@ namespace snapvox.editor.forms
             }
         }
 
-        private async void OnRotateCwClick(object sender, RoutedEventArgs e) { await RotateImageAsync(RotateMode.Rotate90); }
-        private async void OnRotateCcwClick(object sender, RoutedEventArgs e) { await RotateImageAsync(RotateMode.Rotate270); }
+        private void RotateSelectedControl(double angleDelta)
+        {
+            if (_selectedControl == null) return;
+            SaveUndoState(true);
+
+            if (IsVectorControl(_selectedControl) && TryGetVectorAbsolutePoints(_selectedControl, out var start, out var end))
+            {
+                double cx = (start.X + end.X) / 2.0;
+                double cy = (start.Y + end.Y) / 2.0;
+                double rad = angleDelta * Math.PI / 180.0;
+                double cos = Math.Cos(rad);
+                double sin = Math.Sin(rad);
+
+                double sDx = start.X - cx;
+                double sDy = start.Y - cy;
+                var newStart = new AvaloniaPoint(cx + sDx * cos - sDy * sin, cy + sDx * sin + sDy * cos);
+
+                double eDx = end.X - cx;
+                double eDy = end.Y - cy;
+                var newEnd = new AvaloniaPoint(cx + eDx * cos - eDy * sin, cy + eDx * sin + eDy * cos);
+
+                SetVectorAbsolutePoints(_selectedControl, newStart, newEnd);
+            }
+            else
+            {
+                var transform = _selectedControl.RenderTransform as RotateTransform;
+                if (transform == null)
+                {
+                    transform = new RotateTransform();
+                    _selectedControl.RenderTransform = transform;
+                    _selectedControl.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                }
+                transform.Angle = (transform.Angle + angleDelta) % 360;
+                if (transform.Angle < 0) transform.Angle += 360;
+            }
+
+            UpdateSelectionIndicator();
+            ShowUndoAvailableHint();
+            OverlayHelper.ShowLightToast($"ROTATED {Math.Abs(angleDelta)}°", this);
+        }
+
+        private async void OnRotateCwClick(object sender, RoutedEventArgs e)
+        {
+            if (_selectedControl != null)
+            {
+                RotateSelectedControl(90);
+                return;
+            }
+            await RotateImageAsync(RotateMode.Rotate90);
+        }
+
+        private async void OnRotateCcwClick(object sender, RoutedEventArgs e)
+        {
+            if (_selectedControl != null)
+            {
+                RotateSelectedControl(-90);
+                return;
+            }
+            await RotateImageAsync(RotateMode.Rotate270);
+        }
 
         private async void OnOcrClick(object sender, RoutedEventArgs e)
         {
@@ -5800,22 +6036,65 @@ namespace snapvox.editor.forms
                 int h = endY - startY;
                 if (w <= 0 || h <= 0) return 0.2;
 
-                var cropRect = new SixLabors.ImageSharp.Rectangle(startX, startY, w, h);
-                using var patch = _image.Clone(ctx => ctx.Crop(cropRect)).CloneAs<Rgba32>();
-
                 long totalLum = 0;
                 int sampleCount = 0;
-                int stepX = Math.Max(1, patch.Width / 10);
-                int stepY = Math.Max(1, patch.Height / 10);
+                int stepX = Math.Max(1, w / 10);
+                int stepY = Math.Max(1, h / 10);
 
-                for (int py = 0; py < patch.Height; py += stepY)
+                if (_image is Image<Bgra32> bgra)
                 {
-                    for (int px = 0; px < patch.Width; px += stepX)
+                    for (int py = startY; py < endY; py += stepY)
                     {
-                        var pixel = patch[px, py];
-                        double lum = 0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B;
-                        totalLum += (long)lum;
-                        sampleCount++;
+                        for (int px = startX; px < endX; px += stepX)
+                        {
+                            var pixel = bgra[px, py];
+                            double lum = 0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B;
+                            totalLum += (long)lum;
+                            sampleCount++;
+                        }
+                    }
+                }
+                else if (_image is Image<Rgba32> rgba)
+                {
+                    for (int py = startY; py < endY; py += stepY)
+                    {
+                        for (int px = startX; px < endX; px += stepX)
+                        {
+                            var pixel = rgba[px, py];
+                            double lum = 0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B;
+                            totalLum += (long)lum;
+                            sampleCount++;
+                        }
+                    }
+                }
+                else if (_image is Image<Rgb24> rgb)
+                {
+                    for (int py = startY; py < endY; py += stepY)
+                    {
+                        for (int px = startX; px < endX; px += stepX)
+                        {
+                            var pixel = rgb[px, py];
+                            double lum = 0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B;
+                            totalLum += (long)lum;
+                            sampleCount++;
+                        }
+                    }
+                }
+                else
+                {
+                    var cropRect = new SixLabors.ImageSharp.Rectangle(startX, startY, w, h);
+                    using var patch = _image.Clone(ctx => ctx.Crop(cropRect)).CloneAs<Rgba32>();
+                    int pStepX = Math.Max(1, patch.Width / 10);
+                    int pStepY = Math.Max(1, patch.Height / 10);
+                    for (int py = 0; py < patch.Height; py += pStepY)
+                    {
+                        for (int px = 0; px < patch.Width; px += pStepX)
+                        {
+                            var pixel = patch[px, py];
+                            double lum = 0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B;
+                            totalLum += (long)lum;
+                            sampleCount++;
+                        }
                     }
                 }
 
@@ -6408,12 +6687,14 @@ namespace snapvox.editor.forms
             if (control is Avalonia.Controls.Shapes.Shape s) { 
                 if (s is Avalonia.Controls.Shapes.Rectangle r && r.Tag is HighlightProperties highlightProps)
                 {
-                    
                     highlightProps.Color = AvaloniaColor.FromArgb(255, color.R, color.G, color.B);
                     RefreshHighlightAnnotation(r);
                 }
-                else if (s is Avalonia.Controls.Shapes.Rectangle r2 && r2.Fill != null) r2.Fill = targetBrush; 
-                else s.Stroke = brush; 
+                else
+                {
+                    if (s.Fill != null) s.Fill = targetBrush;
+                    if (s.Stroke != null || s.Fill == null) s.Stroke = brush;
+                }
             }
             else if (control is Border b) { 
                 if (b.Child is TextBlock) b.Background = brush; 
@@ -6430,6 +6711,13 @@ namespace snapvox.editor.forms
                 }
 
                 if (TryGetVectorAbsolutePoints(c, out var start, out var end)) UpdateArrowVisuals(c, start, end);
+            }
+            else if (control is Canvas group && group.Tag as string == "MultiSelectGroup")
+            {
+                foreach (var child in group.Children.OfType<AvaloniaControl>())
+                {
+                    UpdateControlColor(child, color);
+                }
             }
         }
 

@@ -128,7 +128,7 @@
          chevron arrows with hover/press feedback. Applied per-scrollviewer via
          ScrollBar[Orientation=...] Theme styles (see ImageEditorWindow.axaml). -->
     <ControlTheme x:Key="SnapVoxScrollBarThumb" TargetType="Thumb">
-        <Setter Property="Background" Value="#78C8C8C8" />
+        <Setter Property="Background" Value="#FF707074" />
         <Setter Property="CornerRadius" Value="3" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
@@ -136,15 +136,19 @@
                 <ControlTemplate>
                     <Border x:Name="ThumbBorder"
                             Background="{TemplateBinding Background}"
+                            BorderBrush="#FF48484C"
+                            BorderThickness="1"
                             CornerRadius="{TemplateBinding CornerRadius}" />
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
         <Style Selector="^:pointerover /template/ Border#ThumbBorder">
-            <Setter Property="Background" Value="#B4DCDCDC" />
+            <Setter Property="Background" Value="#FF9E9EA4" />
+            <Setter Property="BorderBrush" Value="#FF606066" />
         </Style>
         <Style Selector="^:pressed /template/ Border#ThumbBorder">
             <Setter Property="Background" Value="#FFFFFFFF" />
+            <Setter Property="BorderBrush" Value="#FFAAAAAF" />
         </Style>
     </ControlTheme>
 
@@ -171,10 +175,10 @@
             </Setter.Value>
         </Setter>
         <Style Selector="^:pointerover /template/ Border#ArrowBorder">
-            <Setter Property="Background" Value="#33FFFFFF" />
+            <Setter Property="Background" Value="#FF3A3A3E" />
         </Style>
         <Style Selector="^:pressed /template/ Border#ArrowBorder">
-            <Setter Property="Background" Value="#55FFFFFF" />
+            <Setter Property="Background" Value="#FF505056" />
         </Style>
     </ControlTheme>
 
@@ -196,16 +200,12 @@
 
     <!-- ScrollBar wires its scrolling behaviour to the PART_* named buttons/track below;
          it exposes no command properties in Avalonia 11. -->
-    <!-- ISSUE_031 (scrollbar width & arrow proportions): the bars were 14px while the arrow
-         cells were 16px, and the chevrons were tiny 6px glyphs with a hairline stroke - the
-         arrows looked squashed and out of proportion with the bar itself. Bars are now 18px
-         with 18x18 square arrow cells and chevrons drawn to the bar's own scale (8px span,
-         2px stroke) so bar and arrows stay proportional. -->
     <ControlTheme x:Key="SnapVoxScrollBarVertical" TargetType="ScrollBar">
         <Setter Property="Width" Value="24" />
         <Setter Property="MinWidth" Value="24" />
-        <Setter Property="Background" Value="#262D2D30" />
-        <Setter Property="Foreground" Value="#D6D6D6" />
+        <Setter Property="Background" Value="#FF1E1E22" />
+        <Setter Property="Foreground" Value="#FFE0E0E0" />
+        <Setter Property="Opacity" Value="1.0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="AllowAutoHide" Value="False" />
         <Setter Property="Template">
@@ -217,6 +217,7 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="24" />
                         </Grid.RowDefinitions>
+                        <Border Grid.RowSpan="3" BorderBrush="#FF2E2E32" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
                         <RepeatButton Grid.Row="0" Name="PART_LineUpButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="3,3,0,0" Cursor="Hand">
                             <Path Data="M 5 11 L 9 7 L 13 11" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
                         </RepeatButton>
@@ -253,8 +254,9 @@
     <ControlTheme x:Key="SnapVoxScrollBarHorizontal" TargetType="ScrollBar">
         <Setter Property="Height" Value="24" />
         <Setter Property="MinHeight" Value="24" />
-        <Setter Property="Background" Value="#262D2D30" />
-        <Setter Property="Foreground" Value="#D6D6D6" />
+        <Setter Property="Background" Value="#FF1E1E22" />
+        <Setter Property="Foreground" Value="#FFE0E0E0" />
+        <Setter Property="Opacity" Value="1.0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="AllowAutoHide" Value="False" />
         <Setter Property="Template">
@@ -266,6 +268,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="24" />
                         </Grid.ColumnDefinitions>
+                        <Border Grid.ColumnSpan="3" BorderBrush="#FF2E2E32" BorderThickness="0,1,0,0" IsHitTestVisible="False" />
                         <RepeatButton Grid.Column="0" Name="PART_LineLeftButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="3,0,0,3" Cursor="Hand">
                             <Path Data="M 11 5 L 7 9 L 11 13" Stroke="{TemplateBinding Foreground}" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
                         </RepeatButton>
