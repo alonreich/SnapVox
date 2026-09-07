@@ -25,9 +25,21 @@ namespace snapvox.helpers
     {
         private static readonly ILog Log = LogHelper.GetLogger(typeof(CaptureHelper));
 
-        /// <summary>Hardcoded snip frame: 3px navy (#000080) on every capture path.</summary>
-        public const int FrameBorderThickness = 3;
-        private static readonly SixLabors.ImageSharp.Color FrameBorderColor = SixLabors.ImageSharp.Color.FromRgb(0, 0, 128);
+        public static int FrameBorderThickness => Config?.FrameBorderThickness > 0 ? Config.FrameBorderThickness : 4;
+        public static SixLabors.ImageSharp.Color GetFrameBorderColor()
+        {
+            string hex = Config?.FrameBorderColor?.Trim();
+            if (!string.IsNullOrEmpty(hex))
+            {
+                try
+                {
+                    if (!hex.StartsWith("#")) hex = "#" + hex;
+                    return SixLabors.ImageSharp.Color.ParseHex(hex);
+                }
+                catch { }
+            }
+            return SixLabors.ImageSharp.Color.FromRgb(0x43, 0x43, 0x43);
+        }
 
         private static readonly object LastRegionSync = new object();
         private static RECT _lastRegion = RECT.Empty;
@@ -180,7 +192,6 @@ namespace snapvox.helpers
 
                             try
                             {
-                                if (addFrameBorders) ApplyFrameBorder(slice);
                                 slices.Add((screen.Bounds, snapvox.editor.helpers.ImageSharpAvaloniaHelper.ToAvaloniaBitmap(slice)));
                             }
                             finally
@@ -582,7 +593,7 @@ namespace snapvox.helpers
 
             image.Mutate(x => x
                 .Crop(new Rectangle(thickness, thickness, width - thickness * 2, height - thickness * 2))
-                .Pad(width, height, FrameBorderColor));
+                .Pad(width, height, GetFrameBorderColor()));
         }
 
         private static Rectangle ClampCropRectangle(Rectangle rectangle, int imageWidth, int imageHeight)

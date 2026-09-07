@@ -1458,9 +1458,11 @@ namespace snapvox.forms
 
                 ImageSharpImage imageForEditor = owned;
                 owned = null;
+                string targetTitle = windowHandle != IntPtr.Zero ? Win32WindowHelper.GetWindowTitle(windowHandle) : null;
+                if (string.IsNullOrWhiteSpace(targetTitle)) targetTitle = CaptureHelper.LastActiveWindowTitle;
                 try
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, rect));
+                    await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, rect, targetTitle));
                 }
                 finally
                 {
@@ -1479,7 +1481,7 @@ namespace snapvox.forms
             }
         }
 
-        private static async Task ShowEditorForOwnedImageAsync(ImageSharpImage image, RECT rect)
+        private static async Task ShowEditorForOwnedImageAsync(ImageSharpImage image, RECT rect, string targetTitle = null)
         {
             ImageSharpImage imageForEditor = image;
             snapvox.editor.forms.ImageEditorWindow editor = null;
@@ -1489,7 +1491,7 @@ namespace snapvox.forms
 
                 // Load and size the snip BEFORE the window becomes visible, and await it so a
                 // failure surfaces instead of disappearing into an unobserved task.
-                await editor.SetImageAsync(imageForEditor, rect, CaptureHelper.LastActiveWindowTitle).ConfigureAwait(true);
+                await editor.SetImageAsync(imageForEditor, rect, targetTitle ?? CaptureHelper.LastActiveWindowTitle).ConfigureAwait(true);
                 imageForEditor = null;
                 editor.Show();
             }

@@ -86,8 +86,8 @@
     <Color x:Key="SnapVoxSuccessHoverColor">#1F8B24</Color>
     <SolidColorBrush x:Key="SnapVoxSuccessHoverBrush" Color="{StaticResource SnapVoxSuccessHoverColor}" />
 
-    <!-- ── Snip frame (ISSUE_009: mandated #000080 navy) ── -->
-    <Color x:Key="SnapVoxFrameBorderColor">#000080</Color>
+    <!-- ── Snip frame (default #434343) ── -->
+    <Color x:Key="SnapVoxFrameBorderColor">#434343</Color>
     <SolidColorBrush x:Key="SnapVoxFrameBorderBrush" Color="{StaticResource SnapVoxFrameBorderColor}" />
 
     <!-- ── Checkerboard tile colors ── -->
@@ -130,6 +130,7 @@
     <ControlTheme x:Key="SnapVoxScrollBarThumb" TargetType="Thumb">
         <Setter Property="Background" Value="#78C8C8C8" />
         <Setter Property="CornerRadius" Value="3" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
@@ -153,6 +154,7 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">
@@ -181,6 +183,7 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
@@ -203,11 +206,12 @@
         <Setter Property="MinWidth" Value="24" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="AllowAutoHide" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
-                    <Grid Background="{TemplateBinding Background}" MinWidth="24">
+                    <Grid Background="{TemplateBinding Background}" MinWidth="24" Cursor="Hand">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="24" />
                             <RowDefinition Height="*" />
@@ -218,15 +222,15 @@
                         </RepeatButton>
                         <Track Grid.Row="1" Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical"
                                Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
-                               Value="{TemplateBinding Value, Mode=TwoWay}" ViewportSize="{TemplateBinding ViewportSize}">
+                               Value="{TemplateBinding Value, Mode=TwoWay}" ViewportSize="{TemplateBinding ViewportSize}" Cursor="Hand">
                             <Track.DecreaseButton>
-                                <RepeatButton Name="PART_PageUpButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" />
+                                <RepeatButton Name="PART_PageUpButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" Cursor="Hand" />
                             </Track.DecreaseButton>
                             <Track.Thumb>
-                                <Thumb Theme="{StaticResource SnapVoxScrollBarThumb}" MinHeight="24" Margin="1,0" />
+                                <Thumb Theme="{StaticResource SnapVoxScrollBarThumb}" MinHeight="24" Margin="1,0" Cursor="Hand" />
                             </Track.Thumb>
                             <Track.IncreaseButton>
-                                <RepeatButton Name="PART_PageDownButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" />
+                                <RepeatButton Name="PART_PageDownButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" Cursor="Hand" />
                             </Track.IncreaseButton>
                         </Track>
                         <RepeatButton Grid.Row="2" Name="PART_LineDownButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="0,0,3,3" Cursor="Hand">
@@ -251,11 +255,12 @@
         <Setter Property="MinHeight" Value="24" />
         <Setter Property="Background" Value="#262D2D30" />
         <Setter Property="Foreground" Value="#D6D6D6" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="AllowAutoHide" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate>
-                    <Grid Background="{TemplateBinding Background}" MinHeight="24">
+                    <Grid Background="{TemplateBinding Background}" MinHeight="24" Cursor="Hand">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="24" />
                             <ColumnDefinition Width="*" />
@@ -266,15 +271,15 @@
                         </RepeatButton>
                         <Track Grid.Column="1" Name="PART_Track" Orientation="Horizontal"
                                Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
-                               Value="{TemplateBinding Value, Mode=TwoWay}" ViewportSize="{TemplateBinding ViewportSize}">
+                               Value="{TemplateBinding Value, Mode=TwoWay}" ViewportSize="{TemplateBinding ViewportSize}" Cursor="Hand">
                             <Track.DecreaseButton>
-                                <RepeatButton Name="PART_PageLeftButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" />
+                                <RepeatButton Name="PART_PageLeftButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" Cursor="Hand" />
                             </Track.DecreaseButton>
                             <Track.Thumb>
-                                <Thumb Theme="{StaticResource SnapVoxScrollBarThumb}" MinWidth="24" Margin="0,1" />
+                                <Thumb Theme="{StaticResource SnapVoxScrollBarThumb}" MinWidth="24" Margin="0,1" Cursor="Hand" />
                             </Track.Thumb>
                             <Track.IncreaseButton>
-                                <RepeatButton Name="PART_PageRightButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" />
+                                <RepeatButton Name="PART_PageRightButton" Theme="{StaticResource SnapVoxScrollBarPage}" Interval="60" Delay="250" Cursor="Hand" />
                             </Track.IncreaseButton>
                         </Track>
                         <RepeatButton Grid.Column="2" Name="PART_LineRightButton" Theme="{StaticResource SnapVoxScrollBarArrow}" Interval="60" Delay="250" CornerRadius="0,3,3,0" Cursor="Hand">

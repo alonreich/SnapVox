@@ -2,28 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="snapvox.App"
              RequestedThemeVariant="Dark">
-    <Application.Styles>
-        <FluentTheme />
-        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
-        <Style Selector="ScrollBar">
-            <Setter Property="AllowAutoHide" Value="False" />
-        </Style>
-        <Style Selector="ScrollBar[Orientation=Vertical]">
-            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarVertical}" />
-        </Style>
-        <Style Selector="ScrollBar[Orientation=Horizontal]">
-            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarHorizontal}" />
-        </Style>
-        <Style Selector="FlyoutPresenter ScrollBar">
-            <Setter Property="AllowAutoHide" Value="False" />
-        </Style>
-        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Vertical]">
-            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarVertical}" />
-        </Style>
-        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Horizontal]">
-            <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarHorizontal}" />
-        </Style>
-    </Application.Styles>
     <!-- Shared design system: single source of truth for colors/fonts/sizes (ISSUE_001) -->
     <Application.Resources>
         <ResourceDictionary>
@@ -32,6 +10,29 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
+        <Style Selector="ScrollBar">
+            <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+        <Style Selector="ScrollBar[Orientation=Vertical]">
+            <Setter Property="Theme" Value="{DynamicResource SnapVoxScrollBarVertical}" />
+        </Style>
+        <Style Selector="ScrollBar[Orientation=Horizontal]">
+            <Setter Property="Theme" Value="{DynamicResource SnapVoxScrollBarHorizontal}" />
+        </Style>
+        <Style Selector="FlyoutPresenter ScrollBar">
+            <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Vertical]">
+            <Setter Property="Theme" Value="{DynamicResource SnapVoxScrollBarVertical}" />
+        </Style>
+        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Horizontal]">
+            <Setter Property="Theme" Value="{DynamicResource SnapVoxScrollBarHorizontal}" />
+        </Style>
+    </Application.Styles>
 
     <TrayIcon.Icons>
         <TrayIcons>

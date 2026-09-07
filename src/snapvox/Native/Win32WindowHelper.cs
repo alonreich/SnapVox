@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using snapvox.native.foundation;
@@ -14,11 +14,27 @@ namespace snapvox.native
         
         public static string GetActiveWindowTitle()
         {
-            IntPtr hwnd = GetForegroundWindow();
+            return GetWindowTitle(GetForegroundWindow());
+        }
+
+        public static string GetWindowTitle(IntPtr hwnd)
+        {
             if (hwnd == IntPtr.Zero) return null;
             var sb = new StringBuilder(256);
             if (GetWindowText(hwnd, sb, sb.Capacity) > 0)
-                return sb.ToString();
+            {
+                string title = sb.ToString().Trim();
+                if (!string.IsNullOrEmpty(title)) return title;
+            }
+            IntPtr root = GetAncestor(hwnd, GA_ROOT);
+            if (root != IntPtr.Zero && root != hwnd)
+            {
+                if (GetWindowText(root, sb, sb.Capacity) > 0)
+                {
+                    string rootTitle = sb.ToString().Trim();
+                    if (!string.IsNullOrEmpty(rootTitle)) return rootTitle;
+                }
+            }
             return null;
         }
 
@@ -248,44 +264,62 @@ namespace snapvox.native
         public static RECT GetSnappableWindow(POINT point, out IntPtr rootWindowHandle)
         {
             rootWindowHandle = IntPtr.Zero;
-            IntPtr hWnd = GetRootWindowHandle(point);
-            if (hWnd == IntPtr.Zero) return RECT.Empty;
+            IntPtr childHWnd = ResolveWindowAtPoint(point);
+            if (childHWnd == IntPtr.Zero) return RECT.Empty;
+
+            IntPtr rootHWnd = GetAncestor(childHWnd, GA_ROOT);
+            if (rootHWnd == IntPtr.Zero) rootHWnd = childHWnd;
 
             Span<char> classBuffer = stackalloc char[MaxClassNameLength];
-            ReadOnlySpan<char> className = classBuffer.Slice(0, ReadClassName(hWnd, classBuffer));
-            if (IsShellSurfaceClass(className))
+            ReadOnlySpan<char> rootClassName = classBuffer.Slice(0, ReadClassName(rootHWnd, classBuffer));
+            if (IsShellSurfaceClass(rootClassName) || IsNonSnappableClass(rootClassName) || IsCloakedWindow(rootHWnd))
             {
                 return RECT.Empty;
             }
 
-            if (IsNonSnappableClass(className) || IsCloakedWindow(hWnd))
-            {
-                return RECT.Empty;
-            }
+            if (rootHWnd == GetDesktopWindow() || rootHWnd == GetShellWindow()) return RECT.Empty;
 
-            if (hWnd == GetDesktopWindow() || hWnd == GetShellWindow()) return RECT.Empty;
-
-            if (GetWindowRectActual(hWnd, out RECT rect))
+            RECT rootRect = RECT.Empty;
+            bool hasRootRect = GetWindowRectActual(rootHWnd, out rootRect);
+            if (hasRootRect)
             {
-                
-                
-                rect = ClampRectToMonitor(hWnd, rect);
+                rootRect = ClampRectToMonitor(rootHWnd, rootRect);
                 int virtualW = GetSystemMetrics(78);
                 int virtualH = GetSystemMetrics(79);
-                if (rect.Width >= virtualW && rect.Height >= virtualH) return RECT.Empty;
-
-                
-                
-                
-                
-                
-                
-                
-                if (IsDesktopSurfaceWindow(hWnd, rect)) return RECT.Empty;
-
-                rootWindowHandle = hWnd;
-                return rect;
+                if (rootRect.Width >= virtualW && rootRect.Height >= virtualH) return RECT.Empty;
+                if (IsDesktopSurfaceWindow(rootHWnd, rootRect)) return RECT.Empty;
             }
+
+            // Check if there is a distinct, valid child control/window at this point
+            if (childHWnd != rootHWnd && childHWnd != IntPtr.Zero && IsWindowVisible(childHWnd))
+            {
+                ReadOnlySpan<char> childClassName = classBuffer.Slice(0, ReadClassName(childHWnd, classBuffer));
+                if (!IsShellSurfaceClass(childClassName) && !IsNonSnappableClass(childClassName) && !IsCloakedWindow(childHWnd))
+                {
+                    if (GetWindowRect(childHWnd, out RECT childRect))
+                    {
+                        childRect = ClampRectToMonitor(childHWnd, childRect);
+                        if (childRect.Width >= 16 && childRect.Height >= 12 &&
+                            point.X >= childRect.Left && point.X < childRect.Right &&
+                            point.Y >= childRect.Top && point.Y < childRect.Bottom)
+                        {
+                            // If child is smaller than root window (e.g. control, pane, toolbar), snap to control
+                            if (!hasRootRect || ((long)childRect.Width * childRect.Height < (long)rootRect.Width * rootRect.Height * 98 / 100))
+                            {
+                                rootWindowHandle = childHWnd;
+                                return childRect;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (hasRootRect)
+            {
+                rootWindowHandle = rootHWnd;
+                return rootRect;
+            }
+
             return RECT.Empty;
         }
 

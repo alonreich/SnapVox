@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -13,6 +13,7 @@ using snapvox.foundation.core.AvaloniaShims;
 using snapvox.editor.helpers;
 using System.Linq;
 using System.Threading.Tasks;
+using AvaloniaColor = Avalonia.Media.Color;
 
 namespace snapvox.Forms
 {
@@ -73,7 +74,36 @@ namespace snapvox.Forms
             if (chkCloseEditor != null) chkCloseEditor.IsChecked = _config.CloseEditorOnAction;
 
             var chkAddBorder = this.FindControl<CheckBox>("ChkAddBorder");
-            if (chkAddBorder != null) chkAddBorder.IsChecked = _config.AddFrameBorders;
+            var frameBorderPanel = this.FindControl<StackPanel>("FrameBorderOptionsPanel");
+            var numThickness = this.FindControl<NumericUpDown>("NumFrameBorderThickness");
+            var txtBorderHex = this.FindControl<TextBox>("TxtFrameBorderColorHex");
+            var previewBorder = this.FindControl<Border>("FrameBorderColorPreview");
+
+            if (chkAddBorder != null)
+            {
+                chkAddBorder.IsChecked = _config.AddFrameBorders;
+                if (frameBorderPanel != null) frameBorderPanel.IsEnabled = _config.AddFrameBorders;
+                chkAddBorder.IsCheckedChanged += (_, _) =>
+                {
+                    if (frameBorderPanel != null) frameBorderPanel.IsEnabled = chkAddBorder.IsChecked ?? true;
+                };
+            }
+            if (numThickness != null) numThickness.Value = _config.FrameBorderThickness > 0 ? _config.FrameBorderThickness : 4;
+            if (txtBorderHex != null)
+            {
+                txtBorderHex.Text = string.IsNullOrWhiteSpace(_config.FrameBorderColor) ? "#434343" : _config.FrameBorderColor;
+                txtBorderHex.TextChanged += (_, _) =>
+                {
+                    if (previewBorder != null && AvaloniaColor.TryParse(txtBorderHex.Text?.Trim() ?? "", out var parsed))
+                    {
+                        previewBorder.Background = new SolidColorBrush(parsed);
+                    }
+                };
+            }
+            if (previewBorder != null && AvaloniaColor.TryParse(_config.FrameBorderColor, out var initialColor))
+            {
+                previewBorder.Background = new SolidColorBrush(initialColor);
+            }
 
             var chkLeavePictureAsIs = this.FindControl<CheckBox>("ChkLeavePictureAsIs");
             if (chkLeavePictureAsIs != null) chkLeavePictureAsIs.IsChecked = _config.LeavePictureAsIsDuringOcr;
@@ -506,6 +536,20 @@ namespace snapvox.Forms
                 var chkAddBorder = this.FindControl<CheckBox>("ChkAddBorder");
                 if (chkAddBorder != null) _config.AddFrameBorders = chkAddBorder.IsChecked ?? true;
 
+                var numThickness = this.FindControl<NumericUpDown>("NumFrameBorderThickness");
+                if (numThickness != null && numThickness.Value.HasValue)
+                {
+                    _config.FrameBorderThickness = Math.Clamp((int)numThickness.Value.Value, 1, 50);
+                }
+
+                var txtBorderHex = this.FindControl<TextBox>("TxtFrameBorderColorHex");
+                if (txtBorderHex != null && !string.IsNullOrWhiteSpace(txtBorderHex.Text))
+                {
+                    string hex = txtBorderHex.Text.Trim();
+                    if (!hex.StartsWith("#")) hex = "#" + hex;
+                    _config.FrameBorderColor = hex;
+                }
+
                 var chkLeavePictureAsIs = this.FindControl<CheckBox>("ChkLeavePictureAsIs");
                 if (chkLeavePictureAsIs != null) _config.LeavePictureAsIsDuringOcr = chkLeavePictureAsIs.IsChecked ?? false;
 
@@ -579,6 +623,20 @@ namespace snapvox.Forms
             finally
             {
                 _saveInProgress = false;
+            }
+        }
+
+        private void OnFrameBorderColorPresetClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string hex)
+            {
+                var txtBorderHex = this.FindControl<TextBox>("TxtFrameBorderColorHex");
+                var previewBorder = this.FindControl<Border>("FrameBorderColorPreview");
+                if (txtBorderHex != null) txtBorderHex.Text = hex;
+                if (previewBorder != null && AvaloniaColor.TryParse(hex, out var color))
+                {
+                    previewBorder.Background = new SolidColorBrush(color);
+                }
             }
         }
     }

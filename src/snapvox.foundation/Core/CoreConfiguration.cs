@@ -1,4 +1,4 @@
-﻿
+
 using snapvox.native;
 using snapvox.native.foundation;
 using System;
@@ -115,6 +115,12 @@ namespace snapvox.foundation.core
         [IniProperty("AddFrameBorders", Description = "Add Frame Borders to Snips.", DefaultValue = "true")]
         public bool AddFrameBorders { get; set; } = true;
 
+        [IniProperty("FrameBorderColor", Description = "Color of the frame border added to snips.", DefaultValue = "#434343")]
+        public string FrameBorderColor { get; set; } = "#434343";
+
+        [IniProperty("FrameBorderThickness", Description = "Thickness in pixels of the frame border added to snips.", DefaultValue = "4")]
+        public int FrameBorderThickness { get; set; } = 4;
+
         [IniProperty("BypassScreenTintOverlays", Description = "Capture true colours by excluding full-screen night-mode / warm-light tinting overlays (f.lux software mode, Iris, SunsetScreen and similar) from the shot.", DefaultValue = "true")]
         public bool BypassScreenTintOverlays { get; set; } = true;
 
@@ -177,6 +183,12 @@ namespace snapvox.foundation.core
 
         [IniProperty("LastTextSize", DefaultValue = "20")]
         public double LastTextSize { get; set; } = 20;
+
+        [IniProperty("LastTextBoxWidth", DefaultValue = "0")]
+        public double LastTextBoxWidth { get; set; } = 0;
+
+        [IniProperty("LastTextBoxHeight", DefaultValue = "0")]
+        public double LastTextBoxHeight { get; set; } = 0;
 
         [IniProperty("LastEmojiSize", DefaultValue = "60")]
         public double LastEmojiSize { get; set; } = 60.0;
