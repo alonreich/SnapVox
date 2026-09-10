@@ -12,21 +12,21 @@
         SizeToContent="WidthAndHeight">
     <Panel Margin="30">
         <Border Name="NotificationChrome"
-                Background="#E6181A1F"
+                Background="{DynamicResource SnapVoxPanelDarkBrush}"
                 CornerRadius="12"
                 Padding="32,16"
-                BorderBrush="#00B4D8"
+                BorderBrush="{DynamicResource SnapVoxAccentBrush}"
                 BorderThickness="2"
                 BoxShadow="0 8 28 0 #B3000000">
             <StackPanel Name="NotificationPanel" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <TextBlock Name="NotificationIcon"
                            Text="&#xE73E;"
                            FontFamily="Segoe MDL2 Assets, Segoe Fluent Icons, Segoe UI Symbol, $Default"
-                           Foreground="#FFFFFF"
+                           Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
                            VerticalAlignment="Center"
                            FontSize="26"/>
                 <TextBlock Name="NotificationText"
-                           Foreground="#FFFFFF"
+                           Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
                            FontSize="20"
                            FontWeight="Bold"
                            VerticalAlignment="Center"/>

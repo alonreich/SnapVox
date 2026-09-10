@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace snapvox.editor.helpers
 {
-    public static class ScreenColorSampler
+    public static partial class ScreenColorSampler
     {
         public static async Task<Color?> PickColorAsync()
         {
@@ -38,6 +38,7 @@ namespace snapvox.editor.helpers
 
             samplerWindow.Width = bounds.Width / scaling;
             samplerWindow.Height = bounds.Height / scaling;
+            snapvox.foundation.core.UiLayoutDirection.Apply(samplerWindow);
 
             var canvas = new Canvas { Background = Brushes.Transparent };
             samplerWindow.Content = canvas;
@@ -109,10 +110,21 @@ namespace snapvox.editor.helpers
 
             samplerWindow.PointerMoved += (s, e) =>
             {
-                var pos = e.GetPosition(samplerWindow);
-                var screenPoint = samplerWindow.PointToScreen(pos);
-                int px = screenPoint.X - bounds.Left;
-                int py = screenPoint.Y - bounds.Top;
+                Point clientPos;
+                int px, py;
+                if (GetCursorPos(out POINT cursor))
+                {
+                    px = cursor.X - bounds.Left;
+                    py = cursor.Y - bounds.Top;
+                    clientPos = samplerWindow.PointToClient(new PixelPoint(cursor.X, cursor.Y));
+                }
+                else
+                {
+                    clientPos = e.GetPosition(samplerWindow);
+                    var screenPoint = samplerWindow.PointToScreen(clientPos);
+                    px = screenPoint.X - bounds.Left;
+                    py = screenPoint.Y - bounds.Top;
+                }
 
                 if (px >= 0 && px < screenShot.Width && py >= 0 && py < screenShot.Height)
                 {
@@ -122,11 +134,20 @@ namespace snapvox.editor.helpers
                     magnifierBorder.IsVisible = true;
                     colorLabel.IsVisible = true;
 
-                    Canvas.SetLeft(magnifierBorder, pos.X + 20);
-                    Canvas.SetTop(magnifierBorder, pos.Y + 20);
+                    double winW = samplerWindow.Bounds.Width > 0 ? samplerWindow.Bounds.Width : (bounds.Width / scaling);
+                    double winH = samplerWindow.Bounds.Height > 0 ? samplerWindow.Bounds.Height : (bounds.Height / scaling);
 
-                    Canvas.SetLeft(colorLabel, pos.X + 20);
-                    Canvas.SetTop(colorLabel, pos.Y + 145);
+                    double magX = (clientPos.X + 20 + 120 > winW - 10) ? (clientPos.X - 120 - 20) : (clientPos.X + 20);
+                    double magY = (clientPos.Y + 20 + 160 > winH - 10) ? (clientPos.Y - 160 - 20) : (clientPos.Y + 20);
+
+                    magX = Math.Clamp(magX, 10, Math.Max(10, winW - 130));
+                    magY = Math.Clamp(magY, 10, Math.Max(10, winH - 170));
+
+                    Canvas.SetLeft(magnifierBorder, magX);
+                    Canvas.SetTop(magnifierBorder, magY);
+
+                    Canvas.SetLeft(colorLabel, magX);
+                    Canvas.SetTop(colorLabel, magY + 125);
 
                     if (lastLabelColor != color)
                     {
@@ -141,9 +162,18 @@ namespace snapvox.editor.helpers
 
             samplerWindow.PointerPressed += (s, e) =>
             {
-                var screenPoint = samplerWindow.PointToScreen(e.GetPosition(samplerWindow));
-                int px = screenPoint.X - bounds.Left;
-                int py = screenPoint.Y - bounds.Top;
+                int px, py;
+                if (GetCursorPos(out POINT cursor))
+                {
+                    px = cursor.X - bounds.Left;
+                    py = cursor.Y - bounds.Top;
+                }
+                else
+                {
+                    var screenPoint = samplerWindow.PointToScreen(e.GetPosition(samplerWindow));
+                    px = screenPoint.X - bounds.Left;
+                    py = screenPoint.Y - bounds.Top;
+                }
 
                 if (px >= 0 && px < screenShot.Width && py >= 0 && py < screenShot.Height)
                 {
@@ -188,5 +218,12 @@ namespace snapvox.editor.helpers
                 samplerCursor.Dispose();
             }
         }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct POINT { public int X; public int Y; }
+
+        [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static partial bool GetCursorPos(out POINT lpPoint);
     }
 }

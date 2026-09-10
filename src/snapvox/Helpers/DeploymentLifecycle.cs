@@ -38,6 +38,14 @@ internal static class DeploymentLifecycle
     [DllImport("shell32.dll")]
     private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
 
+    private static void LogSwallowed(string operation, string detail, Exception ex)
+    {
+        string suffix = ex == null ? string.Empty : " :: " + ex.Message;
+        string message = $"Lifecycle swallowed failure :: {operation} :: {detail}{suffix}";
+        BootstrapDebug.Log(message);
+        InstallHostContext.WriteEarlyTrace(message);
+    }
+
     public static bool IsLifecycleCommand(string[] args)
     {
         if (args == null || args.Length == 0) return false;
@@ -87,8 +95,8 @@ internal static class DeploymentLifecycle
             return 0;
         }
 
-        using var mutex = new Mutex(false, DeploymentFootprint.InstallerMutexName);
-        if (!AcquireMutex(mutex))
+        using var mutex = new Semaphore(1, 1, DeploymentFootprint.InstallerMutexName + "_v2");
+        if (!mutex.WaitOne(0))
         {
 
 
@@ -115,13 +123,22 @@ internal static class DeploymentLifecycle
             string conflict = DetectConflictingSoftware();
             if (conflict != null)
             {
-                await logger.LogAsync("CRITICAL", "CONFLICT", $"Detected {conflict}", ct).ConfigureAwait(false);
-                await ShowBlockingPromptAsync(progress,
-                    $"Installation had detected a current installed software of {conflict} installed on you system!\r\n\r\nPlease first remove/uninstall the app of {conflict} then re-run the installer again.",
-                    "Installation Conflict",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-                throw new Exception($"Conflicting software detected: {conflict}");
+                await logger.LogAsync("INSTALL", "CONFLICT_WARN",
+                    $"Possible conflicting software detected: {conflict}", ct).ConfigureAwait(false);
+                var conflictChoice = await ShowBlockingPromptAsync(progress,
+                    $"SnapVox detected {conflict} running or installed on this system.\r\n\r\n" +
+                    "These tools may fight over the same global hotkeys (e.g. Print Screen).\r\n\r\n" +
+                    "Yes    - Continue installing SnapVox anyway\r\n" +
+                    "No     - Abort the installation",
+                    "Possible Software Conflict",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning).ConfigureAwait(false);
+                if (conflictChoice == DialogResult.No)
+                {
+                    await ReportAsync(progress, logger, 100, "ABORT", "CONFLICT", $"Cancelled by user due to {conflict}.", ct).ConfigureAwait(false);
+                    return 0;
+                }
+                await logger.LogAsync("INSTALL", "CONFLICT_OVERRIDE", $"User chose to continue despite {conflict}", ct).ConfigureAwait(false);
             }
 
 
@@ -129,10 +146,6 @@ internal static class DeploymentLifecycle
 
 
 
-
-            await ReportAsync(progress, logger, 5, "CLEANUP", "PROCESSES", "Killing all instances...", ct).ConfigureAwait(false);
-            await StartupTaskHelper.KillAllProcessesAsync(s => progress?.Update(5, s), ct).ConfigureAwait(false);
-            await Task.Delay(500, ct).ConfigureAwait(false);
 
             bool upgradeDetected = DetectExistingInstallation();
             bool keepUserSettings = false;
@@ -157,23 +170,30 @@ internal static class DeploymentLifecycle
                 cleanWipeRequested = upgradeChoice == DialogResult.No;
             }
 
+            if (!await WaitForApplicationsToCloseAsync(progress, ct).ConfigureAwait(false)) return 0;
+            bool restoreAdminStartup = keepUserSettings && await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(false);
             string settingsBackupFolder = keepUserSettings ? await BackupUserSettingsAsync(logger, ct).ConfigureAwait(false) : null;
             try
             {
+                StartupTaskHelper.RequireInstalledApplicationsClosed();
                 await PerformFullHostCleanupAsync(progress, logger, "Pre-Install Cleanup", 5, 60, requireZeroFootprint: false, purgeUserArtifacts: cleanWipeRequested, ct).ConfigureAwait(false);
 
                 await ReportAsync(progress, logger, 65, "DEPLOY", "PAYLOAD", "Extracting assets...", ct).ConfigureAwait(false);
                 await InstallFreshAsync(progress, logger, ct).ConfigureAwait(false);
-
                 if (settingsBackupFolder != null) await RestoreUserSettingsAsync(settingsBackupFolder, logger, ct).ConfigureAwait(false);
-
-                await ReportAsync(progress, logger, 100, "SUCCESS", "COMPLETE", "Deployment finalized.", ct).ConfigureAwait(false);
+                await RestoreStartupAfterInstallAsync(keepUserSettings, restoreAdminStartup).ConfigureAwait(false);
                 await LaunchInstalledApplicationAsync();
+                // Only a fully restored, configured, and launched installation may
+                // discard the recovery copy. Never delete it from a finally block.
+                CleanupSettingsBackup(settingsBackupFolder);
+                await ReportAsync(progress, logger, 100, "SUCCESS", "COMPLETE", "Deployment finalized.", ct).ConfigureAwait(false);
                 await AwaitUserAcknowledgementAsync(progress, logger, "Installation complete. Click Finish to close.", ct).ConfigureAwait(false);
             }
-            finally
+            catch (Exception ex)
             {
-                CleanupSettingsBackup(settingsBackupFolder);
+                if (settingsBackupFolder != null)
+                    throw new IOException("Upgrade failed. Your settings recovery copy is kept at: " + settingsBackupFolder, ex);
+                throw;
             }
             return 0;
         }
@@ -185,7 +205,7 @@ internal static class DeploymentLifecycle
         }
         finally
         {
-            mutex.ReleaseMutex();
+            mutex.Release();
             progress?.Dispose();
             if (logger != null) await logger.DisposeAsync().ConfigureAwait(false);
             QueueSelfCleanup(DeploymentFootprint.DeploymentTempRoot);
@@ -210,6 +230,14 @@ internal static class DeploymentLifecycle
             await WaitForParentExitAsync(parentPid, ct).ConfigureAwait(false);
         }
 
+        using var uninstallGate = new Semaphore(1, 1, DeploymentFootprint.InstallerMutexName + "_v2");
+        if (!uninstallGate.WaitOne(0))
+        {
+            StartupTaskHelper.ShowForegroundMessageBox("Another SnapVox setup is running. Finish it before uninstalling.",
+                "SnapVox Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return 2;
+        }
+
         string logPath = Path.Combine(SessionTempFolder, "snapvox_Uninstall.log");
         DeploymentLogger logger = null;
         DeploymentProgress progress = null;
@@ -221,9 +249,8 @@ internal static class DeploymentLifecycle
 
             await ReportAsync(progress, logger, 5, "UNINSTALL", "INIT", "Starting scorched-earth cleanup...", ct).ConfigureAwait(false);
 
-            await ReportAsync(progress, logger, 5, "CLEANUP", "PROCESSES", "Killing all instances...", ct).ConfigureAwait(false);
-            await StartupTaskHelper.KillAllProcessesAsync(s => progress?.Update(5, s), ct).ConfigureAwait(false);
-            await Task.Delay(500, ct).ConfigureAwait(false);
+            if (!await WaitForApplicationsToCloseAsync(progress, ct).ConfigureAwait(false)) return 0;
+            StartupTaskHelper.RequireInstalledApplicationsClosed();
 
             await PerformFullHostCleanupAsync(progress, logger, "Uninstall", 10, 90, requireZeroFootprint: true, purgeUserArtifacts: true, ct).ConfigureAwait(false);
 
@@ -266,6 +293,7 @@ internal static class DeploymentLifecycle
         }
         finally
         {
+            uninstallGate.Release();
             progress?.Dispose();
             if (logger != null) await logger.DisposeAsync().ConfigureAwait(false);
             
@@ -282,6 +310,24 @@ internal static class DeploymentLifecycle
         await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000, logger, ct).ConfigureAwait(false);
 
         var targets = DeploymentFootprint.GetDirectoryPurgeTargets(includeInstallFolder: true).ToList();
+        // Defense-in-depth: never purge anything outside SnapVox-owned roots.
+        var allowedRoots = new[]
+        {
+            DeploymentFootprint.InstallFolder,
+            DeploymentFootprint.ProgramDataFolder,
+            DeploymentFootprint.RoamingAppDataFolder,
+            DeploymentFootprint.LocalAppDataFolder,
+            DeploymentFootprint.TempAppFolder,
+            DeploymentFootprint.DeploymentTempRoot,
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "snapvox"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "snapvox")
+        };
+        targets.RemoveAll(t => !allowedRoots.Any(root =>
+            t.StartsWith(root, StringComparison.OrdinalIgnoreCase) || string.Equals(t, root, StringComparison.OrdinalIgnoreCase)));
+        foreach (string skipped in DeploymentFootprint.GetDirectoryPurgeTargets(includeInstallFolder: true).Except(targets, StringComparer.OrdinalIgnoreCase))
+        {
+            await logger.LogAsync("FILESYSTEM", "SKIP_GUARD", $"Refusing to purge outside owned roots: {skipped}", ct).ConfigureAwait(false);
+        }
         for (int i = 0; i < targets.Count; i++)
         {
             int p = start + 15 + (int)((end - start - 40) * (i / (double)targets.Count));
@@ -398,8 +444,10 @@ internal static class DeploymentLifecycle
             {
                 File.SetAttributes(path, FileAttributes.Normal);
             }
-            catch
+            catch (Exception ex)
             {
+                await logger.LogAsync("FILESYSTEM", "SET_ATTR_FAIL", $"{path} :: {ex.Message}", ct).ConfigureAwait(false);
+                LogSwallowed("DeleteDirectoryWithRetryAsync", path, ex);
             }
 
             try
@@ -517,11 +565,24 @@ internal static class DeploymentLifecycle
                             if (name.Contains(DeploymentFootprint.AppName, StringComparison.OrdinalIgnoreCase) ||
                                 name.Contains("snapvox", StringComparison.OrdinalIgnoreCase))
                             {
-                                try { key.DeleteValue(name, false); await logger.LogAsync("REGISTRY", "MUI_PURGE", $"{hive}\\{mui}\\{name}", ct).ConfigureAwait(false); } catch { }
+                                try 
+                                { 
+                                    key.DeleteValue(name, false); 
+                                    await logger.LogAsync("REGISTRY", "MUI_PURGE", $"{hive}\\{mui}\\{name}", ct).ConfigureAwait(false); 
+                                } 
+                                catch (Exception ex)
+                                {
+                                    await logger.LogAsync("REGISTRY", "MUI_PURGE_FAIL", $"{hive}\\{mui}\\{name} :: {ex.Message}", ct).ConfigureAwait(false);
+                                    LogSwallowed("DeleteMuiCacheValuesAsync", $"{hive}\\{mui}\\{name}", ex);
+                                }
                             }
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        await logger.LogAsync("REGISTRY", "MUI_KEY_FAIL", $"{hive}\\{mui} :: {ex.Message}", ct).ConfigureAwait(false);
+                        LogSwallowed("DeleteMuiCacheValuesAsync", $"{hive}\\{mui}", ex);
+                    }
                 }
             }
         }
@@ -586,41 +647,77 @@ internal static class DeploymentLifecycle
             root.DeleteSubKeyTree(path, false); 
             await logger.LogAsync("REGISTRY", "DELETE_KEY", $"{hive}\\{path}", ct).ConfigureAwait(false); 
         } 
-        catch { }
+        catch (Exception ex)
+        {
+            await logger.LogAsync("REGISTRY", "DELETE_KEY_FAIL", $"{hive}\\{path} :: {ex.Message}", ct).ConfigureAwait(false);
+            LogSwallowed("DeleteSubKeyTreeAsync", $"{hive}\\{path}", ex);
+        }
+    }
+
+    // Exact executable base names (no path, no extension, lowercased). NEVER substring-match:
+    // "obs" would match "Obsidian", "jing" matches unrelated processes, etc.
+    private static readonly HashSet<string> ConflictingProcessNames = new(StringComparer.Ordinal)
+    {
+        "greenshot", "lightweight_greenshot", "lightshot", "snagit", "snagiteditor",
+        "sharex", "screenclippinghost", "gyazo", "fscapture", "picpick", "jing", "skitch",
+        "droplr", "cloudapp", "monosnap", "screenpresso", "tinytake", "ashampoosnap",
+        "movaviscreenrecorder", "bandicam", "camtasiastudio", "camtasia", "fraps", "obs64", "obs32"
+    };
+
+    // Exact registry DisplayName values (trimmed, case-insensitive compare is fine here).
+    private static readonly HashSet<string> ConflictingDisplayNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Greenshot", "Lightshot", "Snagit", "ShareX", "Snipping Tool", "ScreenClippingHost",
+        "Gyazo", "FastStone Capture", "PicPick", "Jing", "Skitch", "Droplr", "CloudApp",
+        "Monosnap", "Screenpresso", "TinyTake", "Ashampoo Snap", "Movavi Screen Recorder",
+        "Bandicam", "Camtasia Studio", "Fraps", "OBS Studio", "Snagit Editor"
+    };
+
+    internal static string MatchConflictingProcessName(IEnumerable<string> processNames)
+    {
+        foreach (string name in processNames)
+        {
+            if (string.IsNullOrEmpty(name)) continue;
+            if (ConflictingProcessNames.Contains(name.ToLowerInvariant())) return name;
+        }
+        return null;
+    }
+
+    internal static string MatchConflictingDisplayName(IEnumerable<string> displayNames)
+    {
+        foreach (string name in displayNames)
+        {
+            string trimmed = name?.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+            if (ConflictingDisplayNames.Contains(trimmed)) return trimmed;
+        }
+        return null;
     }
 
     private static string DetectConflictingSoftware()
     {
-        string[] targets = { 
-            "Greenshot", "Lightshot", "Snagit", "ShareX", "SnippingTool", "ScreenClippingHost", 
-            "Lightweight_Greenshot", "Gyazo", "FastStone", "PicPick", "Jing", "Skitch", 
-            "Droplr", "CloudApp", "Monosnap", "Screenpresso", "TinyTake", "AshampooSnap", 
-            "MovaviScreenRecorder", "Bandicam", "Camtasia", "Fraps", "OBS", "SnagitEditor"
-        };
         try
         {
-            var processes = System.Diagnostics.Process.GetProcesses();
-            foreach (var p in processes)
-            {
-                foreach (var target in targets)
-                {
-                    if (p.ProcessName.Contains(target, StringComparison.OrdinalIgnoreCase)) return target;
-                }
-            }
+            var processNames = new List<string>();
+            foreach (var p in System.Diagnostics.Process.GetProcesses()) { processNames.Add(p.ProcessName); }
+            string byProcess = MatchConflictingProcessName(processNames);
+            if (byProcess != null) return byProcess;
+
             string[] keys = { @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" };
-            foreach (var keyPath in keys)
+            var displayNames = new List<string>();
+            foreach (string keyPath in keys)
             {
                 using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(keyPath);
                 if (key == null) continue;
                 foreach (var subkeyName in key.GetSubKeyNames())
                 {
                     using var subkey = key.OpenSubKey(subkeyName);
-                    string name = subkey?.GetValue("DisplayName")?.ToString() ?? "";
-                    foreach (var target in targets) { if (name.Contains(target, StringComparison.OrdinalIgnoreCase)) return target; }
+                    displayNames.Add(subkey?.GetValue("DisplayName")?.ToString() ?? string.Empty);
                 }
             }
-        } catch { }
-        return null;
+            return MatchConflictingDisplayName(displayNames);
+        }
+        catch (Exception ex) { LogSwallowed("DetectConflictingSoftware", "scan", ex); return null; }
     }
 
     private static async Task InstallFreshAsync(DeploymentProgress progress, DeploymentLogger logger, CancellationToken ct)
@@ -631,7 +728,7 @@ internal static class DeploymentLifecycle
         if (PayloadExtractor.HasEmbeddedPayload())
         {
             await CopyFileAggressiveAsync(RuntimePathHelper.ExecutablePath, StartupTaskHelper.InstallPath, logger, ct).ConfigureAwait(false);
-            await Task.Run(() => PayloadExtractor.ExtractTo(installFolder), ct).ConfigureAwait(false);
+            await PayloadExtractor.ExtractToAsync(installFolder, ct).ConfigureAwait(false);
             await CopyFileAggressiveAsync(StartupTaskHelper.InstallPath, StartupTaskHelper.UninstallExePath, logger, ct).ConfigureAwait(false);
         }
         else
@@ -644,8 +741,6 @@ internal static class DeploymentLifecycle
         await WriteUninstallRegistryAsync(logger, ct).ConfigureAwait(false);
         await RegisterFileAssociationsAsync(logger, ct).ConfigureAwait(false);
         await CreateStartMenuShortcutAsync(logger, ct).ConfigureAwait(false);
-        try { StartupHelper.SetRunUser(null, StartupTaskHelper.InstallPath); } catch { }
-        
         NotifyShellAssociationsChanged();
     }
 
@@ -697,7 +792,10 @@ internal static class DeploymentLifecycle
                     string dest = Path.Combine(SessionTempFolder, Path.GetFileName(dll));
                     File.Copy(dll, dest, true); 
                 } 
-                catch { }
+                catch (Exception ex)
+                {
+                    LogSwallowed("RelaunchUninstallElevatedAsync", $"Copy {dll} -> {SessionTempFolder}", ex);
+                }
             }
         }
 
@@ -785,8 +883,10 @@ internal static class DeploymentLifecycle
                                 residue.Add($"Autostart value: {hive}\\{runPath}\\{name}");
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        await logger.LogAsync("REGISTRY", "VERIFY_RUN_KEY_FAIL", $"{hive}\\{runPath} :: {ex.Message}", ct).ConfigureAwait(false);
+                        LogSwallowed("GetVerificationTargets", $"{hive}\\{runPath}", ex);
                     }
                 }
             }
@@ -878,18 +978,44 @@ internal static class DeploymentLifecycle
         await logger.LogAsync("REGISTRY", "FILE_ASSOC_CREATED", "ProgId and extensions registered.", ct).ConfigureAwait(false);
     }
 
-    private static Task DeleteFileAssociationsRegistryAsync(DeploymentLogger logger, CancellationToken ct)
+    private static async Task DeleteFileAssociationsRegistryAsync(DeploymentLogger logger, CancellationToken ct)
     {
         using var classes = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64).OpenSubKey(@"SOFTWARE\Classes", true);
-        if (classes == null) return Task.CompletedTask;
+        if (classes == null) return;
 
-        try { classes.DeleteSubKeyTree(DeploymentFootprint.ProgId, false); } catch { }
+        try 
+        { 
+            classes.DeleteSubKeyTree(DeploymentFootprint.ProgId, false); 
+        } 
+        catch (Exception ex)
+        { 
+            await logger.LogAsync("REGISTRY", "DELETE_PROGID_FAIL", $"{DeploymentFootprint.ProgId} :: {ex.Message}", ct).ConfigureAwait(false);
+            LogSwallowed("DeleteFileAssociationsRegistryAsync", DeploymentFootprint.ProgId, ex);
+        }
+
         foreach (string ext in DeploymentFootprint.ImageExtensions)
         {
-            try { using var openWith = classes.OpenSubKey(ext + @"\OpenWithProgids", true); openWith?.DeleteValue(DeploymentFootprint.ProgId, false); } catch { }
-            try { classes.DeleteSubKeyTree(ext + @"\shell\" + DeploymentFootprint.OpenWithShellName, false); } catch { }
+            try 
+            { 
+                using var openWith = classes.OpenSubKey(ext + @"\OpenWithProgids", true); 
+                openWith?.DeleteValue(DeploymentFootprint.ProgId, false); 
+            } 
+            catch (Exception ex)
+            { 
+                await logger.LogAsync("REGISTRY", "DELETE_OPENWITH_FAIL", $"{ext} :: {ex.Message}", ct).ConfigureAwait(false);
+                LogSwallowed("DeleteFileAssociationsRegistryAsync", $"{ext}\\OpenWithProgids", ex);
+            }
+
+            try 
+            { 
+                classes.DeleteSubKeyTree(ext + @"\shell\" + DeploymentFootprint.OpenWithShellName, false); 
+            } 
+            catch (Exception ex)
+            { 
+                await logger.LogAsync("REGISTRY", "DELETE_SHELL_FAIL", $"{ext} :: {ex.Message}", ct).ConfigureAwait(false);
+                LogSwallowed("DeleteFileAssociationsRegistryAsync", $"{ext}\\shell\\{DeploymentFootprint.OpenWithShellName}", ex);
+            }
         }
-        return Task.CompletedTask;
     }
 
     private static async Task DeleteKnownShortcutsAsync(DeploymentLogger logger, CancellationToken ct)
@@ -916,7 +1042,11 @@ internal static class DeploymentLifecycle
                 foreach (string file in Directory.EnumerateFiles(dir, Path.GetFileName(pattern)))
                     await DeleteFileWithRetryAsync(file, logger, ct).ConfigureAwait(false);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                await logger.LogAsync("FILESYSTEM", "PURGE_ARTIFACTS_FAIL", $"{dir}\\{Path.GetFileName(pattern)} :: {ex.Message}", ct).ConfigureAwait(false);
+                LogSwallowed("PurgeUserGeneratedArtifactsAsync", pattern, ex);
+            }
         }
     }
 
@@ -924,18 +1054,6 @@ internal static class DeploymentLifecycle
     {
         Directory.CreateDirectory(StartupTaskHelper.ConfigurationFolder);
         await Task.Run(() => IniConfigurationDeployer.EnsureUserConfiguration(StartupTaskHelper.ConfigurationFolder), ct).ConfigureAwait(false);
-    }
-
-    private static async Task CreateElevatedStartupTaskAsync(string exe, DeploymentLogger logger, CancellationToken ct)
-    {
-        string user = WindowsIdentity.GetCurrent().Name;
-        string args = $"/Create /TN \"{DeploymentFootprint.ScheduledTaskName}\" /TR \"\\\"{exe}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /F";
-        int exitCode = await RunHiddenProcessAsync("schtasks.exe", args, 10000, logger, ct).ConfigureAwait(false);
-        if (exitCode != 0)
-        {
-            string fallbackArgs = $"/Create /TN \"{DeploymentFootprint.ScheduledTaskName}\" /TR \"\\\"{exe}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /RU \"{user}\" /F";
-            await RunHiddenProcessAsync("schtasks.exe", fallbackArgs, 10000, logger, ct).ConfigureAwait(false);
-        }
     }
 
     private static async Task CreateStartMenuShortcutAsync(DeploymentLogger logger, CancellationToken ct)
@@ -977,7 +1095,7 @@ internal static class DeploymentLifecycle
                 }
 
                 await logger.LogAsync("FILESYSTEM", "COPY_RETRY", $"Attempt {attempt} for {dest}: {ex.Message}", ct).ConfigureAwait(false);
-                await StartupTaskHelper.KillAllProcessesAsync(null, ct).ConfigureAwait(false);
+                StartupTaskHelper.RequireInstalledApplicationsClosed();
                 await Task.Delay(250 * attempt, ct).ConfigureAwait(false);
             }
         }
@@ -1005,12 +1123,14 @@ internal static class DeploymentLifecycle
                     return;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                LogSwallowed("LaunchInstalledApplicationAsync", $"attempt {attempt}", ex);
             }
 
             await Task.Delay(800).ConfigureAwait(false);
         }
+        throw new IOException("The installed application did not start. Any settings recovery copy has been kept.");
     }
 
     private static bool IsInstalledApplicationRunning()
@@ -1027,8 +1147,9 @@ internal static class DeploymentLifecycle
                         return true;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogSwallowed("IsInstalledApplicationRunning", $"process {process.Id}", ex);
                 }
             }
 
@@ -1042,23 +1163,24 @@ internal static class DeploymentLifecycle
                         return true;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogSwallowed("IsInstalledApplicationRunning", $"process {process.Id}", ex);
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            LogSwallowed("IsInstalledApplicationRunning", "GetProcessesByName", ex);
         }
 
         return false;
     }
 
     private static void StartElevated(string exe, string args) => TryStartElevated(exe, args);
-    private static bool TryStartElevated(string exe, string args) { try { Process.Start(new ProcessStartInfo { FileName = exe, Arguments = args, UseShellExecute = true, Verb = "runas" }); return true; } catch { return false; } }
-    private static bool AcquireMutex(Mutex m) => m.WaitOne(15000, false);
+    private static bool TryStartElevated(string exe, string args) { try { Process.Start(new ProcessStartInfo { FileName = exe, Arguments = args, UseShellExecute = true, Verb = "runas" }); return true; } catch (Exception ex) { LogSwallowed("TryStartElevated", $"{exe} {args}", ex); return false; } }
     private static int ParseParentPid(string[] args) => args.Select(a => int.TryParse(a, out int p) ? p : 0).FirstOrDefault(p => p > 0);
-    private static async Task WaitForParentExitAsync(int pid, CancellationToken ct) { try { using var p = Process.GetProcessById(pid); await p.WaitForExitAsync(ct); } catch { } }
+    private static async Task WaitForParentExitAsync(int pid, CancellationToken ct) { try { using var p = Process.GetProcessById(pid); await p.WaitForExitAsync(ct); } catch (Exception ex) { LogSwallowed("WaitForParentExitAsync", $"pid {pid}", ex); } }
     private static void NotifyShellAssociationsChanged() => SHChangeNotify(0x08000000, 0x0000, IntPtr.Zero, IntPtr.Zero);
 
     private static void QueueSelfCleanup(string dir)
@@ -1089,77 +1211,66 @@ internal static class DeploymentLifecycle
                 if (key != null) return true;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            LogSwallowed("DetectExistingInstallation", "scan", ex);
         }
 
         return false;
     }
 
-    private static string GetSettingsBackupFolder() => Path.Combine(Path.GetTempPath(), "SnapVox_UpgradeSettings_" + Process.GetCurrentProcess().Id);
+    private static string[] GetSettingsCandidates() => new[]
+    {
+        Path.Combine(DeploymentFootprint.InstallFolder, "snapvox.ini"),
+        Path.Combine(DeploymentFootprint.InstallFolder, @"Data\Settings\snapvox.ini"),
+        Path.Combine(DeploymentFootprint.RoamingAppDataFolder, "snapvox.ini")
+    };
 
     private static async Task<string> BackupUserSettingsAsync(DeploymentLogger logger, CancellationToken ct)
     {
-        try
-        {
-            string[] candidates =
-            {
-                Path.Combine(DeploymentFootprint.InstallFolder, "SnapVox.ini"),
-                Path.Combine(DeploymentFootprint.InstallFolder, "snapvox.ini"),
-                Path.Combine(DeploymentFootprint.InstallFolder, @"Data\Settings\SnapVox.ini"),
-                Path.Combine(DeploymentFootprint.RoamingAppDataFolder, "SnapVox.ini"),
-                Path.Combine(DeploymentFootprint.RoamingAppDataFolder, "snapvox.ini")
-            };
-
-            string backupFolder = GetSettingsBackupFolder();
-            Directory.CreateDirectory(backupFolder);
-            var manifest = new List<string>();
-            int index = 0;
-            foreach (string candidate in candidates)
-            {
-                if (!File.Exists(candidate)) continue;
-                string backupFile = Path.Combine(backupFolder, "settings_" + index++ + ".ini");
-                File.Copy(candidate, backupFile, true);
-                manifest.Add(candidate + "\t" + backupFile);
-                await logger.LogAsync("UPGRADE", "BACKUP", candidate, ct).ConfigureAwait(false);
-            }
-
-            if (manifest.Count == 0)
-            {
-                try { Directory.Delete(backupFolder, true); } catch { }
-                return null;
-            }
-
-            File.WriteAllLines(Path.Combine(backupFolder, "manifest.txt"), manifest);
-            return backupFolder;
-        }
-        catch (Exception ex)
-        {
-            BootstrapDebug.Log("Settings backup failed: " + ex);
-            return null;
-        }
+        string backupRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SnapVoxUpgradeBackups");
+        string folder = await UpgradeSettingsBackup.CreateAsync(GetSettingsCandidates(), backupRoot, ct).ConfigureAwait(false);
+        await logger.LogAsync("UPGRADE", "BACKUP", folder ?? "No existing settings file", ct).ConfigureAwait(false);
+        return folder;
     }
 
-    private static async Task RestoreUserSettingsAsync(string backupFolder, DeploymentLogger logger, CancellationToken ct)
+    private static async Task RestoreUserSettingsAsync(string folder, DeploymentLogger logger, CancellationToken ct)
     {
-        try
+        await UpgradeSettingsBackup.RestoreAsync(folder, GetSettingsCandidates(), ct).ConfigureAwait(false);
+        await logger.LogAsync("UPGRADE", "RESTORED", "Settings verified from " + folder, ct).ConfigureAwait(false);
+    }
+
+    private static async Task RestoreStartupAfterInstallAsync(bool keepUserSettings, bool hadElevatedStartup)
+    {
+        IniConfig.IniDirectory = StartupTaskHelper.ConfigurationFolder;
+        IniConfig.Init("snapvox", IniConfigurationDeployer.ConfigBaseName);
+        var config = IniConfig.GetIniSection<CoreConfiguration>(allowSave: false);
+        bool elevated = keepUserSettings && (hadElevatedStartup || config.RunAsAdministratorOnStartup);
+        if (elevated)
         {
-            string manifestPath = Path.Combine(backupFolder, "manifest.txt");
-            if (!File.Exists(manifestPath)) return;
-            foreach (string line in File.ReadAllLines(manifestPath))
-            {
-                string[] parts = line.Split('\t');
-                if (parts.Length != 2 || !File.Exists(parts[1])) continue;
-                string destination = parts[0];
-                Directory.CreateDirectory(Path.GetDirectoryName(destination));
-                File.Copy(parts[1], destination, true);
-                await logger.LogAsync("UPGRADE", "RESTORE", destination, ct).ConfigureAwait(false);
-            }
+            if (!await StartupTaskHelper.ConfigureElevatedStartupTaskAsync(StartupTaskHelper.InstallPath).ConfigureAwait(false))
+                throw new IOException("Could not restore administrator startup. Your settings backup has been kept.");
         }
-        catch (Exception ex)
+        else
         {
-            BootstrapDebug.Log("Settings restore failed: " + ex);
+            StartupHelper.SetRunUser("--autorun", StartupTaskHelper.InstallPath);
         }
+        config.RunAsAdministratorOnStartup = elevated;
+        IniConfig.SaveTo(Path.Combine(StartupTaskHelper.ConfigurationFolder, "snapvox.ini"));
+    }
+
+    private static async Task<bool> WaitForApplicationsToCloseAsync(DeploymentProgress progress, CancellationToken ct)
+    {
+        while (StartupTaskHelper.FindRunningInstalledProcesses().Length != 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            var result = await ShowBlockingPromptAsync(progress,
+                "SnapVox is still running. Save your open pictures and exit SnapVox using its tray menu.\r\n\r\n" +
+                "Choose Retry after closing it, or Cancel to leave setup. Setup will not force-close your work.",
+                "Save your work before continuing", MessageBoxButtons.RetryCancel, MessageBoxIcon.Information).ConfigureAwait(false);
+            if (result != DialogResult.Retry) return false;
+        }
+        return true;
     }
 
     private static void CleanupSettingsBackup(string backupFolder)
@@ -1168,8 +1279,9 @@ internal static class DeploymentLifecycle
         {
             if (!string.IsNullOrEmpty(backupFolder) && Directory.Exists(backupFolder)) Directory.Delete(backupFolder, true);
         }
-        catch
+        catch (Exception ex)
         {
+            LogSwallowed("CleanupSettingsBackup", backupFolder, ex);
         }
     }
 
@@ -1290,13 +1402,13 @@ internal static class DeploymentLifecycle
         public void SuppressTopmost()
         {
             Dispatcher.UIThread.Post(() => {
-                try { if (_window != null) _window.Topmost = false; } catch { }
+                try { if (_window != null) _window.Topmost = false; } catch (Exception ex) { LogSwallowed("DeploymentProgress.SuppressTopmost", "Topmost", ex); }
             });
         }
         public void RestoreTopmost()
         {
             Dispatcher.UIThread.Post(() => {
-                try { if (_window != null) { _window.Topmost = false; _window.Activate(); } } catch { }
+                try { if (_window != null) { _window.Topmost = false; _window.Activate(); } } catch (Exception ex) { LogSwallowed("DeploymentProgress.RestoreTopmost", "Activate", ex); }
             });
         }
         public IntPtr GetWindowHandle()
@@ -1305,15 +1417,16 @@ internal static class DeploymentLifecycle
             {
                 return _window?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
             }
-            catch
+            catch (Exception ex)
             {
+                LogSwallowed("DeploymentProgress.GetWindowHandle", "TryGetPlatformHandle", ex);
                 return IntPtr.Zero;
             }
         }
         public void Dispose() 
         { 
             Dispatcher.UIThread.Post(() => {
-                try { _window?.Close(); } catch { }
+                try { _window?.Close(); } catch (Exception ex) { LogSwallowed("DeploymentProgress.Dispose", "Close", ex); }
             }); 
         }
     }
@@ -1331,8 +1444,9 @@ internal static class DeploymentLifecycle
                 await sw.WriteLineAsync($"\n=== {session} {DateTime.Now:O} PID={Environment.ProcessId} ===").ConfigureAwait(false);
                 return new DeploymentLogger(sw);
             }
-            catch
+            catch (Exception ex)
             {
+                LogSwallowed("DeploymentLogger.CreateAsync", path, ex);
                 var sw = new StreamWriter(Stream.Null, Encoding.UTF8) { AutoFlush = true };
                 return new DeploymentLogger(sw);
             }

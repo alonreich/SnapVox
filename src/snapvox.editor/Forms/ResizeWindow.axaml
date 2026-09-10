@@ -7,7 +7,7 @@
         MinWidth="430" MinHeight="300"
         Background="{DynamicResource SnapVoxPanelDarkBrush}"
         WindowStartupLocation="CenterOwner"
-        Topmost="True"
+        Topmost="False"
         CanResize="True">
     <!-- ISSUE_012: theme is set once at the Application level (App.axaml). -->
     <StackPanel Margin="20" Spacing="15">

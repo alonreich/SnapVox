@@ -38,12 +38,27 @@
                         </Ellipse.Styles>
                     </Ellipse>
                     <TextBlock Name="InstructionText" Text="Point at a window" Foreground="{DynamicResource SnapVoxScrollAccentBrush}" FontSize="18" FontWeight="Bold"/>
-                    <TextBlock Name="StatusText" Text="Left-click or Space to start" Foreground="{DynamicResource SnapVoxScrollAccentBrush}" FontSize="16" FontWeight="SemiBold"/>
-                    <TextBlock Text="Esc/right-click = exit" Foreground="{DynamicResource SnapVoxScrollAccentBrush}" FontSize="14"/>
+                    <TextBlock Name="StatusText" Text="Left-click or Space to start" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Text="Esc/right-click = exit" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="14"/>
                 </StackPanel>
             </Border>
         </Canvas>
-        <!-- ISSUE_011: fixed safe position in the bottom corner, using flow-aware anchoring for RTL support. -->
-        <Button Name="ExitButton" Content="Exit Scroll Capture" AutomationProperties.Name="Exit scroll capture" MinWidth="150" MinHeight="34" Cursor="Hand" HorizontalContentAlignment="Center" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" Click="OnExitClick" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="20" />
+        <!-- Safe position in the bottom corner with non-occluding idle opacity and hover highlight. -->
+        <Button Name="ExitButton" Content="Exit Scroll Capture" AutomationProperties.Name="Exit scroll capture"
+                MinWidth="150" MinHeight="34" Cursor="Hand" HorizontalContentAlignment="Center"
+                Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
+                Click="OnExitClick" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="20"
+                Opacity="0.45">
+            <Button.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                </Transitions>
+            </Button.Transitions>
+            <Button.Styles>
+                <Style Selector="Button#ExitButton:pointerover">
+                    <Setter Property="Opacity" Value="1.0" />
+                </Style>
+            </Button.Styles>
+        </Button>
     </Grid>
 </Window>

@@ -209,11 +209,6 @@ namespace snapvox.helpers
                         continue;
                     }
 
-                    if (msg.message == WM_HOTKEY)
-                    {
-                        HandleHotkey((int)msg.wParam);
-                    }
-
                     TranslateMessage(ref msg);
                     DispatchMessage(ref msg);
                 }

@@ -39,10 +39,11 @@
             <TrayIcon ToolTipText="SnapVox v3.0" Clicked="OnTrayIconClicked">
                 <TrayIcon.Menu>
                     <NativeMenu>
-                        <NativeMenuItem Header="Capture Region" Click="OnCaptureRegionClick" Icon="avares://SnapVox/icons/ruler-crop.png" />
-                        <NativeMenuItem Header="Capture Window" Click="OnCaptureWindowClick" Icon="avares://SnapVox/icons/shape_square_add.png" />
-                        <NativeMenuItem Header="Capture Fullscreen" Click="OnCaptureFullscreenClick" Icon="avares://SnapVox/icons/fullscreen.png" />
-                        <NativeMenuItem Header="Scroll Capture" Click="OnScrollCaptureClick" Icon="avares://SnapVox/icons/scroll-capture.png" />
+                        <NativeMenuItem Header="Capture Region (PrintScreen)" Click="OnCaptureRegionClick" Icon="avares://SnapVox/icons/ruler-crop.png" />
+                        <NativeMenuItem Header="Repeat Last Region" Click="OnCaptureLastRegionClick" Icon="avares://SnapVox/icons/repeat.png" />
+                        <NativeMenuItem Header="Capture Window (Alt+PrintScreen)" Click="OnCaptureWindowClick" Icon="avares://SnapVox/icons/shape_square_add.png" />
+                        <NativeMenuItem Header="Capture Fullscreen (Ctrl+PrintScreen)" Click="OnCaptureFullscreenClick" Icon="avares://SnapVox/icons/fullscreen.png" />
+                        <NativeMenuItem Header="Scroll Capture (Space)" Click="OnScrollCaptureClick" Icon="avares://SnapVox/icons/scroll-capture.png" />
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Open From Clipboard" Click="OnOpenFromClipboardClick" Icon="avares://SnapVox/icons/clipboard.png" />
                         <NativeMenuItem Header="Show Capture History" Click="OnShowHistoryClick" Icon="avares://SnapVox/icons/folder_explore.png" />

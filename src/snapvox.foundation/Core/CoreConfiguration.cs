@@ -39,6 +39,10 @@ namespace snapvox.foundation.core
         [IniProperty("ClipboardHotkey", Description = "Hotkey for starting capture from clipboard", DefaultValue = "")]
         public string ClipboardHotkey { get; set; } = "";
 
+        public HotkeyBinding GetRegionBinding() => HotkeyBinding.Parse(RegionHotkey);
+        public HotkeyBinding GetWindowBinding() => HotkeyBinding.Parse(WindowHotkey);
+        public HotkeyBinding GetFullscreenBinding() => HotkeyBinding.Parse(FullscreenHotkey);
+
         [IniProperty("TextToolThickness", Description = "Default thickness for Text tool", DefaultValue = "2.0")]
         public double TextToolThickness { get; set; } = 2.0;
 

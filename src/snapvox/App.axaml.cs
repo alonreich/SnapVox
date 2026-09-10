@@ -11,6 +11,7 @@ using snapvox.foundation.IniFile;
 using snapvox.foundation.Interfaces;
 using snapvox.foundation.interfaces.Ocr;
 using snapvox.helpers;
+using snapvox.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
@@ -41,6 +42,19 @@ namespace snapvox
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 _desktop = desktop;
+                Dispatcher.UIThread.UnhandledException += (s, e) =>
+                {
+                    try
+                    {
+                        LogHelper.LogCrash("Dispatcher.UnhandledException", e.Exception, e.Exception);
+                        LogHelper.GetLogger(typeof(App)).Error("UI thread unhandled exception (handled)", e.Exception);
+                    }
+                    catch (Exception logEx)
+                    {
+                        BootstrapDebug.Log($"Logging failed: {logEx.Message}");
+                    }
+                    e.Handled = true;   // keep the app alive; individual methods below now log their own context
+                };
                 desktop.MainWindow = null;
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 _ = InitializeApplicationAsync(desktop, _mainAppCts.Token);
@@ -89,6 +103,8 @@ namespace snapvox
                         if (options.Files.Length > 0) { IsNoTrayMode = true; log.Info("Proceeding in No-Tray mode for file processing."); }
                         else { log.Info("Shutting down duplicate instance."); Dispatcher.UIThread.Post(() => desktop.Shutdown()); return; }
                     }
+                    SimpleServiceProvider.Current.AddService<IAppLifecycleCoordinator>(new AppLifecycleCoordinator());
+                    SimpleServiceProvider.Current.AddService<ISettingsService>(new SettingsService());
                     SimpleServiceProvider.Current.AddService<IOcrResultHandler>(new OcrResultHandler());
                     SimpleServiceProvider.Current.AddService<IScrollCaptureLauncher>(new ScrollCaptureLauncher());
 #if USE_TESSERACT
@@ -201,7 +217,11 @@ namespace snapvox
                 var core = IniConfig.GetIniSection<CoreConfiguration>();
                 if (string.IsNullOrWhiteSpace(core.Language)) core.Language = "en-US";
             }
-            catch { }
+            catch (Exception ex)
+            {
+                BootstrapDebug.Log($"InitializePersistentConfiguration failed: {ex.Message}");
+                LogHelper.GetLogger(typeof(App)).Error("Failed to initialize persistent configuration", ex);
+            }
         }
 
         private async Task InitializeTrayIconAsync()
@@ -280,11 +300,48 @@ namespace snapvox
                         _redIcon = redIcon;
                         var initialIcon = _currentIconIsRed && _redIcon != null ? _redIcon : _blueIcon;
                         if (initialIcon != null) _trayIcon.Icon = initialIcon;
+                        UpdateTrayMenuHotkeys();
                     }
                 }
                 catch (Exception ex)
                 {
                     LogHelper.GetLogger(typeof(App)).Error("Failed to create tray icon UI objects", ex);
+                }
+            });
+        }
+
+        public static void UpdateTrayMenuHotkeys()
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    var icons = TrayIcon.GetIcons(Current);
+                    if (icons == null || icons.Count == 0 || icons[0].Menu == null) return;
+                    var menu = icons[0].Menu;
+                    var config = IniConfig.GetIniSection<CoreConfiguration>();
+                    if (config == null) return;
+
+                    foreach (var item in menu.Items.OfType<NativeMenuItem>())
+                    {
+                        if (item.Header == null) continue;
+                        if (item.Header.StartsWith("Capture Region"))
+                            item.Header = string.IsNullOrWhiteSpace(config.RegionHotkey) ? "Capture Region" : $"Capture Region ({config.RegionHotkey})";
+                        else if (item.Header.StartsWith("Repeat Last Region"))
+                            item.Header = string.IsNullOrWhiteSpace(config.LastregionHotkey) ? "Repeat Last Region" : $"Repeat Last Region ({config.LastregionHotkey})";
+                        else if (item.Header.StartsWith("Capture Window"))
+                            item.Header = string.IsNullOrWhiteSpace(config.WindowHotkey) ? "Capture Window" : $"Capture Window ({config.WindowHotkey})";
+                        else if (item.Header.StartsWith("Capture Fullscreen"))
+                            item.Header = string.IsNullOrWhiteSpace(config.FullscreenHotkey) ? "Capture Fullscreen" : $"Capture Fullscreen ({config.FullscreenHotkey})";
+                        else if (item.Header.StartsWith("Scroll Capture"))
+                            item.Header = string.IsNullOrWhiteSpace(config.ScrollCaptureDelimiterHotkey) ? "Scroll Capture" : $"Scroll Capture ({config.ScrollCaptureDelimiterHotkey})";
+                        else if (item.Header.StartsWith("Open From Clipboard"))
+                            item.Header = string.IsNullOrWhiteSpace(config.ClipboardHotkey) ? "Open From Clipboard" : $"Open From Clipboard ({config.ClipboardHotkey})";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.GetLogger(typeof(App)).Error("Failed to update tray menu hotkeys", ex);
                 }
             });
         }
@@ -412,15 +469,20 @@ namespace snapvox
         {
             OnCaptureRegionClick(sender, e);
         }
-        public void OnCaptureRegionClick(object sender, EventArgs e) => CaptureHelper.CaptureRegion(false);
-        public void OnCaptureWindowClick(object sender, EventArgs e) => CaptureHelper.CaptureActiveWindow(false);
-        private void OnCaptureFullscreenClick(object sender, EventArgs e) => CaptureHelper.CaptureFullscreen(false, ScreenCaptureMode.FullScreen);
+        public void OnCaptureRegionClick(object sender, EventArgs e) { try { CaptureHelper.CaptureRegion(false); } catch (Exception ex) { LogHelper.GetLogger(typeof(App)).Error("CaptureRegion click failed", ex); } }
+        public void OnCaptureLastRegionClick(object sender, EventArgs e) { try { CaptureHelper.CaptureLastRegion(false); } catch (Exception ex) { LogHelper.GetLogger(typeof(App)).Error("CaptureLastRegion click failed", ex); } }
+        public void OnCaptureWindowClick(object sender, EventArgs e) { try { CaptureHelper.CaptureActiveWindow(false); } catch (Exception ex) { LogHelper.GetLogger(typeof(App)).Error("CaptureWindow click failed", ex); } }
+        private void OnCaptureFullscreenClick(object sender, EventArgs e) { try { CaptureHelper.CaptureFullscreen(false, ScreenCaptureMode.FullScreen); } catch (Exception ex) { LogHelper.GetLogger(typeof(App)).Error("CaptureFullscreen click failed", ex); } }
         private void OnScrollCaptureClick(object sender, EventArgs e)
         {
-            var launcher = SimpleServiceProvider.Current.GetInstance<IScrollCaptureLauncher>(true);
-            _ = launcher?.StartAsync(null);
+            try
+            {
+                var launcher = SimpleServiceProvider.Current.GetInstance<IScrollCaptureLauncher>(true);
+                _ = launcher?.StartAsync(null);
+            }
+            catch (Exception ex) { LogHelper.GetLogger(typeof(App)).Error("ScrollCapture click failed", ex); }
         }
-        private void OnOpenFromClipboardClick(object sender, EventArgs e) => CaptureHelper.CaptureClipboard();
+        private void OnOpenFromClipboardClick(object sender, EventArgs e) { try { CaptureHelper.CaptureClipboard(); } catch (Exception ex) { LogHelper.GetLogger(typeof(App)).Error("CaptureClipboard click failed", ex); } }
         public void OnShowHistoryClick(object sender, EventArgs e)
         {
             try 
@@ -429,7 +491,10 @@ namespace snapvox
                 Directory.CreateDirectory(tempPath);
                 Process.Start(new ProcessStartInfo { FileName = tempPath, UseShellExecute = true }); 
             } 
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.GetLogger(typeof(App)).Error("Failed to open backup history folder", ex);
+            }
         }
         private static snapvox.Forms.SettingsWindow _settingsWindow;
 
@@ -470,8 +535,26 @@ namespace snapvox
                 Directory.CreateDirectory(logPath);
                 Process.Start(new ProcessStartInfo { FileName = logPath, UseShellExecute = true }); 
             } 
-            catch { }
+            catch (Exception ex)
+            {
+                LogHelper.GetLogger(typeof(App)).Error("Failed to open application logs folder", ex);
+            }
         }
-        public void OnExitClick(object sender, EventArgs e) { RetentionHelper.Stop(); ExecutionTrace.Stop(); _mainAppCts.Cancel(); HotkeyManager.Stop(); _desktop?.Shutdown(); }
+        public void OnExitClick(object sender, EventArgs e)
+        {
+            var coordinator = SimpleServiceProvider.Current.GetInstance<IAppLifecycleCoordinator>(isOptional: true);
+            if (coordinator != null)
+            {
+                coordinator.StopServices();
+            }
+            else
+            {
+                RetentionHelper.Stop();
+                ExecutionTrace.Stop();
+                HotkeyManager.Stop();
+            }
+            _mainAppCts.Cancel();
+            _desktop?.Shutdown();
+        }
     }
 }

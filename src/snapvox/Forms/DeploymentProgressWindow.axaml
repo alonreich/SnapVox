@@ -13,7 +13,7 @@
         CanResize="True">
     <!-- ISSUE_012: theme is set once at the Application level (App.axaml). -->
     <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxAccentBrush}" BorderThickness="2" Margin="8">
-        <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto">
+        <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
             <TextBlock Name="TitleText"
                        Grid.Row="0"
                        Text="Installing SnapVox"
@@ -79,33 +79,34 @@
                          Background="{DynamicResource SnapVoxActionButtonBrush}"
                          Margin="0,12,0,12"/>
             <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-                <!-- ISSUE_015: cancel button lets users abort a stalled install. -->
+                <!-- Cancel button lets users abort a stalled install. -->
                 <Button Name="CancelButton"
                         Content="Cancel"
                         AutomationProperties.Name="Cancel installation"
                         MinWidth="120"
-                        Height="32"
+                        MinHeight="32"
                         Cursor="Hand"
+                        IsCancel="True"
                         HorizontalContentAlignment="Center"
                         Background="{DynamicResource SnapVoxSecondaryButtonBrush}"
                         Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
                         Click="OnCancelClick"/>
+                <Button Name="FinishButton"
+                        Content="Finish"
+                        AutomationProperties.Name="Finish and close setup"
+                        HorizontalAlignment="Right"
+                        HorizontalContentAlignment="Center"
+                        MinWidth="120"
+                        MinHeight="32"
+                        Cursor="Hand"
+                        IsVisible="False"
+                        IsDefault="True"
+                        Background="{DynamicResource SnapVoxAccentBrush}"
+                        Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
+                        FontSize="14"
+                        FontWeight="Bold"
+                        Click="OnFinishClick"/>
             </StackPanel>
-            <Button Name="FinishButton"
-                    Grid.Row="7"
-                    Content="Finish"
-                    AutomationProperties.Name="Finish and close setup"
-                    HorizontalAlignment="Center"
-                    HorizontalContentAlignment="Center"
-                    MinWidth="120"
-                    Height="32"
-                    Cursor="Hand"
-                    IsVisible="False"
-                    Background="{DynamicResource SnapVoxAccentBrush}"
-                    Foreground="{DynamicResource SnapVoxPrimaryTextBrush}"
-                    FontSize="14"
-                    FontWeight="Bold"
-                    Click="OnFinishClick"/>
         </Grid>
     </Border>
 </Window>

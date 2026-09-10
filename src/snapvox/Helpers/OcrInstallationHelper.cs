@@ -15,7 +15,6 @@ namespace snapvox.helpers
     public static class OcrInstallationHelper
     {
         private static readonly ILog Log = snapvox.foundation.core.LogHelper.GetLogger(typeof(OcrInstallationHelper));
-        private static string TessDataPath => GetTessDataDirectory();
 
         public static string GetTessDataDirectory(string installFolder = null)
         {
@@ -46,17 +45,6 @@ namespace snapvox.helpers
 
         private static readonly SemaphoreSlim InitializationGate = new SemaphoreSlim(1, 1);
         private static int _initialized;
-
-        private static bool HasTessData(string fileName)
-        {
-            try
-            {
-                if (!Directory.Exists(TessDataPath)) return false;
-                string path = Path.Combine(TessDataPath, fileName);
-                return File.Exists(path) && new FileInfo(path).Length >= 128 * 1024;
-            }
-            catch { return false; }
-        }
 
         public static async Task EnsureTesseractReadyAsync(CancellationToken cancellationToken = default)
         {

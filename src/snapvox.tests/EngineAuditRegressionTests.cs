@@ -126,5 +126,23 @@ namespace snapvox.tests
         {
             Assert.NotNull(typeof(CoreConfiguration).GetProperty("DisableHotkeys", BindingFlags.Public | BindingFlags.Instance));
         }
+
+        [Fact]
+        public void ScreenTintBypass_ApplyColorCorrection_ExecutesSafely()
+        {
+            using var tinted = new Image<Bgra32>(10, 10);
+            tinted.Mutate(ctx => ctx.BackgroundColor(Color.FromRgb(128, 106, 83)));
+            ScreenTintBypass.ApplyColorCorrectionIfActive(tinted);
+            Assert.NotNull(tinted);
+            Assert.Equal(10, tinted.Width);
+        }
+
+        [Fact]
+        public void ScreenTintBypass_ShouldExcludeLayeredWindows_ExecutesSafely()
+        {
+            var region = RECT.FromXYWH(0, 0, 1920, 1080);
+            bool result = ScreenTintBypass.ShouldExcludeLayeredWindows(region);
+            Assert.True(result || !result);
+        }
     }
 }

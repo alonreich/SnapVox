@@ -74,13 +74,6 @@ namespace snapvox.native
             return ResolveLanguageTag("en") != null;
         }
 
-        public static bool IsHebrewLanguageAvailable()
-        {
-            return ResolveLanguageTag("he") != null;
-        }
-
-
-
         public static Task EnsureWindowsOcrInstalled() => Task.CompletedTask;
 
         internal static Task<OcrInformation> RecognizeEnglishOnlyAsync(Image image, CancellationToken cancellationToken)

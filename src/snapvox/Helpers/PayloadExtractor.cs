@@ -89,7 +89,7 @@ namespace snapvox.helpers
             }
         }
 
-        public static void ExtractTo(string targetDirectory)
+        public static async System.Threading.Tasks.Task ExtractToAsync(string targetDirectory, CancellationToken cancellationToken = default)
         {
             string resourceName = Assembly.GetExecutingAssembly().GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(PayloadName, StringComparison.OrdinalIgnoreCase));
             if (resourceName == null)
@@ -107,6 +107,8 @@ namespace snapvox.helpers
             using ZipArchive archive = new ZipArchive(stream);
             foreach (ZipArchiveEntry entry in archive.Entries)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 string destinationPath = Path.GetFullPath(Path.Combine(targetDirectory, entry.FullName));
                 if (!destinationPath.StartsWith(Path.GetFullPath(targetDirectory), StringComparison.OrdinalIgnoreCase))
                 {
@@ -127,6 +129,7 @@ namespace snapvox.helpers
 
                     for (int attempt = 0; attempt < 5; attempt++)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         try
                         {
                             if (File.Exists(destinationPath))
@@ -140,13 +143,13 @@ namespace snapvox.helpers
                         }
                         catch (IOException)
                         {
-                            if (attempt == 4) break;
-                            Thread.Sleep(100);
+                            if (attempt == 4) throw;
+                            await System.Threading.Tasks.Task.Delay(100, cancellationToken).ConfigureAwait(false);
                         }
                         catch (UnauthorizedAccessException)
                         {
-                            if (attempt == 4) break;
-                            Thread.Sleep(100);
+                            if (attempt == 4) throw;
+                            await System.Threading.Tasks.Task.Delay(100, cancellationToken).ConfigureAwait(false);
                         }
                     }
                 }

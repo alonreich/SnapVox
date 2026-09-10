@@ -42,8 +42,9 @@ namespace snapvox.editor.forms
             return blinkTotalMs;
         }
 
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool GetCursorPos(out POINT lpPoint);
+        [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static partial bool GetCursorPos(out POINT lpPoint);
 
         private static Window ResolveContextWindow(Window owner)
         {
@@ -74,7 +75,7 @@ namespace snapvox.editor.forms
                 }
                 catch (ObjectDisposedException)
                 {
-                    return null;
+                    // Context window closed before notification dispatched; fall through to probe/primary screen.
                 }
                 catch
                 {
@@ -240,20 +241,32 @@ namespace snapvox.editor.forms
                     window.UpdateLayout();
 
                     var bounds = window.Bounds;
+                    double scaling = targetScreen.Scaling > 0 ? targetScreen.Scaling : 1.0;
+                    double physOwnerWidth = anchoredToWindow ? (ownerBounds.Width * scaling) : work.Width;
+                    double physOwnerHeight = anchoredToWindow ? (ownerBounds.Height * scaling) : work.Height;
+                    double physToastWidth = (bounds.Width > 0 ? bounds.Width : 200) * scaling;
+                    double physToastHeight = (bounds.Height > 0 ? bounds.Height : 40) * scaling;
+                    double margin = 30 * scaling;
+                    double topMargin = anchoredToWindow ? (92 * scaling) : margin;
+                    double stackGap = 5 * scaling;
+
                     GetCursorPos(out POINT cursor);
 
                     double relX = cursor.X - ownerPos.X;
                     double relY = cursor.Y - ownerPos.Y;
                     
-                    bool isRight = relX > ownerBounds.Width / 2;
-                    bool isTop = relY < ownerBounds.Height / 2;
+                    bool isRight = relX > physOwnerWidth / 2.0;
+                    bool isTop = relY < physOwnerHeight / 2.0;
 
-                    double targetX = isRight ? ownerPos.X + 30 : ownerPos.X + ownerBounds.Width - bounds.Width - 30;
-                    double targetY = isTop ? ownerPos.Y + ownerBounds.Height - bounds.Height - 30 : ownerPos.Y + 92 + 30;
+                    double targetX = isRight ? ownerPos.X + margin : ownerPos.X + physOwnerWidth - physToastWidth - margin;
+                    double targetY = isTop ? ownerPos.Y + physOwnerHeight - physToastHeight - margin : ownerPos.Y + topMargin;
 
-                    targetY += isTop ? -(offset * (bounds.Height + 5)) : (offset * (bounds.Height + 5));
+                    targetY += isTop ? -(offset * (physToastHeight + stackGap)) : (offset * (physToastHeight + stackGap));
 
-                    window.Position = new PixelPoint((int)targetX, (int)targetY);
+                    int clampedX = (int)Math.Max(work.X, Math.Min(work.X + work.Width - physToastWidth, targetX));
+                    int clampedY = (int)Math.Max(work.Y, Math.Min(work.Y + work.Height - physToastHeight, targetY));
+
+                    window.Position = new PixelPoint(clampedX, clampedY);
 
                     for (int i = 0; i < 5; i++) { window.Opacity += 0.2; await Task.Delay(40); }
                     window.Opacity = 1.0;

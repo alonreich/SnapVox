@@ -1,12 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- Circular reset arrow (counter-clockwise return to 1:1) -->
-  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-        d="M 3.5 4.5 H 8 V 9" />
-  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-        d="M 7.8 5 A 8 8 0 1 1 4 12" />
-  <!-- Centered 1:1 ratio numerals -->
-  <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
-        d="M 8 10.2 L 9.5 9 V 15.5 M 8.5 15.5 H 10.5 M 13.5 10.2 L 15 9 V 15.5 M 14 15.5 H 16" />
-  <circle cx="12" cy="11.2" r="0.95" fill="currentColor" />
-  <circle cx="12" cy="14.2" r="0.95" fill="currentColor" />
+  <!-- Matching magnifying glass base (aligned with zoom-in and zoom-out) -->
+  <path fill="currentColor" d="M9.5 3a6.5 6.5 0 1 1 0 13a6.5 6.5 0 0 1 0-13m0 2a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9zm5.53 9.61l1.06-1.06l5.66 5.65l-1.06 1.06z" />
+  <!-- Full-bleed diagonal slash (perpendicular to handle, reset/cancel zoom motif) -->
+  <line x1="3.8" y1="15.2" x2="15.2" y2="3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
 </svg>
+

@@ -1,4 +1,4 @@
-﻿using snapvox.native;
+using snapvox.native;
 using snapvox.native.foundation;
 using System;
 using System.Collections.Generic;
@@ -205,7 +205,22 @@ namespace snapvox.foundation.IniFile
             return props;
         }
 
-        public static void Save() { _ = Task.Run(() => { if (Monitor.TryEnter(IniLock, TimeSpan.FromMilliseconds(200))) { try { SaveInternally(CreateIniLocation(_configName + IniExtension, false)); } catch (Exception ex) { Log.Error("Failed to save ini", ex); } finally { Monitor.Exit(IniLock); } } }); }
+        public static void Save()
+        {
+            _ = Task.Run(() =>
+            {
+                if (Monitor.TryEnter(IniLock, TimeSpan.FromMilliseconds(200)))
+                {
+                    try { SaveInternally(CreateIniLocation(_configName + IniExtension, false)); }
+                    catch (Exception ex) { Log.Error("Failed to save ini", ex); }
+                    finally { Monitor.Exit(IniLock); }
+                }
+                else
+                {
+                    Log.Warn("Ini save skipped: another save is still in progress (lock busy > 200ms).");
+                }
+            });
+        }
 
         public static void SaveTo(string path)
         {
@@ -217,21 +232,34 @@ namespace snapvox.foundation.IniFile
             Log.Info("Saving configuration to: " + iniLocation);
             string dir = Path.GetDirectoryName(iniLocation);
             if (dir != null && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            
-            using (var fs = new FileStream(iniLocation, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (var writer = new StreamWriter(fs, Encoding.UTF8))
+
+            string tempFile = iniLocation + ".tmp";
+            try
             {
-                foreach (var section in SectionMap.Values) { section.Write(writer, false); writer.WriteLine(); section.IsDirty = false; }
-                writer.WriteLine();
-                foreach (string name in _sections.Keys)
+                using (var fs = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(fs, Encoding.UTF8))
                 {
-                    if (SectionMap.ContainsKey(name)) continue;
-                    writer.WriteLine("; Section {0} unclaimed", name);
-                    writer.WriteLine("[{0}]", name);
-                    foreach (var kv in _sections[name]) writer.WriteLine("{0}={1}", kv.Key, kv.Value);
+                    foreach (var section in SectionMap.Values) { section.Write(writer, false); writer.WriteLine(); section.IsDirty = false; }
                     writer.WriteLine();
+                    foreach (string name in _sections.Keys)
+                    {
+                        if (SectionMap.ContainsKey(name)) continue;
+                        writer.WriteLine("; Section {0} unclaimed", name);
+                        writer.WriteLine("[{0}]", name);
+                        foreach (var kv in _sections[name]) writer.WriteLine("{0}={1}", kv.Key, kv.Value);
+                        writer.WriteLine();
+                    }
+                    writer.Flush();
+                    fs.Flush(true);   // flush OS buffers to disk before the swap
                 }
-                writer.Flush();
+
+                // Atomic swap: readers see either the complete old file or the complete new file - never a torn one.
+                if (File.Exists(iniLocation)) File.Replace(tempFile, iniLocation, iniLocation + ".bak");
+                else File.Move(tempFile, iniLocation);
+            }
+            finally
+            {
+                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
             }
         }
 

@@ -18,14 +18,41 @@ public struct CONSOLE_FONT_INFOEX
 public static class ConsoleFont
 {
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern IntPtr GetStdHandle(int nStdHandle);
+    public static extern bool AttachConsole(uint dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr CreateFile(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool SetCurrentConsoleFontEx(IntPtr hConsoleOutput, bool bMaximumWindow, ref CONSOLE_FONT_INFOEX lpConsoleCurrentFontEx);
+    public static extern bool SetCurrentConsoleFontEx(
+        IntPtr hConsoleOutput,
+        bool bMaximumWindow,
+        ref CONSOLE_FONT_INFOEX lpConsoleCurrentFontEx);
 
-    public static void ForceConsolas16()
+    public static bool ForceConsolas16()
     {
-        IntPtr hnd = GetStdHandle(-11);
+        IntPtr hnd = CreateFile("CONOUT$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+        if (hnd == IntPtr.Zero || hnd == new IntPtr(-1))
+        {
+            AttachConsole(0xFFFFFFFF);
+            hnd = CreateFile("CONOUT$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+        }
+
+        if (hnd == IntPtr.Zero || hnd == new IntPtr(-1))
+        {
+            return false;
+        }
+
         CONSOLE_FONT_INFOEX info = new CONSOLE_FONT_INFOEX();
         info.cbSize = (uint)Marshal.SizeOf(info);
         info.FaceName = "Consolas";
@@ -33,8 +60,12 @@ public static class ConsoleFont
         info.dwFontSizeX = 0;
         info.FontWeight = 400;
         info.FontFamily = 54;
-        SetCurrentConsoleFontEx(hnd, false, ref info);
+
+        bool success = SetCurrentConsoleFontEx(hnd, false, ref info);
+        CloseHandle(hnd);
+        return success;
     }
 }
 "@
-[ConsoleFont]::ForceConsolas16()
+[void][ConsoleFont]::ForceConsolas16()
+

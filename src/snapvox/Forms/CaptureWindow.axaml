@@ -45,6 +45,7 @@
             </Border.Background>
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <TextBlock Name="InstructionText" Text="Drag to capture or hover window" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11"/>
+                <TextBlock Name="CopyText" Text="C = Copy" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11"/>
                 <TextBlock Name="OcrText" Text="T = Text capture" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11"/>
                 <TextBlock Text="Esc = Cancel" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11"/>
             </StackPanel>

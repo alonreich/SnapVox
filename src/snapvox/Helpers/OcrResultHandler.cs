@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -41,7 +41,7 @@ namespace snapvox.helpers
                     Directory.CreateDirectory(tempDir);
                     string historyPath = Path.Combine(tempDir, fileName);
                     await File.WriteAllTextAsync(historyPath, text).ConfigureAwait(false);
-                    Process.Start(new ProcessStartInfo("notepad.exe", historyPath) { UseShellExecute = true });
+                    Process.Start(new ProcessStartInfo("notepad.exe", $"\"{historyPath}\"") { UseShellExecute = true });
 
                     Dispatcher.UIThread.Post(() => {
                         NotificationOverlayWindow.ShowNotification("TEXT COPIED & SAVED", null);
@@ -60,6 +60,7 @@ namespace snapvox.helpers
             catch (Exception ex)
             {
                 Log.Error("Failed to handle OCR result.", ex);
+                throw;
             }
         }
     }

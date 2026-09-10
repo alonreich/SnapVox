@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Input;
@@ -26,6 +28,10 @@ namespace snapvox.foundation.core
         [DllImport("user32.dll", SetLastError = true)] private static extern bool EmptyClipboard();
         [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
         [DllImport("user32.dll", SetLastError = true)] private static extern bool CloseClipboard();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateWindowExW(uint style, string className, string title, uint windowStyle,
+            int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr parameter);
+        [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr window);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalLock(IntPtr hMem);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(IntPtr hMem);
@@ -35,6 +41,7 @@ namespace snapvox.foundation.core
         [DllImport("user32.dll")] private static extern bool IsClipboardFormatAvailable(uint format);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterClipboardFormat(string lpszFormat);
 
+        private const uint CF_UNICODETEXT = 13;
         private const uint CF_DIB = 8;
         private const uint GHND = 0x0042;
         private const int DefaultClipboardHistoryPromotionDelayMs = 400;
@@ -81,9 +88,9 @@ namespace snapvox.foundation.core
         public static void RegisterGetter(Func<Avalonia.Input.Platform.IClipboard> getClipboard) => _getClipboard = getClipboard;
         public static Avalonia.Input.Platform.IClipboard GetClipboard() => _getClipboard?.Invoke();
 
-        public static Task SetTextAsync(string text)
+        public static async Task SetTextAsync(string text)
         {
-            if (string.IsNullOrEmpty(text)) return Task.CompletedTask;
+            if (string.IsNullOrEmpty(text)) return;
 
             Func<string, Task> handler;
             lock (_textHandlerLock)
@@ -91,17 +98,77 @@ namespace snapvox.foundation.core
                 handler = _textHandlers.Count > 0 ? _textHandlers[_textHandlers.Count - 1].SetTextAsync : null;
             }
 
-            if (handler == null)
+            if (handler != null)
             {
-
-                LogHelper.GetLogger(typeof(UiClipboard)).Warn("SetTextAsync dropped text: no open window registered a clipboard handler.");
-                return Task.CompletedTask;
+                try
+                {
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        await handler(text);
+                    });
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.GetLogger(typeof(UiClipboard)).Warn("Window clipboard handler failed; falling back to native.", ex);
+                }
             }
 
-            return Dispatcher.UIThread.InvokeAsync(async () =>
+            var clipboard = GetClipboard();
+            if (clipboard != null)
             {
-                await handler(text);
-            });
+                try
+                {
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        await clipboard.SetTextAsync(text);
+                    });
+                    return;
+                }
+                catch { }
+            }
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (await SetWin32ClipboardTextAsync(text).ConfigureAwait(false))
+                {
+                    return;
+                }
+            }
+
+            throw new InvalidOperationException("Text could not be copied to the clipboard. Please try again.");
+        }
+
+        private static async Task<bool> SetWin32ClipboardTextAsync(string text)
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return false;
+            byte[] bytes = Encoding.Unicode.GetBytes(text + "\0");
+            for (int i = 0; i < 5; i++)
+            {
+                if (TryWriteNativeClipboard(() => SetClipboardBytes(CF_UNICODETEXT, bytes))) return true;
+                await Task.Delay(50).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        private static bool TryWriteNativeClipboard(Func<bool> write)
+        {
+            // EmptyClipboard with a NULL owner prevents SetClipboardData from
+            // succeeding. Create an owned message-only window on this thread.
+            IntPtr owner = CreateWindowExW(0, "STATIC", "SnapVox Clipboard", 0,
+                0, 0, 0, 0, new IntPtr(-3), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            if (owner == IntPtr.Zero) return false;
+            try
+            {
+                if (!OpenClipboard(owner)) return false;
+                try
+                {
+                    if (!EmptyClipboard()) return false;
+                    return write();
+                }
+                finally { CloseClipboard(); }
+            }
+            finally { DestroyWindow(owner); }
         }
 
 
@@ -470,7 +537,7 @@ namespace snapvox.foundation.core
 
         public static async Task SetImageAsync(Image image, bool markSnapVoxEditorImage = false)
         {
-            if (image == null) return;
+            ArgumentNullException.ThrowIfNull(image);
 
             try
             {
@@ -485,54 +552,13 @@ namespace snapvox.foundation.core
                     uint snapVoxFormat = markSnapVoxEditorImage ? RegisterClipboardFormat(SnapVoxEditorImageFormat) : 0;
                     for (int i = 0; i < 5; i++)
                     {
-                        if (OpenClipboard(IntPtr.Zero))
+                        success = TryWriteNativeClipboard(() =>
                         {
-                            try
-                            {
-                                EmptyClipboard();
-                                IntPtr hGlobal = GlobalAlloc(GHND, (UIntPtr)dibBytes.Length);
-                                bool dibTransferred = false;
-                                if (hGlobal != IntPtr.Zero)
-                                {
-                                    bool ownershipTransferred = false;
-                                    try
-                                    {
-                                        IntPtr lpGlobal = GlobalLock(hGlobal);
-                                        if (lpGlobal != IntPtr.Zero)
-                                        {
-                                            try
-                                            {
-                                                Marshal.Copy(dibBytes, 0, lpGlobal, dibBytes.Length);
-                                            }
-                                            finally
-                                            {
-                                                GlobalUnlock(hGlobal);
-                                            }
-
-                                            if (SetClipboardData(CF_DIB, hGlobal) != IntPtr.Zero)
-                                            {
-                                                ownershipTransferred = true;
-                                                dibTransferred = true;
-                                            }
-                                        }
-                                    }
-                                    finally
-                                    {
-                                        if (!ownershipTransferred)
-                                        {
-                                            GlobalFree(hGlobal);
-                                        }
-                                    }
-                                }
-                                if (dibTransferred && snapVoxFormat != 0)
-                                {
-                                    SetClipboardBytes(snapVoxFormat, SnapVoxEditorImageBytes);
-                                }
-                                success = dibTransferred;
-                                break;
-                            }
-                            finally { CloseClipboard(); }
-                        }
+                            if (!SetClipboardBytes(CF_DIB, dibBytes)) return false;
+                            if (snapVoxFormat != 0) SetClipboardBytes(snapVoxFormat, SnapVoxEditorImageBytes);
+                            return true;
+                        });
+                        if (success) break;
                         await Task.Delay(50).ConfigureAwait(false);
                     }
                     if (success) return;
@@ -553,11 +579,14 @@ namespace snapvox.foundation.core
                     {
                         await clipboard.SetDataObjectAsync(dataObject);
                     });
+                    return;
                 }
+                throw new InvalidOperationException("The picture could not be copied to the clipboard. Please try again.");
             }
             catch (Exception ex)
             {
                 LogHelper.GetLogger(typeof(UiClipboard)).Error("Failed to set image to clipboard", ex);
+                throw;
             }
         }
 

@@ -23,7 +23,7 @@ CORE MANDATES (THE "GHOST" RULES)
 1. **Zero UI Friction:** Tray icon click triggers capture immediately. No splash screens.
 2. **Avalonia/ImageSharp Runtime Path:** The active UI and image pipeline is Avalonia UI + SixLabors.ImageSharp; legacy compatibility names and shims may remain for migration support.
 3. **SVG Toolbar UI:** The Editor uses bundled SVG toolbar icons and standard text/icon controls.
-4. **Thin-Client Interop:** Use direct Win32/C++ level calls (CsWin32) for performance, bypassing "heavy" .NET wrappers.
+4. **Thin-Client Interop:** Use direct Win32 P/Invoke calls (snapvox.native.PInvoke) for performance, bypassing "heavy" .NET wrappers.
 5. **Native Finality:** Branch 1 is compiled to machine code via .NET 9 Native AOT. Branch 2 uses a Native AOT installer wrapper with a self-contained non-AOT Tesseract payload because the external OCR runtime is not Native AOT-compatible.
 6. **Async Everything (Engine Audit Parity):** All I/O, OCR, and cleanup operations MUST be non-blocking. 
    - No `Thread.Sleep`. Use `Task.Delay`.
@@ -53,7 +53,7 @@ CORE MANDATES (THE "GHOST" RULES)
      - Subfolder `\Runtime\`: Used for transient DLL extraction.
    - **Installation Log:** Saved EXCLUSIVELY to a standalone file at `%TMP%\SnapVox_Installation.log`.
 11. **Visual Notification Overlays:**
-   - Any successful download or OCR action MUST trigger a **blinking Red/White/Blue overlay** for 1.0 seconds (4x 250ms cycles).
+   - Any successful download or OCR action MUST trigger a **blinking 4-color high-contrast overlay** (#FFFFFF, #FF3355, #00D2FF, #FFB703) honoring configurable duration (NotificationOverlayDurationMs in INI, clamped 250-10000ms, default 1.0s / 4 cycles).
    - Text variants: "IMAGE SAVED TO DOWNLOADS", "IMAGE SAVED TO CLIPBOARD", "TEXT COPIED", and "TEXT COPIED & SAVED".
 
 UI/UX ACCESSIBILITY & LAYOUT MANDATES
@@ -85,6 +85,8 @@ FUNCTIONAL SPECIFICATIONS (THE USER EXPERIENCE)
 1. **Hotkey Triggers:**
    - `PrintScreen`: Starts custom rubberband region selection.
    - `Alt + PrintScreen`: Captures EXACTLY the current active window/app size only.
+   - `Ctrl + PrintScreen`: Captures the entire virtual desktop / fullscreen.
+   - `Shift + PrintScreen`: Repeats capture of the last selected region.
    - **High-Compatibility Copy:** Every capture is AUTOMATICALLY pushed to the clipboard as raw `CF_DIB` data for seamless pasting.
 2. **Visual Feedback & Collision Mechanics:**
    - Systray Icon: Turns **RED** immediately upon entering capture mode. Returns to **BLUE** when finished.
@@ -112,7 +114,7 @@ V3.0 FINAL UI/UX ENHANCEMENTS (COMPLETED)
 4. **OCR Engine Parity:** Standardized initialization and language pack validation for both providers.
 5. **Context-Sensitive Property Control Management:** Dynamic `ThicknessPanel` reveals itself only when a relevant vector tool is active.
 6. **High-Accuracy Vector Bounding Box Normalization:** Selection indicators tightly wrap the absolute visual frame of Arrows, Lines, and FreeDraw.
-7. **Deterministic Global Zooming Engine:** Center-based scaling using `Ctrl+Scroll` via `PointerWheelChanged` tunneling.
+7. **Deterministic Global Zooming Engine:** Viewport-center and cursor-focal point scaling (`SetFocalPoint` / `SetFocalPointToCenter`) with dynamic viewport centering and exponential ease-out interpolation.
 8. **Precision Proportional Scaling Engine:** Mathematical aspect-ratio lock for Emojis, Counters, and Text.
 9. **Input Interception for Text Commitment:** ESC, Enter, or Right-Click in a TextBox commits text instantly.
 10. **Hue-Shift Red State Feedback:** Dynamically modifies `SnapVox.ico` into vibrant red during capture mode.
@@ -128,42 +130,57 @@ V3.0 FINAL UI/UX ENHANCEMENTS (COMPLETED)
 20. **Duplicate Collision Handling:** Quadrant-aware boundary checks prevent duplicated objects from walking off-canvas.
 21. **Persistent Tool State:** Independent tracking of color and thickness for each tool is saved across application restarts.
 22. **Quadrant-Aware Toasts:** Notification overlays actively evade the user's cursor by spawning in the opposite screen quadrant.
-23. **Dark Navy Frame Enforcement:** Fixed frame rendering to consistently apply a `#000080` border across all output types.
+23. **Configurable Snippet Frame Border:** Frame border rendering applies user-configured color (default #434343 Dark Gray) and thickness (default 4px) across captures and exported outputs.
 24. **Vector Rotation Integrity:** Fixed critical defect where Arrows and Polylines lost orientation/metadata during image rotation.
 25. **Hebrew OCR UX:** Implemented automatic parentheses and bracket mirroring for RTL-dominant text extraction.
 26. **Counter Synchronization:** Vertical tick buttons now correctly update the global counter sequence for subsequent placements.
 27. **Resize Snapping:** Added a 100% "Magnetic Snap" to the vertical resize slider for rapid return to original dimensions.
-28. **Universal Magnetic Toggle:** Added a global toggle button with an SVG magnet icon in the bottom toolbar to control magnetic snapping. State is persisted to `CoreConfiguration`.
+28. **Universal Magnetic Toggle:** Added a global toggle button with an SVG magnet icon in the bottom toolbar to control magnetic snapping. State is persisted to CoreConfiguration.
 29. **Vector "Ghost" Snapping Points:** When a line or arrow is selected/drawn, 8 ghost dots appear around nearby rectangular and circular objects. The dots are faint gray and light up bright blue when the vector endpoint snaps exactly to them.
 30. **Counter Duplication Fix:** Hand cursor correctly displays when hovering over duplicated Counters by ensuring the internal TextBlock correctly ignores pointer hit tests.
 31. **Vector Bounding Constraints:** Snapping points calculate mathematically correct circular perimeter intersections for Emojis, Counters, and Ellipses at 45-degree intervals.
+32. **Text Tool Rubberband Spread & Proportional Font Sizing:** Text tool supports spreading a bounding rectangle across the canvas (like shapes) instead of a single fixed stamp. Single click retains quick click-to-type with standard dimensions; dragging a rectangle defines dimensions and automatically scales initial font size proportional to interior height (~65%).
+33. **Immediate Text Box Dragging & Edge Grabbing:** Users can immediately move active text boxes by grabbing the outer frame or selection boundary without canceling inline editing or losing text focus. Hovering the frame edge switches to SizeAll cursor; clicking text switches to Ibeam cursor.
+34. **True Middle & Center Text Alignment:** Text inside rectangular frames is vertically centered inside the border and horizontally centered across all lines, with Avalonia TextBox auto-height and template scroll viewer centering. RTL character input preserves centered alignment.
+35. **Outward Text Box Thickness Expansion:** Modifying text box frame thickness dynamically shifts outer coordinates and expands width/height so the frame grows exclusively outwards into the canvas. The inner text bounds and client coordinates remain 100% invariant.
+36. **Monochrome Zoom Reset Icon Refactoring:** Rebuilt icons\zoom-reset.svg into a clean monochrome currentColor magnifying glass with a 45-degree perpendicular reset/cancel diagonal slash matching zoom-in.svg and zoom-out.svg.
+37. **Settings Frame Border Controls Realignment:** Pixel-perfect vertical alignment for capture frame border Color swatch and Thickness NumericUpDown, fixing Fluent theme ButtonSpinner layout squashing, custom 18px repeat buttons, and active numerical value visibility.
+38. **Smart Dynamic Proportional Text Scaling:** Text inside text boxes dynamically expands and contracts in proportion to the bounding box dimensions during handle resizing and typing, supporting multi-line wrapping and robust binary-search font fitting without NaN collapses.
+39. **Occluded Window Snapping:** Magnetically snapping to a window captures the occluded window content directly via PrintWindow (PW_RENDERFULLCONTENT) even when partially or fully covered by other windows.
+40. **Bottom Toolbar Scrollbar Separation:** Bottom toolbar scroller separates interactive buttons (Row="0") from horizontal scrollbar (Row="1"), preventing scrollbar track/thumb from overlapping controls.
+41. **Chrome Scroll Capture & Floating Control Bar:** Scroll capture recorder eliminates aggressive frame aborts for Chrome/web browsers, complemented by a floating ScrollCaptureBarWindow featuring a pulsing REC dot, live counter, and on-screen finish button.
+42. **Redesigned Crop Cutout Icons & Extended Popup:** Replaced zigzag crop icons with clean directional arrow cutouts in crop-mode-column.svg and crop-mode-band.svg, widening popup to 732px to eliminate text clipping.
+43. **Tunneling Enter Key Crop Approval:** Tunneling keydown routing ensures pressing Enter immediately confirms crop boundaries across all crop modes without being intercepted by focused controls.
+44. **f.lux & Night Light Planckian Color Compensation:** Real-time inverse-color LUT correction neutralizes software color temperature / amber tint without screen flickering or registry modifications, with multi-monitor overlay detection.
+45. **Settings Discard Warning Guard:** Cancel button in Settings only shows the unsaved changes prompt if modifications were actually made.
 
 
 ROLES & PURPOSES MAP
 --------------------
 - **src\snapvox**: Application lifecycle, Tray Icon, Global Hotkeys, and Capture/OCR selection UI.
 - **src\snapvox.editor**: Image editing canvas, vector annotations, and high-performance saving workflows.
-- **src\snapvox.foundation**: Core abstractions, Win32 Interop (CsWin32), and OCR Interface definitions.
+- **src\snapvox.foundation**: Core abstractions, Win32 Interop (snapvox.native.PInvoke), and OCR Interface definitions.
 - **src\snapvox.tests**: Validation suite for critical paths (Clipboard, Retention, I/O).
+
 
 PRODUCT SPECIFICATION (DETAILED REQUIREMENTS)
 ---------------------------------------------
 1.  **Toolbar Layout Restructuring:** Top toolbar places Crop left of Resize, OCR right. Bottom panel houses "Fill Shape" button.
 2.  **Thickness Selector:** 7 solid vertical line icons (1, 2, 3, 5, 8, 12, 16px). Active highlighted with 2px White border.
 3.  **Vertical Toolbar Scrolling & Organization:** Wrapped in a ScrollViewer. Order: [Arrow, Line, Rect, Ellipse, FreeDraw] -> [Separator] -> [Highlight, Blur] -> [Separator] -> [Text, Counter, Emoji].
-4.  **Toolbar Theming:** Uniform `#808080` background.
+4.  **Toolbar Theming:** Uniform #808080 background.
 5.  **Per-Tool State Isolation:** Independent Color, Thickness, and Fill state dictionaries per tool.
 6.  **Highlight Color Customization:** Highlight tool allows any color with 80-alpha transparency.
 7.  **Pixelation Strength:** Adjustable via an inline slider in the bottom toolbar with a range of 2 to 29. Irreversible redaction.
 8.  **FIFO Color Palette:** 6-slot history with newest-slot deduplication.
-9.  **Snippet Frame Border:** Hardcoded 3px Blue (#000080) border baked into all output.
-10. **Settings GUI Window:** 850x650 modeless. Configurable hotkeys with multi-modifier support and real-time clash detection (blocks saving if conflicted).
+9.  **Snippet Frame Border:** Configurable in Settings and INI (FrameBorderColor default #434343, FrameBorderThickness default 4px, FrameBorderEnabled default true).
+10. **Settings GUI Window:** Modeless window with `SizeToContent="WidthAndHeight"` and `MinWidth="720" MinHeight="520"` constraints. Configurable hotkeys with multi-modifier support and real-time clash detection (blocks saving if conflicted).
 11. **Admin Privilege Toggle:** Non-admin by default. Toggles Task Scheduler with toast feedback.
 12. **Deployment Window Casing:** "SnapVox Setup" and "SnapVox Uninstaller".
-13. **Editor Minimum Bounds:** 880x630 minimum window size. Window auto-fits to snip + toolbars after first layout (AutoFitWindowToContent).
+13. **Editor Minimum Bounds:** Declared XAML bounds are `MinWidth="880" MinHeight="630"` with programmatic sizing floor of 880x520 (`MinEditorWindowWidth=880`, `MinEditorWindowHeight=520`). Window auto-fits to snip + toolbars after first layout (AutoFitWindowToContent).
 14. **Non-Destructive Mode Toggling:** Clicking active tool button, ESC, or Right-Click resets to the Hand cursor (multi-select / panning mode).
 15. **Notification Overlay System (Dual-Tier):**
-    - **Tier 1: Heavy Blinking Overlay:** 1.0s duration (4x 250ms cycles). White -> Red -> Blue. Used for critical high-value actions: OCR, Save/Download, and Copy to Clipboard. Lifetime hardened: both overlay windows close via try/finally (a mid-animation exception used to strand a topless window), and the editor close delay reads the same clamped duration (max 1000ms) so a 500ms setting no longer leaves the editor idling 500ms after the blink ended.
+    - **Tier 1: Heavy Blinking Overlay:** 4-step vivid cycle (#FFFFFF, #FF3355, #00D2FF, #FFB703) honoring NotificationOverlayDurationMs (clamped 250-10000ms, default 1000ms / 4 cycles). Used for critical high-value actions: OCR, Save/Download, and Copy to Clipboard. Lifetime hardened: both overlay windows close via try/finally (a mid-animation exception used to strand a topless window), and the editor close delay reads the same clamped duration (max 1000ms) so a 500ms setting no longer leaves the editor idling 500ms after the blink ended.
     - **Tier 2: Lightweight Yellow Toast:** Fades in/out over 1.0s. Solid Yellow text. Used for frequent minor actions: Shape placement, resizing, undo/redo, crop, color/fill/thickness updates.
 16. **Installer Conflict Heuristics:** Scans 50+ apps (Greenshot, Snagit). Halts install with manual removal instructions.
 17. **Tool Default Hardcoding:** 60px first-run size for Emojis, 42px first-run size for Counters, and 8px default for Line/Arrow.
@@ -182,14 +199,11 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   .gitignore
 |   Build.cmd
 |   build.log
-|   clean_tree.txt
+|   dev_build.cmd
 |   LICENSE.txt
-|   list.cs
 |   project_structure.txt
 |   README.md
 |   snapvox.sln
-|   test.cs
-|   TestLang.cs
 |   THIRDPARTYNOTICES.txt
 |   
 +---compiled
@@ -198,26 +212,27 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |       SnapVox_tesseract.exe
 |       
 +---developer_tools
-|   |   BuildLog.ps1
-|   |   Find_and_Remove_Comments.py
-|   |   Pull_Code_Files.py
-|   |   SetConsoleFont.ps1
-|   |   
-|   \---documentation
-|           AOT_SUPPRESSIONS.md
-|           TECHNICAL_NOTES.md
-|           
+|       BuildLog.ps1
+|       Find_and_Remove_Comments.py
+|       Pull_Code_Files.py
+|       SetConsoleFont.ps1
+|       
 +---icons
 |       arrow.svg
-|       check.svg
 |       circle.svg
 |       copy.svg
 |       counter.svg
+|       crop-mode-band.svg
+|       crop-mode-column.svg
+|       crop-mode-free.svg
+|       crop-mode-keep-ratio.svg
+|       crop-mode-square.svg
+|       crop-mode-tall.svg
+|       crop-mode-wide.svg
 |       crop.svg
 |       custom-color.svg
 |       delete.svg
 |       download.svg
-|       duplicate.svg
 |       email.svg
 |       emoji.svg
 |       fill.svg
@@ -240,8 +255,6 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |       zoom-out.svg
 |       zoom-reset.svg
 |       
-+---obj
-|   \---StandaloneTemp
 +---src
 |   |   .editorconfig
 |   |   Directory.Build.props
@@ -256,251 +269,13 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |   snapvox.manifest
 |   |   |   snapvoxmain.cs
 |   |   |   
-|   |   +---bin
-|   |   |   \---Release
-|   |   |       \---net9.0-windows10.0.19041.0
-|   |   |           \---win-x64
-|   |   |               |   Avalonia.Base.dll
-|   |   |               |   Avalonia.Controls.ColorPicker.dll
-|   |   |               |   Avalonia.Controls.dll
-|   |   |               |   Avalonia.DesignerSupport.dll
-|   |   |               |   Avalonia.Desktop.dll
-|   |   |               |   Avalonia.Dialogs.dll
-|   |   |               |   Avalonia.dll
-|   |   |               |   Avalonia.FreeDesktop.dll
-|   |   |               |   Avalonia.Markup.dll
-|   |   |               |   Avalonia.Markup.Xaml.dll
-|   |   |               |   Avalonia.Metal.dll
-|   |   |               |   Avalonia.MicroCom.dll
-|   |   |               |   Avalonia.Native.dll
-|   |   |               |   Avalonia.OpenGL.dll
-|   |   |               |   Avalonia.Remote.Protocol.dll
-|   |   |               |   Avalonia.Skia.dll
-|   |   |               |   Avalonia.Svg.Skia.dll
-|   |   |               |   Avalonia.Themes.Fluent.dll
-|   |   |               |   Avalonia.Vulkan.dll
-|   |   |               |   Avalonia.Win32.dll
-|   |   |               |   Avalonia.X11.dll
-|   |   |               |   av_libglesv2.dll
-|   |   |               |   clretwrc.dll
-|   |   |               |   clrgc.dll
-|   |   |               |   clrgcexp.dll
-|   |   |               |   clrjit.dll
-|   |   |               |   coreclr.dll
-|   |   |               |   createdump.exe
-|   |   |               |   ExCSS.dll
-|   |   |               |   HarfBuzzSharp.dll
-|   |   |               |   hostfxr.dll
-|   |   |               |   hostpolicy.dll
-|   |   |               |   libHarfBuzzSharp.dll
-|   |   |               |   libSkiaSharp.dll
-|   |   |               |   log4net.dll
-|   |   |               |   MicroCom.Runtime.dll
-|   |   |               |   Microsoft.CSharp.dll
-|   |   |               |   Microsoft.DiaSymReader.Native.amd64.dll
-|   |   |               |   Microsoft.VisualBasic.Core.dll
-|   |   |               |   Microsoft.VisualBasic.dll
-|   |   |               |   Microsoft.Win32.Primitives.dll
-|   |   |               |   Microsoft.Win32.Registry.dll
-|   |   |               |   Microsoft.Windows.SDK.NET.dll
-|   |   |               |   mscordaccore.dll
-|   |   |               |   mscordaccore_amd64_amd64_9.0.1926.36724.dll
-|   |   |               |   mscordbi.dll
-|   |   |               |   mscorlib.dll
-|   |   |               |   mscorrc.dll
-|   |   |               |   msquic.dll
-|   |   |               |   netstandard.dll
-|   |   |               |   ShimSkiaSharp.dll
-|   |   |               |   SixLabors.ImageSharp.dll
-|   |   |               |   SkiaSharp.dll
-|   |   |               |   SkiaSharp.HarfBuzz.dll
-|   |   |               |   SnapVox.deps.json
-|   |   |               |   SnapVox.dll
-|   |   |               |   snapvox.editor.dll
-|   |   |               |   snapvox.foundation.dll
-|   |   |               |   SnapVox.runtimeconfig.json
-|   |   |               |   Svg.Custom.dll
-|   |   |               |   Svg.Model.dll
-|   |   |               |   Svg.Skia.dll
-|   |   |               |   System.AppContext.dll
-|   |   |               |   System.Buffers.dll
-|   |   |               |   System.Collections.Concurrent.dll
-|   |   |               |   System.Collections.dll
-|   |   |               |   System.Collections.Immutable.dll
-|   |   |               |   System.Collections.NonGeneric.dll
-|   |   |               |   System.Collections.Specialized.dll
-|   |   |               |   System.ComponentModel.Annotations.dll
-|   |   |               |   System.ComponentModel.DataAnnotations.dll
-|   |   |               |   System.ComponentModel.dll
-|   |   |               |   System.ComponentModel.EventBasedAsync.dll
-|   |   |               |   System.ComponentModel.Primitives.dll
-|   |   |               |   System.ComponentModel.TypeConverter.dll
-|   |   |               |   System.Configuration.ConfigurationManager.dll
-|   |   |               |   System.Configuration.dll
-|   |   |               |   System.Console.dll
-|   |   |               |   System.Core.dll
-|   |   |               |   System.Data.Common.dll
-|   |   |               |   System.Data.DataSetExtensions.dll
-|   |   |               |   System.Data.dll
-|   |   |               |   System.Diagnostics.Contracts.dll
-|   |   |               |   System.Diagnostics.Debug.dll
-|   |   |               |   System.Diagnostics.DiagnosticSource.dll
-|   |   |               |   System.Diagnostics.FileVersionInfo.dll
-|   |   |               |   System.Diagnostics.Process.dll
-|   |   |               |   System.Diagnostics.StackTrace.dll
-|   |   |               |   System.Diagnostics.TextWriterTraceListener.dll
-|   |   |               |   System.Diagnostics.Tools.dll
-|   |   |               |   System.Diagnostics.TraceSource.dll
-|   |   |               |   System.Diagnostics.Tracing.dll
-|   |   |               |   System.dll
-|   |   |               |   System.Drawing.dll
-|   |   |               |   System.Drawing.Primitives.dll
-|   |   |               |   System.Dynamic.Runtime.dll
-|   |   |               |   System.Formats.Asn1.dll
-|   |   |               |   System.Formats.Tar.dll
-|   |   |               |   System.Globalization.Calendars.dll
-|   |   |               |   System.Globalization.dll
-|   |   |               |   System.Globalization.Extensions.dll
-|   |   |               |   System.IO.Compression.Brotli.dll
-|   |   |               |   System.IO.Compression.dll
-|   |   |               |   System.IO.Compression.FileSystem.dll
-|   |   |               |   System.IO.Compression.Native.dll
-|   |   |               |   System.IO.Compression.ZipFile.dll
-|   |   |               |   System.IO.dll
-|   |   |               |   System.IO.FileSystem.AccessControl.dll
-|   |   |               |   System.IO.FileSystem.dll
-|   |   |               |   System.IO.FileSystem.DriveInfo.dll
-|   |   |               |   System.IO.FileSystem.Primitives.dll
-|   |   |               |   System.IO.FileSystem.Watcher.dll
-|   |   |               |   System.IO.IsolatedStorage.dll
-|   |   |               |   System.IO.MemoryMappedFiles.dll
-|   |   |               |   System.IO.Pipelines.dll
-|   |   |               |   System.IO.Pipes.AccessControl.dll
-|   |   |               |   System.IO.Pipes.dll
-|   |   |               |   System.IO.UnmanagedMemoryStream.dll
-|   |   |               |   System.Linq.dll
-|   |   |               |   System.Linq.Expressions.dll
-|   |   |               |   System.Linq.Parallel.dll
-|   |   |               |   System.Linq.Queryable.dll
-|   |   |               |   System.Memory.dll
-|   |   |               |   System.Net.dll
-|   |   |               |   System.Net.Http.dll
-|   |   |               |   System.Net.Http.Json.dll
-|   |   |               |   System.Net.HttpListener.dll
-|   |   |               |   System.Net.Mail.dll
-|   |   |               |   System.Net.NameResolution.dll
-|   |   |               |   System.Net.NetworkInformation.dll
-|   |   |               |   System.Net.Ping.dll
-|   |   |               |   System.Net.Primitives.dll
-|   |   |               |   System.Net.Quic.dll
-|   |   |               |   System.Net.Requests.dll
-|   |   |               |   System.Net.Security.dll
-|   |   |               |   System.Net.ServicePoint.dll
-|   |   |               |   System.Net.Sockets.dll
-|   |   |               |   System.Net.WebClient.dll
-|   |   |               |   System.Net.WebHeaderCollection.dll
-|   |   |               |   System.Net.WebProxy.dll
-|   |   |               |   System.Net.WebSockets.Client.dll
-|   |   |               |   System.Net.WebSockets.dll
-|   |   |               |   System.Numerics.dll
-|   |   |               |   System.Numerics.Vectors.dll
-|   |   |               |   System.ObjectModel.dll
-|   |   |               |   System.Private.CoreLib.dll
-|   |   |               |   System.Private.DataContractSerialization.dll
-|   |   |               |   System.Private.Uri.dll
-|   |   |               |   System.Private.Xml.dll
-|   |   |               |   System.Private.Xml.Linq.dll
-|   |   |               |   System.Reflection.DispatchProxy.dll
-|   |   |               |   System.Reflection.dll
-|   |   |               |   System.Reflection.Emit.dll
-|   |   |               |   System.Reflection.Emit.ILGeneration.dll
-|   |   |               |   System.Reflection.Emit.Lightweight.dll
-|   |   |               |   System.Reflection.Extensions.dll
-|   |   |               |   System.Reflection.Metadata.dll
-|   |   |               |   System.Reflection.Primitives.dll
-|   |   |               |   System.Reflection.TypeExtensions.dll
-|   |   |               |   System.Resources.Reader.dll
-|   |   |               |   System.Resources.ResourceManager.dll
-|   |   |               |   System.Resources.Writer.dll
-|   |   |               |   System.Runtime.CompilerServices.Unsafe.dll
-|   |   |               |   System.Runtime.CompilerServices.VisualC.dll
-|   |   |               |   System.Runtime.dll
-|   |   |               |   System.Runtime.Extensions.dll
-|   |   |               |   System.Runtime.Handles.dll
-|   |   |               |   System.Runtime.InteropServices.dll
-|   |   |               |   System.Runtime.InteropServices.JavaScript.dll
-|   |   |               |   System.Runtime.InteropServices.RuntimeInformation.dll
-|   |   |               |   System.Runtime.Intrinsics.dll
-|   |   |               |   System.Runtime.Loader.dll
-|   |   |               |   System.Runtime.Numerics.dll
-|   |   |               |   System.Runtime.Serialization.dll
-|   |   |               |   System.Runtime.Serialization.Formatters.dll
-|   |   |               |   System.Runtime.Serialization.Json.dll
-|   |   |               |   System.Runtime.Serialization.Primitives.dll
-|   |   |               |   System.Runtime.Serialization.Xml.dll
-|   |   |               |   System.Security.AccessControl.dll
-|   |   |               |   System.Security.Claims.dll
-|   |   |               |   System.Security.Cryptography.Algorithms.dll
-|   |   |               |   System.Security.Cryptography.Cng.dll
-|   |   |               |   System.Security.Cryptography.Csp.dll
-|   |   |               |   System.Security.Cryptography.dll
-|   |   |               |   System.Security.Cryptography.Encoding.dll
-|   |   |               |   System.Security.Cryptography.OpenSsl.dll
-|   |   |               |   System.Security.Cryptography.Primitives.dll
-|   |   |               |   System.Security.Cryptography.ProtectedData.dll
-|   |   |               |   System.Security.Cryptography.X509Certificates.dll
-|   |   |               |   System.Security.dll
-|   |   |               |   System.Security.Permissions.dll
-|   |   |               |   System.Security.Principal.dll
-|   |   |               |   System.Security.Principal.Windows.dll
-|   |   |               |   System.Security.SecureString.dll
-|   |   |               |   System.ServiceModel.Web.dll
-|   |   |               |   System.ServiceProcess.dll
-|   |   |               |   System.Text.Encoding.CodePages.dll
-|   |   |               |   System.Text.Encoding.dll
-|   |   |               |   System.Text.Encoding.Extensions.dll
-|   |   |               |   System.Text.Encodings.Web.dll
-|   |   |               |   System.Text.Json.dll
-|   |   |               |   System.Text.RegularExpressions.dll
-|   |   |               |   System.Threading.Channels.dll
-|   |   |               |   System.Threading.dll
-|   |   |               |   System.Threading.Overlapped.dll
-|   |   |               |   System.Threading.Tasks.Dataflow.dll
-|   |   |               |   System.Threading.Tasks.dll
-|   |   |               |   System.Threading.Tasks.Extensions.dll
-|   |   |               |   System.Threading.Tasks.Parallel.dll
-|   |   |               |   System.Threading.Thread.dll
-|   |   |               |   System.Threading.ThreadPool.dll
-|   |   |               |   System.Threading.Timer.dll
-|   |   |               |   System.Transactions.dll
-|   |   |               |   System.Transactions.Local.dll
-|   |   |               |   System.ValueTuple.dll
-|   |   |               |   System.Web.dll
-|   |   |               |   System.Web.HttpUtility.dll
-|   |   |               |   System.Windows.dll
-|   |   |               |   System.Xml.dll
-|   |   |               |   System.Xml.Linq.dll
-|   |   |               |   System.Xml.ReaderWriter.dll
-|   |   |               |   System.Xml.Serialization.dll
-|   |   |               |   System.Xml.XDocument.dll
-|   |   |               |   System.Xml.XmlDocument.dll
-|   |   |               |   System.Xml.XmlSerializer.dll
-|   |   |               |   System.Xml.XPath.dll
-|   |   |               |   System.Xml.XPath.XDocument.dll
-|   |   |               |   Tesseract.dll
-|   |   |               |   Tmds.DBus.Protocol.dll
-|   |   |               |   WindowsBase.dll
-|   |   |               |   WinRT.Runtime.dll
-|   |   |               |   
-|   |   |               \---native
-|   |   |                       SnapVox.exe
-|   |   |                       
-|   |   +---Configuration
 |   |   +---Forms
 |   |   |       CaptureWindow.axaml
 |   |   |       CaptureWindow.axaml.cs
 |   |   |       DeploymentProgressWindow.axaml
 |   |   |       DeploymentProgressWindow.axaml.cs
+|   |   |       ScrollCaptureBarWindow.axaml
+|   |   |       ScrollCaptureBarWindow.axaml.cs
 |   |   |       ScrollCaptureWindow.axaml
 |   |   |       ScrollCaptureWindow.axaml.cs
 |   |   |       SettingsWindow.axaml
@@ -537,6 +312,7 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |       folder_explore.png
 |   |   |       fullscreen.png
 |   |   |       log.png
+|   |   |       repeat.png
 |   |   |       ruler-crop.png
 |   |   |       scroll-capture.png
 |   |   |       shape_square_add.png
@@ -552,149 +328,7 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |   \---x64
 |   |   |           leptonica-1.82.0.dll
 |   |   |           tesseract50.dll
-|   |   |           vcruntime140_cor3.dll
 |   |   |           
-|   |   +---obj
-|   |   |   |   project.assets.json
-|   |   |   |   project.nuget.cache
-|   |   |   |   SnapVox.csproj.nuget.dgspec.json
-|   |   |   |   SnapVox.csproj.nuget.g.props
-|   |   |   |   SnapVox.csproj.nuget.g.targets
-|   |   |   |   
-|   |   |   \---Release
-|   |   |       \---net9.0-windows10.0.19041.0
-|   |   |           \---win-x64
-|   |   |               |   .NETCoreApp,Version=v9.0.AssemblyAttributes.cs
-|   |   |               |   apphost.exe
-|   |   |               |   PublishOutputs.31fb2cd61f.txt
-|   |   |               |   PublishOutputs.549adbee45.txt
-|   |   |               |   PublishOutputs.8c6eec0546.txt
-|   |   |               |   PublishOutputs.e3ea22c8a8.txt
-|   |   |               |   SnapVox.AssemblyInfo.cs
-|   |   |               |   SnapVox.AssemblyInfoInputs.cache
-|   |   |               |   SnapVox.assets.cache
-|   |   |               |   SnapVox.csproj.AssemblyReference.cache
-|   |   |               |   SnapVox.csproj.CoreCompileInputs.cache
-|   |   |               |   SnapVox.csproj.FileListAbsolute.txt
-|   |   |               |   SnapVox.csproj.Up2Date
-|   |   |               |   SnapVox.deps.json
-|   |   |               |   SnapVox.dll
-|   |   |               |   SnapVox.GeneratedMSBuildEditorConfig.editorconfig
-|   |   |               |   SnapVox.genpublishdeps.cache
-|   |   |               |   SnapVox.genruntimeconfig.cache
-|   |   |               |   
-|   |   |               +---Avalonia
-|   |   |               |       references
-|   |   |               |       resources
-|   |   |               |       Resources.Inputs.cache
-|   |   |               |       SnapVox.dll
-|   |   |               |       
-|   |   |               +---linked
-|   |   |               |       Avalonia.Base.dll
-|   |   |               |       Avalonia.Controls.ColorPicker.dll
-|   |   |               |       Avalonia.Controls.dll
-|   |   |               |       Avalonia.Desktop.dll
-|   |   |               |       Avalonia.Dialogs.dll
-|   |   |               |       Avalonia.Markup.dll
-|   |   |               |       Avalonia.Markup.Xaml.dll
-|   |   |               |       Avalonia.Metal.dll
-|   |   |               |       Avalonia.MicroCom.dll
-|   |   |               |       Avalonia.OpenGL.dll
-|   |   |               |       Avalonia.Skia.dll
-|   |   |               |       Avalonia.Svg.Skia.dll
-|   |   |               |       Avalonia.Themes.Fluent.dll
-|   |   |               |       Avalonia.Vulkan.dll
-|   |   |               |       Avalonia.Win32.dll
-|   |   |               |       ExCSS.dll
-|   |   |               |       HarfBuzzSharp.dll
-|   |   |               |       Link.semaphore
-|   |   |               |       log4net.dll
-|   |   |               |       MicroCom.Runtime.dll
-|   |   |               |       Microsoft.Win32.Registry.dll
-|   |   |               |       Microsoft.Windows.SDK.NET.dll
-|   |   |               |       netstandard.dll
-|   |   |               |       ShimSkiaSharp.dll
-|   |   |               |       SixLabors.ImageSharp.dll
-|   |   |               |       SkiaSharp.dll
-|   |   |               |       SnapVox.dll
-|   |   |               |       snapvox.editor.dll
-|   |   |               |       snapvox.foundation.dll
-|   |   |               |       Svg.Custom.dll
-|   |   |               |       Svg.Model.dll
-|   |   |               |       Svg.Skia.dll
-|   |   |               |       System.Collections.Concurrent.dll
-|   |   |               |       System.Collections.dll
-|   |   |               |       System.Collections.Immutable.dll
-|   |   |               |       System.Collections.NonGeneric.dll
-|   |   |               |       System.Collections.Specialized.dll
-|   |   |               |       System.ComponentModel.Annotations.dll
-|   |   |               |       System.ComponentModel.dll
-|   |   |               |       System.ComponentModel.EventBasedAsync.dll
-|   |   |               |       System.ComponentModel.Primitives.dll
-|   |   |               |       System.ComponentModel.TypeConverter.dll
-|   |   |               |       System.Configuration.ConfigurationManager.dll
-|   |   |               |       System.Console.dll
-|   |   |               |       System.Data.Common.dll
-|   |   |               |       System.Diagnostics.DiagnosticSource.dll
-|   |   |               |       System.Diagnostics.Process.dll
-|   |   |               |       System.Diagnostics.StackTrace.dll
-|   |   |               |       System.Diagnostics.TraceSource.dll
-|   |   |               |       System.dll
-|   |   |               |       System.Drawing.dll
-|   |   |               |       System.Drawing.Primitives.dll
-|   |   |               |       System.Formats.Asn1.dll
-|   |   |               |       System.IO.Compression.Brotli.dll
-|   |   |               |       System.IO.Compression.dll
-|   |   |               |       System.IO.Compression.ZipFile.dll
-|   |   |               |       System.IO.FileSystem.Watcher.dll
-|   |   |               |       System.IO.MemoryMappedFiles.dll
-|   |   |               |       System.Linq.dll
-|   |   |               |       System.Linq.Expressions.dll
-|   |   |               |       System.Memory.dll
-|   |   |               |       System.Net.Http.dll
-|   |   |               |       System.Net.Mail.dll
-|   |   |               |       System.Net.NameResolution.dll
-|   |   |               |       System.Net.NetworkInformation.dll
-|   |   |               |       System.Net.Primitives.dll
-|   |   |               |       System.Net.Quic.dll
-|   |   |               |       System.Net.Requests.dll
-|   |   |               |       System.Net.Security.dll
-|   |   |               |       System.Net.Sockets.dll
-|   |   |               |       System.Net.WebHeaderCollection.dll
-|   |   |               |       System.ObjectModel.dll
-|   |   |               |       System.Private.CoreLib.dll
-|   |   |               |       System.Private.Uri.dll
-|   |   |               |       System.Private.Xml.dll
-|   |   |               |       System.Reflection.Metadata.dll
-|   |   |               |       System.Runtime.InteropServices.dll
-|   |   |               |       System.Runtime.Numerics.dll
-|   |   |               |       System.Runtime.Serialization.Formatters.dll
-|   |   |               |       System.Security.Claims.dll
-|   |   |               |       System.Security.Cryptography.dll
-|   |   |               |       System.Security.Principal.Windows.dll
-|   |   |               |       System.Text.Encoding.CodePages.dll
-|   |   |               |       System.Text.RegularExpressions.dll
-|   |   |               |       System.Threading.Channels.dll
-|   |   |               |       System.Threading.dll
-|   |   |               |       System.Threading.Tasks.Parallel.dll
-|   |   |               |       Tesseract.dll
-|   |   |               |       WinRT.Runtime.dll
-|   |   |               |       
-|   |   |               +---native
-|   |   |               |       link.rsp
-|   |   |               |       SnapVox.def
-|   |   |               |       SnapVox.ilc.rsp
-|   |   |               |       SnapVox.obj
-|   |   |               |       
-|   |   |               +---ref
-|   |   |               |       SnapVox.dll
-|   |   |               |       
-|   |   |               \---refint
-|   |   |                   |   SnapVox.dll
-|   |   |                   |   
-|   |   |                   \---Avalonia
-|   |   |                           SnapVox.dll
-|   |   |                           
 |   |   \---tessdata
 |   |           eng.traineddata
 |   |           heb.traineddata
@@ -702,14 +336,6 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   +---snapvox.editor
 |   |   |   snapvox.editor.csproj
 |   |   |   
-|   |   +---bin
-|   |   |   \---Release
-|   |   |       \---net9.0-windows10.0.19041.0
-|   |   |           \---win-x64
-|   |   |                   snapvox.editor.deps.json
-|   |   |                   snapvox.editor.dll
-|   |   |                   snapvox.foundation.dll
-|   |   |                   
 |   |   +---Drawing
 |   |   |   \---Emoji
 |   |   |           Twemoji.Mozilla.ttf
@@ -728,42 +354,36 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |       OverlayHelper.cs
 |   |   |       ScreenColorSampler.cs
 |   |   |       
-|   |   +---obj
-|   |   |   |   project.assets.json
-|   |   |   |   project.nuget.cache
-|   |   |   |   snapvox.editor.csproj.nuget.dgspec.json
-|   |   |   |   snapvox.editor.csproj.nuget.g.props
-|   |   |   |   snapvox.editor.csproj.nuget.g.targets
+|   |   +---Services
+|   |   |   |   ContextToolbarTheme.cs
+|   |   |   |   EditorDocument.cs
+|   |   |   |   EditorExportService.cs
+|   |   |   |   EditorHistoryManager.cs
+|   |   |   |   EditorWindowFitter.cs
+|   |   |   |   EditorZoomEngine.cs
+|   |   |   |   OcrOverlayController.cs
+|   |   |   |   VectorSnappingEngine.cs
 |   |   |   |   
-|   |   |   \---Release
-|   |   |       \---net9.0-windows10.0.19041.0
-|   |   |           \---win-x64
-|   |   |               |   .NETCoreApp,Version=v9.0.AssemblyAttributes.cs
-|   |   |               |   snapvox..D10330E4.Up2Date
-|   |   |               |   snapvox.editor.AssemblyInfo.cs
-|   |   |               |   snapvox.editor.AssemblyInfoInputs.cache
-|   |   |               |   snapvox.editor.assets.cache
-|   |   |               |   snapvox.editor.csproj.AssemblyReference.cache
-|   |   |               |   snapvox.editor.csproj.CoreCompileInputs.cache
-|   |   |               |   snapvox.editor.csproj.FileListAbsolute.txt
-|   |   |               |   snapvox.editor.dll
-|   |   |               |   snapvox.editor.GeneratedMSBuildEditorConfig.editorconfig
-|   |   |               |   
-|   |   |               +---Avalonia
-|   |   |               |       references
-|   |   |               |       resources
-|   |   |               |       Resources.Inputs.cache
-|   |   |               |       snapvox.editor.dll
-|   |   |               |       
-|   |   |               +---ref
-|   |   |               |       snapvox.editor.dll
-|   |   |               |       
-|   |   |               \---refint
-|   |   |                   |   snapvox.editor.dll
-|   |   |                   |   
-|   |   |                   \---Avalonia
-|   |   |                           snapvox.editor.dll
-|   |   |                           
+|   |   |   \---Tools
+|   |   |           ArrowToolHandler.cs
+|   |   |           BaseToolHandler.cs
+|   |   |           BlurToolHandler.cs
+|   |   |           CounterToolHandler.cs
+|   |   |           CropToolHandler.cs
+|   |   |           EllipseToolHandler.cs
+|   |   |           EmojiToolHandler.cs
+|   |   |           FreeDrawToolHandler.cs
+|   |   |           HighlightToolHandler.cs
+|   |   |           IToolHandler.cs
+|   |   |           LineToolHandler.cs
+|   |   |           NoneToolHandler.cs
+|   |   |           RectangleToolHandler.cs
+|   |   |           ShapeToolHandler.cs
+|   |   |           TextToolHandler.cs
+|   |   |           ToolHandlerContext.cs
+|   |   |           ToolPointerEvent.cs
+|   |   |           VectorToolHandler.cs
+|   |   |           
 |   |   \---Themes
 |   |           DesignSystem.axaml
 |   |           
@@ -771,20 +391,15 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |   log4net-embedded.xml
 |   |   |   snapvox.foundation.csproj
 |   |   |   
-|   |   +---bin
-|   |   |   \---Release
-|   |   |       \---net9.0-windows10.0.19041.0
-|   |   |           \---win-x64
-|   |   |                   snapvox.foundation.deps.json
-|   |   |                   snapvox.foundation.dll
-|   |   |                   
 |   |   +---Core
 |   |   |   |   CoreConfiguration.cs
 |   |   |   |   ExecutionTrace.cs
 |   |   |   |   IScrollCaptureLauncher.cs
+|   |   |   |   KnownFolders.cs
 |   |   |   |   LogHelper.cs
 |   |   |   |   NativeCapture.cs
 |   |   |   |   RuntimePathHelper.cs
+|   |   |   |   ScreenTintBypass.cs
 |   |   |   |   SimpleServiceProvider.cs
 |   |   |   |   Stubs.cs
 |   |   |   |   UiClipboard.cs
@@ -817,70 +432,48 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |           OcrTextLayout.cs
 |   |   |           OcrWordSpatialIndex.cs
 |   |   |           
-|   |   +---Interop
-|   |   |       NativeTypes.cs
-|   |   |       Win32Interop.cs
-|   |   |       
-|   |   \---obj
-|   |       |   project.assets.json
-|   |       |   project.nuget.cache
-|   |       |   snapvox.foundation.csproj.nuget.dgspec.json
-|   |       |   snapvox.foundation.csproj.nuget.g.props
-|   |       |   snapvox.foundation.csproj.nuget.g.targets
-|   |       |   
-|   |       \---Release
-|   |           \---net9.0-windows10.0.19041.0
-|   |               \---win-x64
-|   |                   |   .NETCoreApp,Version=v9.0.AssemblyAttributes.cs
-|   |                   |   snapvox.foundation.AssemblyInfo.cs
-|   |                   |   snapvox.foundation.AssemblyInfoInputs.cache
-|   |                   |   snapvox.foundation.assets.cache
-|   |                   |   snapvox.foundation.csproj.AssemblyReference.cache
-|   |                   |   snapvox.foundation.csproj.CoreCompileInputs.cache
-|   |                   |   snapvox.foundation.csproj.FileListAbsolute.txt
-|   |                   |   snapvox.foundation.dll
-|   |                   |   snapvox.foundation.GeneratedMSBuildEditorConfig.editorconfig
-|   |                   |   
-|   |                   +---Avalonia
-|   |                   |       Resources.Inputs.cache
-|   |                   |       
-|   |                   +---ref
-|   |                   |       snapvox.foundation.dll
-|   |                   |       
-|   |                   \---refint
-|   |                           snapvox.foundation.dll
-|   |                           
+|   |   \---Interop
+|   |           NativeTypes.cs
+|   |           Win32Interop.cs
+|   |           
 |   \---snapvox.tests
 |           ClipboardTests.cs
+|           ConflictDetectionTests.cs
+|           ContextToolbarThemeTests.cs
+|           DeploymentFootprintTests.cs
+|           EditorDocumentTests.cs
+|           EditorExportServiceTests.cs
+|           EditorHistoryManagerTests.cs
+|           EditorWindowFitterTests.cs
+|           EditorZoomEngineTests.cs
 |           EngineAuditRegressionTests.cs
+|           IniConfigAtomicSaveTests.cs
+|           OcrOverlayControllerTests.cs
+|           OcrTextLayoutTests.cs
 |           RetentionTests.cs
+|           ToolHandlersTests.cs
+|           VectorSnappingEngineTests.cs
 |           snapvox.tests.csproj
-|           
-+---temp_payload
-\---temp_res_check
-        Program.cs
-        temp_res_check.csproj
-        
 
 TASK IMPLEMENTATION LOG (BUGFIXES & FEATURES)
 ---------------------------------------------
 1. Toolbar State Persistence: Added SnapToggleBtn in BottomToolbarBorder in ImageEditorWindow.axaml. Wired up OnSnapToggleClick and bound to CoreConfiguration.MagneticSnappingEnabled in ImageEditorWindow.axaml.cs.
 2. Magnetic Snapping Extension: Updated ApplyMagneticSnap and GetMagneticSnapTargets in ImageEditorWindow.axaml.cs to support all shapes.
 3. Diagram Snapping: Replaced PasteSnap logic with SnapAxisEdge for vector points in ImageEditorWindow.axaml.cs.
-4. Alternating Snap Suppression: Handled _disableSnappingForCurrentDrag state machine across clicks in OnCanvasPointerPressed and Resize Handle pointer events in ImageEditorWindow.axaml.cs.
+4. Alternating Snap Suppression: Initial drag state-machine implementation (superseded by Fix 29 always-on magnetic snapping).
 5. Duplication Cursor Fix: Updated OnDuplicateClick to reset _currentTool and set Cursor to null on cloned shape in ImageEditorWindow.axaml.cs.
 6. Scaling Decoupling: Refactored ResizeSelectedControl to decouple Left/Top translation from sizing constraints for proportional scaling in ImageEditorWindow.axaml.cs.
 7. Cross-Monitor Rubberband (root cause): CaptureHelper.CaptureRegionAsync used to spawn ONE CaptureWindow PER MONITOR, each owning its own frozen crop and coordinate space, so the rubberband, magnifier lens and window-snapping all stopped dead at every monitor border; a selection crossing screens had to be released and restarted. Fix: a single borderless overlay now spans the entire virtual desktop (bounds union), fed by one unified frozen backdrop (per-monitor 3px navy outlines are drawn directly into the clone via DrawMonitorFrame), and CaptureWindow.ToScreenPixels/ToScreenRect now map DIPs to absolute device pixels via PointToScreen, which stays correct on mixed-DPI multi-monitor setups.
 8. Red-Eye Tray Icon (root cause): App.ForceRedTrayIcon(false) is reachable ONLY through CaptureWindow.EndCaptureSession (BeginCaptureSession flips the icon red and arms the _captureTrayIconHeld guard). Any capture abort path that returned early - null snapshot, empty screen enumeration, zero overlays, or an exception before the overlays were shown - skipped the End call and left the tray icon stuck red for the rest of the session. Fix: every early-exit in CaptureHelper (and the exception fallback) now calls EndCaptureSession; CaptureWindow.OnClosed re-arms it if !_captureCompleted, and the ISSUE_005 overlay-close wait bounds the final release.
-9. Zoom Anchor Flip (root cause): ZoomTowards defaulted a null anchor (toolbar +/- buttons) to the viewport CENTRE while the buttons fed it the stale _lastPointerInScroller; consecutive steps recomputed around a moving centre, so the picture visibly flipped sideways, and zooming out of a fitted view left a phantom scroll offset. Fix: null anchor now pins the top-left corner, and the post-zoom offset is clamped to [0, content - viewport] so an axis snaps to offset 0 the moment the content fits.
-10. Oversized Editor for Small Snips (root cause): ImageEditorWindow.axaml declared MinWidth=850 MinHeight=650 and PositionWindow mirrored those numbers, so even a 300x200 snip opened in an 850x650 shell. Fix: mins lowered to 620x400 (XAML + MinEditorWindowWidth/Height consts) and AutoFitWindowToContent corrects the estimated chrome with the real ScrollViewer viewport after the first layout pass, shrinking the window to snip + actual chrome and re-centring it on the owning screen.
+9. Zoom Anchor Centering: Viewport-center zoom calculation (superseded by Fix 37 cursor-focal zooming and interpolation).
+10. Oversized Editor for Small Snips (root cause): ImageEditorWindow.axaml declared MinWidth=850 MinHeight=650 and PositionWindow mirrored those numbers, so even a 300x200 snip opened in an 850x650 shell. Fix: XAML declared minimums set to MinWidth=880 MinHeight=630 with programmatic layout minimums MinEditorWindowWidth=880 MinEditorWindowHeight=520, and AutoFitWindowToContent corrects estimated chrome with real ScrollViewer viewport after first layout pass.
 11. Pro Color Picker: CustomColorBtn flyout rebuilt as a dark panel - ColorView spectrum + shades, live two-way HEX entry (#RRGGBB / RRGGBB / #AARRGGBB, Enter applies), copy-hex-to-clipboard button (plain text), live preview chip, and the retained screen sampler.
 12. Emoji Flyout Not Closing (root cause): OnEmojiSelectClick updated tool state but never closed the EmojiTool flyout, leaving the popup dangling over the canvas while the ghost floated the selection. Fix: emojiBtn?.Flyout?.Hide() runs as the final step of the click.
 13. Stale Marching Ants (root cause): OnToolClick only released the selection when a PASTED IMAGE was selected; picking a new tool while a normal annotation was selected left _selectionIndicator (and handles + context toolbar) glued to the old object. Fix: any tool activation now clears _selectedControl and refreshes the indicator, mirroring the empty-canvas deselect path.
 14. Broken Scrollbar Visuals (root cause): the Fluent ScrollBar template renders a translucent auto-hiding overlay thumb with no arrows - near-invisible on the #1E1E1E canvas. Fix: DesignSystem.axaml now ships SnapVoxScrollBarVertical/Horizontal ControlThemes (solid rounded thumb with hover/press states, sunken track, chevron arrow buttons) and ImageEditorWindow.axaml applies them to EditorScrollViewer while keeping AllowAutoHide=False.
 15. Sluggish Final Action / Overlay-Editor Drift (root cause): OnDownloadClick/OnCopyClick/OCR awaited a HARDCODED Task.Delay(1000) before closing the editor while the blink overlay honoured NotificationOverlayDurationMs - at a 500ms setting the editor idled 500ms after the blink was already gone, and long settings left the overlay blinking alone long after the editor closed. Fix: NotificationOverlayWindow.GetOverlayDurationMs() is the single source of truth; the editor clamps it to [250, 1000] for its close wait (never slower than the old fixed second, faster for any shorter setting). Overlay lifetime hardened too: the heavy blink and light toast windows close in finally, and the light-toast _activeToasts counter is decremented on every path (a thrown fade used to leak the slot and permanently offset later toasts).
 16. Mixed-DPI Cross-Monitor Rubberband (root cause): snapvox.manifest opts into PerMonitorV2, under which EVERY top-level window carries exactly ONE DPI factor (the monitor that owns it), so the single virtual-desktop overlay from fix #7 could only map DIPs to device pixels correctly on its owning monitor - on mixed-DPI setups the rubberband was pixel-exact only on the screen where the drag started and drifted off the cursor or vanished on the other screen(s). Fix: CaptureRegionAsync slices the unified frozen backdrop per monitor and spawns one CaptureWindow PER MONITOR (each window lives entirely inside a single screen, so its DPI factor is exact), while CaptureWindow keeps the selection state in ABSOLUTE device pixels and broadcasts the rubberband + dimension badge, snap highlight + badge, alignment guides and magnifier ownership to the sibling overlays (ForEachOtherOverlay/ApplyShared*), each converting through its own Position/Scaling. The drag owner retains Win32 mouse capture across borders, the lens hands over to whichever monitor is under the cursor, the snap state is mirrored everywhere so C-copy works from any overlay, and leaving the snap zone mid-drag now clears the stale highlight.
- 17. Editor Zoom Drifting Toward the Bottom-Right (root cause): ZoomTowards anchored the WHEEL path at the live cursor position - with the pointer resting anywhere right/below of the viewport's top-left, every wheel step scaled the view toward that point, visibly detaching the picture from the top-left corner; on top of that the offset was written before the extent was re-measured, so the ScrollViewer could re-clamp it against the stale extent and leave a phantom drift. Fix: ALL zoom paths (wheel, toolbar +/-, 100% reset) now anchor the TOP-LEFT corner uniformly - ZoomTowards rescales the existing offset (offset * ratio) through ApplyTopLeftAnchoredOffset, which clamps to [0, content - viewport] and snaps an axis to 0 the moment the zoomed content fits, and a Dispatcher.UIThread post re-asserts the offset after the new extent is actually measured so layout races cannot drift it. Zooming in now always expands the picture toward the bottom-right and zooming out shrinks it back toward the top-left, so leftover space can only ever open on the right/bottom sides - never as voids at the top-left. The obsolete _lastPointerInScroller tracking is gone.
+ 17. Editor Zoom Drift Resolution: Top-left zoom anchoring investigation (superseded by Fix 37).
  18. Editor Magnet Unreleasable While Resizing (root cause): the resize handles snapped the dragged edge to EVERY other shape's edges plus the image borders using the same wide 12-DIP capture zone as whole-shape moves - while enlarging, the dragged edge sweeps across many such targets, so escaping one capture (dragging 12 DIPs past it) dropped the edge straight into the next target's zone, which felt impossible to override mid-drag. Fix: resize handles now use a tighter 6-DIP capture zone (half the move zone, so an escape takes half the pull), and holding ALT is a LIVE magnet override on every snap path - resizing handles, dragging whole shapes, stretching new shapes and dragging line/arrow endpoints all follow the pointer raw while ALT is held and re-engage snapping the moment it is released (Shift's strict-angle mode still wins for vectors). The snap-dot indicator also hides while ALT is held so it never advertises a snap that is being overridden.
  19. Region Capture Crashing With InvalidCastException (root cause, introduced by fix 16): the per-monitor overlay rewrite cloned the unified frozen backdrop with a hard (Image<Rgba32>) cast - but NativeCapture produces Image<Bgra32>, and casting one closed generic to another compiles fine (both derive from the non-generic Image base) yet ALWAYS throws InvalidCastException at runtime, killing every region capture ~50ms in (log: "CaptureRegion failed." / Arg_InvalidCastException) before any overlay appeared. Captures had been broken on the shipped builds since fix 16 shipped. Fix: the clone now goes through Image.CloneAs<Rgba32>(), which performs a real Bgra32->Rgba32 pixel conversion and returns a genuine Image<Rgba32> - the same conversion pattern OcrImagePreprocessor already uses safely.
  20. Resize Magnet Still Trapping Without ALT (root cause left by fix 18): the fix 18 resize snap computed each frame's magnet from the shape's ALREADY-SNAPPED bounds (left/oldW read back from the control after the previous snap), so every snap shifted the baseline - the effective capture zone stretched past the pointer, on release the edge jumped ahead of the cursor, and crossing back re-captured, chaining into an unreleasable loop only ALT could break; there were also NO guide rails while resizing, so the pull was invisible and read as a stuck cursor. Fix: resizing now runs through the EXACT same engine as dragging/placing whole shapes - a raw, never-snapped bounds accumulator (_resizeUnsnappedLeft/Top/Width/Height, the resize twin of _dragUnsnappedLeft/Top) is advanced by the pointer deltas each frame (opposite edge anchored; at the 10-DIP floor the dragged edge simply freezes, no hysteresis), and only the APPLIED bounds get bent by the new ApplyResizeMagneticSnap: the dragged edge snaps to any edge-or-center rail of every other shape plus the image frame (the identical candidate set TrySnapAxis uses for moves), the pull is capped at the shared 12-DIP VectorSnapThreshold, it releases the instant the raw edge leaves the zone, and the same dashed guide rails as the move magnet appear so the snap is gentle yet FELT. ALT stays a live raw override, the toolbar magnet button (MagneticSnappingEnabled) remains the user-facing toggle, and double-pressing a handle still flips snapping for that drag. The orphaned SnapAxisEdge/GetMagneticSnapTargets helpers and the ResizeSnapThreshold const were removed.
@@ -898,6 +491,53 @@ TASK IMPLEMENTATION LOG (BUGFIXES & FEATURES)
  32. Gentle Alignment Guidance Lines: Updated ShowSnapGuides to use SnapGuideBrush (SolidColorBrush #8700BFFF), a 4.0/zoom, 4.0/zoom dash pattern, and a softened 0.55 opacity.
  33. High-Visibility Blinking Overlay & DPI Centering (root cause & feature): NotificationOverlayWindow.axaml previously clipped text with fixed screen math and had low-contrast colors. Fix: Redesigned NotificationOverlayWindow with high-contrast vivid colors (#FFFFFF, #FF3355, #00D2FF, #FFB703), synchronized glowing border and text blinking, unconstrained typography (FontSize="20", FontWeight="Bold"), generous shadow padding (30px), and exact DPI-aware centering (window.Bounds * targetScreen.Scaling) on the active display.
  34. Strict Image Aspect Ratio & Clipboard Shortcuts (root cause & feature): Restored Ctrl+C, Ctrl+V, Ctrl+Z, Ctrl+Y, Ctrl+S keyboard dispatch in OnWindowKeyDown. Updated ResizeSelectedControl to enforce keepRatio = true for Avalonia.Controls.Image elements, and updated OnPasteClick to preserve image aspect ratio (Stretch = Uniform) and fit within canvas bounds when pasting images across editor instances.
- 35. Top-Left Anchored Zooming (Zero Black Voids): Eliminated double-scaling (zoomFactor^2) on ZoomContainer. Set ZoomContainer to base image dimensions with RenderTransformOrigin = (0, 0) and ScaleTransform(zoomFactor, zoomFactor). Sized outer ScrollContentPanel and MainGrid to _image.Width * _zoomFactor x _image.Height * _zoomFactor with HorizontalAlignment="Left" and VerticalAlignment="Top". Clamped ScrollViewer.Offset to [0, Max(0, ContentSize - ViewportSize)] to guarantee zero black void borders on zoom in or zoom out.
+ 35. Top-Left Anchored Zooming: Canvas boundary scaling (superseded by Fix 37 true center anchoring).
  36. Emoji Flyout ScrollBar Styling & Collapse Prevention (root cause): The emoji flyout ScrollViewer used an invalid selector syntax (ScrollBar:vertical instead of ScrollBar[Orientation=Vertical]), causing Avalonia to ignore the theme and fall back to the default Fluent ScrollBar which auto-collapsed into a 2px invisible hairline. Fix: Added AllowAutoHide=False directly to SnapVoxScrollBarVertical/Horizontal in DesignSystem.axaml, registered global and FlyoutPresenter ScrollBar themes in App.axaml and ImageEditorWindow.axaml, corrected the selector to ScrollBar[Orientation=Vertical], and set the flyout ScrollViewer Width="298" to house 5 columns of emoji alongside the distinct 24px wide scrollbar.
  37. True Center Anchoring, Focal Cursor Zoom, & Silk Smooth Interpolation (root cause & feature): Image previously clung to top-left corner on small snips/zoom-out, wheel zoom scaled rigidly around (0, 0) throwing target details off-screen, flat +-10% steps produced jerky stutter, and App.axaml resource ordering caused silent installer startup failure. Fix: Resolved silent startup crash in App.axaml by moving Application.Resources above Styles with DynamicResource. Sized ScrollContentPanel and positioned MainGrid with dynamic viewport padding (padX, padY) so snips center automatically when smaller than viewport with zero scrollbars, while maintaining 64-DIP overscroll breathing room when enlarged. Implemented cursor-focal zoom (SetFocalPoint) pinning the exact unscaled image pixel under the pointer during wheel rolls, replaced linear steps with 1.15x geometric multiplier, and introduced high-rate (100 FPS) DispatcherTimer interpolation with 0.28 exponential ease-out for a silky-smooth, satisfying zoom feel.
+38. Monochrome Zoom Reset Icon Refactoring (feature & visual polish): Rebuilt icons\zoom-reset.svg into a clean, flat monochrome currentColor magnifying glass with a 45-degree perpendicular reset diagonal slash matching zoom-in.svg and zoom-out.svg, replacing the previous ambiguous glyph.
+39. Text Tool Rubberband Spread & Proportional Font Sizing (root cause & feature): EditorTool.Text was previously hardcoded under IsStampTool, forcing an immediate stamp placement with fixed dimensions and preventing rectangular spread. Fix: Removed EditorTool.Text from IsStampTool, wired BeginPreviewShape to render a live dashed preview rectangle matching the tool's brush and fill mode, and implemented PlaceSpreadText. Single-clicks (< 5px) fall back to default/persisted dimensions; drag gestures (>= 5px) create a text box matching the dragged rectangle and calculate initial typography proportional to interior height (interiorHeight * 0.65, clamped to 10-300pt), persisting dimensions and font size to CoreConfiguration.
+40. Text Box Immediate Drag & Move Interaction (root cause & feature): After placing or focusing a text box, OnCanvasPointerPressed checked !tb.IsReadOnly and immediately returned without setting _isDraggingSelected, completely preventing movement while editing. Fix: Replaced the blocking check with perimeter frame detection (isBorderFrameGrab), added a tunneling PointerPressedEvent handler to Border in AttachTextBoxBehavior to capture pointer and drag via canvas immediately when grabbing the frame edge, added dynamic cursor switching (SizeAllCursor on edge, IbeamCursor in text), and protected empty text boxes from premature deletion in LostFocus while an active drag is in progress.
+41. True Middle & Center Text Alignment (root cause & bugfix): Inside Avalonia's TextBox, text was top-aligned when AcceptsReturn=True and TextChanged forcibly overwrote TextAlignment to Left or Right, preventing vertical and horizontal middle alignment. Fix: Updated SetTextBoxBoundsToBorder to set textBox.VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Stretch, TextAlignment = TextAlignment.Center, and auto-height (textBox.Height = double.NaN) constrained by MaxHeight. Preserved TextAlignment = TextAlignment.Center in TextChanged across LTR/RTL text. Added styles in ImageEditorWindow.axaml for Border.annotation-text-border > TextBox disabling scrollbars and centering PART_ScrollViewer and PART_TextPresenter.
+42. Outward Text Box Thickness Expansion (root cause & bugfix): Avalonia Border draws BorderThickness inside control bounds; increasing thickness shrunk the inner text client area inward. Fix: In PlaceSpreadText, outer border placement offsets by -t and expands dimensions by +2t so the interior matches the drawn bounds. In UpdateControlThickness and OnFillToggleClick, thickness adjustments by delta = newT - oldT shift Canvas.Left and Canvas.Top by -delta and expand Width and Height by +2*delta, ensuring the frame expands strictly outward into the canvas while keeping the interior text area and coordinates invariant.
+43. Frame Border Settings Control Alignment & NumericUpDown Fix (root cause & visual polish): In SettingsWindow.axaml, ButtonSpinner had Width="18" which erroneously forced the entire ButtonSpinner outer container (which hosts the TextBox) down to 18px, and Fluent Theme default MinWidth=34 on PART_IncreaseButton/PART_DecreaseButton plus a 24px ScrollBar forced the TextBox to 0 width and hid the numeric value behind smashed spin buttons. Fix: Removed Width="18" from ButtonSpinner, defined ButtonSpinnerRepeatButtonMinWidth=18 in Window.Resources, styled PART_SpinnerPanel RepeatButtons with Width=18 MinWidth=18 and disabled ScrollViewer on the inner TextBox, and matched 28px height, 4px corner radius, and dark styling across the Color swatch and NumericUpDown for pixel-perfect vertical alignment.
+44. Smart Dynamic Text Box Proportional Sizing (root cause & feature): FitTextBoxToBorder previously attempted to calculate availableHeight using textBox.Height which had been set to double.NaN, causing DoesTextFit to compare against NaN and always evaluate to false, collapsing the font size to the minimum (8pt) on creation, typing, or resizing. Fix: Calculated availableWidth and availableHeight strictly from outer border dimensions subtracting all frame border thickness and text box padding. Implemented dynamic binary search font fitting with a 10-300pt range and up to 80% box height ceiling, scaling font size up and down in real-time as the text box is resized with handles, and dynamically adapting font size on text entry or multi-line wrap so text fills the box smartly without clipping.
+45. Occluded Window Capture Snapping (feature & reliability): When snapping magnetically to a window that is partially or completely occluded behind other desktop windows, CaptureWindow now executes NativeCapture.CaptureWindow(windowHandle, null) via Win32 PrintWindow with PW_RENDERFULLCONTENT flag before falling back to desktop bounding crop, capturing the clean occluded target window without foreground obstruction.
+46. Bottom Toolbar Scrollbar Separation (UI/UX fix): The horizontal ScrollBar overlay in ImageEditorWindow covered the bottom toolbar controls and icons when canvas overscroll was active. Fix: Restructured bottom layout into a two-row Grid (Row="0" for toolbar buttons, Row="1" for the horizontal scrollbar) within ScrollViewer.bottom-toolbar-scroller without collapsing scrollbars, and added a horizontal mouse wheel pointer scroll handler.
+47. Chrome Scroll Capture Optimization & Floating Status Bar (feature & reliability): ScrollCaptureRecorder previously dropped frames aggressively and aborted after 5 non-moving frames, failing on browser rendering pipelines (such as Google Chrome). Fix: Removed the destructive 5-frame abort limit, constrained horizontal drift maxDx in EstimateMovement to Math.Min(14, width * 0.12) to prioritize vertical scrolling, and created ScrollCaptureBarWindow.axaml - a non-intrusive floating status bar with a pulsing REC indicator, real-time screen/frame counter, an on-screen green [ ✓ Finish Capture ] button, and cancel control.
+48. Crop Submenu Icon Clarification & Padding Expansion (UI/UX polish): The crop mode popup had distorted zigzag icons and clipped labels ("Cut Vertical", "Cut Horizontal"). Fix: Completely redesigned crop-mode-column.svg and crop-mode-band.svg with clean outer borders, distinct directional arrows, and dashed cutout regions. Expanded CropModePopup width to 732px, resized buttons to 96x74px with 5px spacing, set SVG glyphs to 28x28px, and tuned label text to eliminate all clipping.
+49. Universal Tunneling Enter Key Crop Approval (UI/UX fix): In non-free crop modes, focused child controls intercepted keyboard events, preventing Key.Enter from confirming crop boundaries. Fix: Registered OnWindowKeyDown using RoutingStrategies.Tunnel so Enter unconditionally triggers crop confirmation regardless of focused element, and ensured _selectedControl = cropObject is maintained during crop mode switching so selection handles and apply buttons remain interactive.
+50. Multi-Monitor Screen Tint Bypass & Planckian Color Compensation (feature & bugfix): Software tinting apps (e.g. f.lux, Windows Night Light) applied amber/yellow color casts to screenshots when running via DWM color transforms without layered windows, and multi-monitor overlays were not detected. Fix: Expanded ScreenTintBypass.CoversAnyMonitor for multi-screen bounds, filtered out gaming overlays, identified known tint processes, and introduced ApplyColorCorrectionIfActive using Planckian blackbody equations to calculate inverse Green/Blue multipliers applied via a 256-byte LUT in under 1ms without screen flicker or registry writes.
+51. Settings Discard Prompt Guard (UI/UX bugfix): Entering Settings and clicking Cancel prompted a discard confirmation dialog even when no configuration values were modified. Fix: Added HasUnsavedChanges tracking in SettingsWindow.axaml.cs, bypassing the confirmation prompt when settings are untouched.
+52. ImageEditor Domain Service Extraction & Interop Hardening (architectural refactoring & test expansion): Monolithic ImageEditorWindow.axaml.cs refactored into modular, testable domain services under snapvox.editor/Services/ preserving eSLOC conservation (106.87% ratio, 7,744 eSLOC across services vs 7,246 eSLOC base). Extracted:
+    - VectorSnappingEngine: 8-direction strict/soft angle constraints, 6px threshold magnetic edge/axis alignment, 8-point perimeter geometry, Alt-key bypass, 12.0px snap-back gap (VectorSnapGap).
+    - EditorZoomEngine: cursor-focal point mapping, overscroll padding, viewport centering, 100 FPS DispatcherTimer geometric interpolation.
+    - EditorHistoryManager: undo/redo snapshot stacks, 40-item ceiling, 384MB memory ceiling, explicit annotation collection clearing on snapshot disposal.
+    - OcrOverlayController: interactive OCR word highlights, spatial queries, luminance theming.
+    Converted legacy GetCursorPos P/Invoke signatures in ScreenColorSampler and NotificationOverlayWindow to C# 13 [LibraryImport] source generators. Purged dead history/vector wrapper shims from ImageEditorWindow. Wired headless test suite execution into dev_build.cmd and Build.cmd directly ahead of Branch 1 compilation. Expanded headless test suite in snapvox.tests/ (VectorSnappingEngineTests, EditorZoomEngineTests, EditorHistoryManagerTests, OcrOverlayControllerTests, OcrTextLayoutTests) bringing total test count to 45 passing tests with full dual-branch compilation parity (-p:TreatWarningsAsErrors=true on Branch 1 Native AOT and Branch 2 Tesseract).
+53. Save/Export Pipeline Extraction & Characterization Coverage (architectural refactoring & test expansion): Extracted EditorExportService into snapvox.editor/Services/ encapsulating JPEG/PNG encoding, filename sanitization, timestamped file naming, 24-hour retention backup staging, and decoupled download target path resolution. Purged redundant SanitizeFileName, SaveImageAsync, SaveToHistoryBackupAsync, and DownloadTarget shims from ImageEditorWindow.axaml.cs. Expanded headless test suite with EditorExportServiceTests (12 tests covering null/whitespace handling, character sanitization, length clamping, filename formats, JPEG/PNG magic byte encoding, backup retention toggles, and shell path precedence) expanding passing tests to 57 with 107.65% eSLOC conservation (7,800 eSLOC across services vs 7,246 base).
+54. Production Reliability & Hardening (Fixes 1-5):
+    - FIX #1 (Silent Failure Swallowing): Added LogSwallowed helper to DeploymentLifecycle.cs for audit logging to BootstrapDebug and InstallHostContext. Converted all empty catch blocks throughout DeploymentLifecycle to log via logger.LogAsync or LogSwallowed with zero empty catch blocks remaining. Integrated defense-in-depth allowedRoots safety filter in PerformFullHostCleanupAsync refusing to purge targets outside SnapVox-owned directories.
+    - FIX #2 (Conflict Detection Accuracy & Non-Blocking Warnings): Replaced substring Contains matching in DetectConflictingSoftware with exact HashSet process (ConflictingProcessNames) and registry display name (ConflictingDisplayNames) matchers, resolving false positive blocks on apps like Obsidian. Downgraded hard installation refusal to a Yes/No warning prompt allowing user override. Added unit test characterization in ConflictDetectionTests.cs (4 tests/theories).
+    - FIX #3 (Deployment Footprint Characterization & Internals Visibility): Added InternalsVisibleTo for snapvox.tests in SnapVox.csproj. Created DeploymentFootprintTests.cs with 8 characterization tests pinning purge roots, install folder switches, user profile/temp isolation, user artifact patterns, and registry targets.
+    - FIX #4 (Async Void Guards & Dispatcher UI Crash Net): Registered global Dispatcher.UIThread.UnhandledException handler in App.axaml.cs inside OnFrameworkInitializationCompleted. Hardened async void methods (ImageEditorWindow.RestoreSnapshot, CaptureWindow.OnClosed, and ImageEditorWindow.ShowZoomHintDebounced) with try/catch exception handlers and toast/error logging to preserve state and prevent unexpected UI thread termination.
+    - FIX #5 (Atomic INI Configuration Persistence): Refactored IniConfig.SaveInternally to write atomically to a temporary .tmp file with fs.Flush(true) before swapping into place via File.Replace with .bak backup creation. Added warning logs for Monitor.TryEnter timeouts (>200ms) in IniConfig.Save. Created IniConfigAtomicSaveTests.cs with 3 tests validating atomic persistence, backup creation, and temp file cleanup. Total test suite expanded to 84 passing tests with dual-branch build parity.
+55. ImageEditor Wave 2 Refactoring & Decoupling (architectural refactoring & test expansion):
+    - Phase 1 (Tool Strategy Dispatch): Extracted 12 tool handlers under snapvox.editor/Services/Tools/ (IToolHandler, BaseToolHandler, ShapeToolHandler, VectorToolHandler, ToolPointerEvent, ToolHandlerContext, ArrowToolHandler, LineToolHandler, RectangleToolHandler, EllipseToolHandler, FreeDrawToolHandler, HighlightToolHandler, BlurToolHandler, TextToolHandler, CounterToolHandler, EmojiToolHandler, CropToolHandler, NoneToolHandler). Centralized pointer event dispatch (OnCanvasPointerPressed, Moved, Released) in ImageEditorWindow through handlers. Expanded test suite with ToolHandlersTests.cs (7 unit tests).
+    - Phase 2 (EditorDocument): Extracted EditorDocument under snapvox.editor/Services/EditorDocument.cs encapsulating Image<Rgba32> lifecycle, concurrency locks, dimensions, format, source path, and dirty tracking. Eliminated raw _image/_imageLock field references in ImageEditorWindow. Expanded test suite with EditorDocumentTests.cs (6 unit tests).
+    - Phase 3 (EditorWindowFitter): Extracted EditorWindowFitter under snapvox.editor/Services/EditorWindowFitter.cs encapsulating optimal window sizing, screen clamping, auto-fit, and multi-monitor positioning math. Replaced inline layout math in PositionWindow, AutoFitWindowToContent, and RefitWindowToImage. Expanded test suite with EditorWindowFitterTests.cs (6 unit tests).
+    - Phase 4 (ContextToolbarTheme): Extracted ContextToolbarTheme under snapvox.editor/Services/ContextToolbarTheme.cs isolating floating context toolbar UI styling, luminance thresholds, acrylic brush palettes, and vector icon fills. Expanded test suite with ContextToolbarThemeTests.cs (5 unit tests).
+    - Phase 5 (OcrOverlayController Context Toolbar Integration): Added ShowContextToolbar and HideContextToolbar to OcrOverlayController, managing position clamping and action button states (copy, open link, email) directly within the overlay controller. Expanded test suite with 3 additional unit tests in OcrOverlayControllerTests.cs.
+    - Phase 6 (Static FindControl Caching): Declared 53 strongly-typed UI control fields in ImageEditorWindow and initialized them in CacheControls() called immediately after InitializeComponent(). Eliminated all recurring visual tree lookups across zoom, pan, layout, tool switching, close prompt, color picker, thickness, and fill mode operations.
+    Total test suite expanded from 84 to 119 passing tests with 0 failures, 0 compiler warnings, and full dual-branch build parity (Branch 1 Native AOT and Branch 2 Tesseract).
+
+
+RELIABILITY FIXES — 2026-09-10
+------------------------------
+Issues 1-10 are tracked in FIX_PROGRESS.md, including validation and resume instructions.
+- User exports are never selected for uninstall by filename wildcards.
+- Failed export rendering or clipboard transfer cannot produce a success/close path.
+- Highlights tint the visible composition; pixelation remains covered while rendering and export waits for completion.
+- Setup asks for the upgrade choice before checking running apps; no app is forcibly terminated. Save and exit, then Retry, or Cancel setup.
+- UpgradeSettingsBackup.cs stores verified recovery copies outside cleanup roots and preserves them on failure.
+- StartupTaskDefinition.cs explicitly disables battery/idle/network restrictions and the execution time limit. Kept administrator startup is recreated after settings restoration. Ordinary startup uses the user Run entry.
+- Regression coverage: EditorSafetyTests.cs, UpgradeSafetyTests.cs, revised ClipboardTests.cs and DeploymentFootprintTests.cs. Both OCR configurations: 189 tests passing with warnings treated as errors.

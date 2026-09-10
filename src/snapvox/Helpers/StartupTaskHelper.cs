@@ -133,29 +133,32 @@ public static class StartupTaskHelper
 
     private static async Task<bool> CreateElevatedStartupTaskAsync(string executablePath)
     {
+        string definitionPath = Path.Combine(Path.GetTempPath(), "SnapVox", "Lifecycle", "Startup_" + Guid.NewGuid().ToString("N") + ".xml");
         try
         {
-            Log?.Info("OS: Registering elevated scheduled task for: " + executablePath);
-            string userName = WindowsIdentity.GetCurrent().Name;
-            string arguments = string.Format("/Create /TN \"{0}\" /TR \"\\\"{1}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /F", ScheduledTaskName, executablePath);
-            int exitCode = await RunHiddenProcessAsync("schtasks.exe", arguments, 15000).ConfigureAwait(false);
+            using var identity = WindowsIdentity.GetCurrent();
+            string sid = identity.User?.Value ?? throw new InvalidOperationException("Cannot identify the startup user.");
+            Directory.CreateDirectory(Path.GetDirectoryName(definitionPath));
+            await File.WriteAllTextAsync(definitionPath, StartupTaskDefinition.Create(executablePath, sid)).ConfigureAwait(false);
+            int exitCode = await RunHiddenProcessAsync("schtasks.exe",
+                $"/Create /TN \"{ScheduledTaskName}\" /XML \"{definitionPath}\" /F", 15000).ConfigureAwait(false);
             if (exitCode != 0)
             {
-                string fallbackArguments = string.Format("/Create /TN \"{0}\" /TR \"\\\"{1}\\\" --autorun\" /SC ONLOGON /RL HIGHEST /RU \"{2}\" /F", ScheduledTaskName, executablePath, userName);
-                exitCode = await RunHiddenProcessAsync("schtasks.exe", fallbackArguments, 15000).ConfigureAwait(false);
-                if (exitCode != 0)
-                {
-                    Log?.Error("OS: Scheduled task registration failed with exit code " + exitCode);
-                    return false;
-                }
+                Log?.Error("Scheduled task registration failed with exit code " + exitCode);
+                return false;
             }
-            Log?.Info("OS: Elevated scheduled task registered successfully for " + userName);
+            Log?.Info("Elevated startup registered with battery restrictions disabled for " + sid);
             return true;
         }
         catch (Exception ex)
         {
             LogSuppressedException("CreateElevatedStartupTask", ex);
             return false;
+        }
+        finally
+        {
+            try { if (File.Exists(definitionPath)) File.Delete(definitionPath); }
+            catch (Exception ex) { LogSuppressedException("DeleteStartupDefinition", ex); }
         }
     }
 
@@ -324,97 +327,44 @@ public static class StartupTaskHelper
         }
     }
 
-    public static async Task KillAllProcessesAsync(Action<string> updateStatus = null, CancellationToken cancellationToken = default)
+    internal static bool IsInstalledExecutable(string executablePath, string installFolder = null)
     {
-        string[] processNames = {
-            "snapvox",
-            "SnapVox",
-            "Uninstall",
-            "snapvox_Cleanup",
-            "SnapVox_Cleanup",
-            "snapvox_tesseract",
-            "SnapVox_tesseract",
-            "snapvoxImgEditor"
-        };
-        var current = Process.GetCurrentProcess();
-        string targetDir = InstallFolder.TrimEnd(Path.DirectorySeparatorChar);
-
-        for (int retry = 0; retry < 5; retry++)
+        if (string.IsNullOrWhiteSpace(executablePath)) return false;
+        try
         {
-            bool foundAny = false;
-
-            foreach (string name in processNames)
-            {
-                foreach (var process in Process.GetProcessesByName(name))
-                {
-                    if (process.Id == current.Id) continue;
-                    foundAny = true;
-                    await TerminateProcessAsync(process, updateStatus, cancellationToken).ConfigureAwait(false);
-                }
-            }
-
-            if (Directory.Exists(targetDir))
-            {
-                foreach (var process in Process.GetProcesses())
-                {
-                    if (process.Id == current.Id) continue;
-                    try
-                    {
-                        string procPath = process.MainModule.FileName;
-                        if (procPath.StartsWith(targetDir, StringComparison.OrdinalIgnoreCase))
-                        {
-                            foundAny = true;
-                            await TerminateProcessAsync(process, updateStatus, cancellationToken).ConfigureAwait(false);
-                        }
-                    }
-                    catch { }
-                }
-            }
-
-            if (!foundAny) break;
-            await Task.Delay(300, cancellationToken).ConfigureAwait(false);
+            string root = Path.GetFullPath(installFolder ?? InstallFolder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string path = Path.GetFullPath(executablePath);
+            return path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException)
+        {
+            return false;
         }
     }
 
-    private static async Task TerminateProcessAsync(Process process, Action<string> updateStatus, CancellationToken cancellationToken)
+    internal static int[] FindRunningInstalledProcesses()
     {
-        try
+        var ids = new System.Collections.Generic.List<int>();
+        foreach (var process in Process.GetProcesses())
         {
-            string msg = string.Format("AUTO-CLEANUP: Terminating PID {0} ({1})...", process.Id, process.ProcessName);
-            Log?.Info(msg);
-            updateStatus?.Invoke(msg);
-            try
+            using (process)
             {
-                process.Kill(true);
-            }
-            catch
-            {
-                process.Kill();
-            }
-
-            try
-            {
-                await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromMilliseconds(2000), cancellationToken).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                using var taskKill = Process.Start(new ProcessStartInfo
+                if (process.Id == Environment.ProcessId) continue;
+                try
                 {
-                    FileName = "taskkill",
-                    Arguments = string.Format("/F /T /PID {0}", process.Id),
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                });
-                if (taskKill != null)
-                {
-                    await taskKill.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromMilliseconds(2000), cancellationToken).ConfigureAwait(false);
+                    if (IsInstalledExecutable(process.MainModule?.FileName)) ids.Add(process.Id);
                 }
+                catch (Exception ex) when (IsExpectedProcessInspectionException(ex)) { }
             }
         }
-        catch (Exception ex)
-        {
-            if (!IsExpectedProcessInspectionException(ex)) Log?.Warn("Auto-cleanup failed for PID " + process.Id + ": " + ex.Message);
-        }
+        return ids.ToArray();
+    }
+
+    internal static void RequireInstalledApplicationsClosed()
+    {
+        if (FindRunningInstalledProcesses().Length != 0)
+            throw new IOException("SnapVox is still running. Save your work, exit SnapVox from its tray menu, and run setup again. No application was forcibly closed.");
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

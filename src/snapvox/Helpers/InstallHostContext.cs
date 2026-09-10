@@ -9,36 +9,6 @@ namespace snapvox.helpers;
 /// </summary>
 internal static class InstallHostContext
 {
-
-
-    public static bool IsStandaloneInstallerHost()
-    {
-        if (StartupTaskHelper.IsRunningFromInstallPath())
-        {
-            return false;
-        }
-
-        if (PayloadExtractor.HasEmbeddedPayload())
-        {
-            return true;
-        }
-
-        string fileName = Path.GetFileName(RuntimePathHelper.ExecutablePath);
-        if (fileName.Equals("Setup.exe", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        string directory = (Path.GetDirectoryName(RuntimePathHelper.ExecutablePath) ?? string.Empty)
-            .Replace('/', Path.DirectorySeparatorChar);
-        if (directory.StartsWith(DeploymentFootprint.DeploymentTempRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
     public static void WriteEarlyTrace(string message)
     {
         try

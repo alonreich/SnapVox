@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -21,6 +21,7 @@ namespace snapvox.editor.forms
 
         private Slider _sizeSlider;
         private TextBlock _percentText;
+        private TextBlock _scaleHintText;
         private TextBlock _currentSizeText;
         private int _originalWidth;
         private int _originalHeight;
@@ -52,6 +53,7 @@ namespace snapvox.editor.forms
             _ratioCheckbox = this.FindControl<CheckBox>("RatioCheckbox");
             _sizeSlider = this.FindControl<Slider>("SizeSlider");
             _percentText = this.FindControl<TextBlock>("PercentText");
+            _scaleHintText = this.FindControl<TextBlock>("ScaleHintText");
             _currentSizeText = this.FindControl<TextBlock>("CurrentSizeText");
 
             _originalWidth = currentWidth;
@@ -63,12 +65,17 @@ namespace snapvox.editor.forms
 
             _widthInput.PropertyChanged += OnWidthChanged;
             _heightInput.PropertyChanged += OnHeightChanged;
+            _ratioCheckbox.IsCheckedChanged += OnRatioCheckedChanged;
             _sizeSlider.PropertyChanged += OnSliderChanged;
             _sizeSlider.Value = 0;
             UpdatePercentText(100);
             
             KeyDown += OnWindowKeyDown;
-            Opened += (_, __) => _widthInput?.Focus();
+            Opened += (_, __) =>
+            {
+                if (Owner != null) Topmost = Owner.Topmost;
+                _widthInput?.Focus();
+            };
         }
 
         private static double SliderPositionToPercent(double position)
@@ -151,34 +158,80 @@ namespace snapvox.editor.forms
             snapvox.foundation.core.UiLayoutDirection.Apply(this);
         }
 
-        private void OnWidthChanged(object sender, AvaloniaPropertyChangedEventArgs e)
+        private void OnRatioCheckedChanged(object sender, RoutedEventArgs e)
         {
-            if (e.Property.Name == "Text" && !_isUpdating && _ratioCheckbox.IsChecked == true)
+            bool isRatioLocked = _ratioCheckbox.IsChecked == true;
+            if (_sizeSlider != null)
+            {
+                _sizeSlider.IsEnabled = isRatioLocked;
+                _sizeSlider.Opacity = isRatioLocked ? 1.0 : 0.4;
+            }
+
+            if (_scaleHintText != null)
+            {
+                _scaleHintText.Opacity = isRatioLocked ? 1.0 : 0.4;
+            }
+
+            if (isRatioLocked)
             {
                 if (int.TryParse(_widthInput.Text, out int w))
                 {
                     _isUpdating = true;
                     _heightInput.Text = Math.Max(1, (int)Math.Round(w / _ratio)).ToString();
                     double percent = _originalWidth == 0 ? 100 : w * 100.0 / _originalWidth;
-                    _sizeSlider.Value = PercentToSliderPosition(percent);
+                    if (_sizeSlider != null) _sizeSlider.Value = PercentToSliderPosition(percent);
                     UpdatePercentText(percent);
                     _isUpdating = false;
+                }
+            }
+            else
+            {
+                if (_percentText != null) _percentText.Text = "Custom";
+            }
+        }
+
+        private void OnWidthChanged(object sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property.Name == "Text" && !_isUpdating)
+            {
+                if (_ratioCheckbox.IsChecked == true)
+                {
+                    if (int.TryParse(_widthInput.Text, out int w))
+                    {
+                        _isUpdating = true;
+                        _heightInput.Text = Math.Max(1, (int)Math.Round(w / _ratio)).ToString();
+                        double percent = _originalWidth == 0 ? 100 : w * 100.0 / _originalWidth;
+                        if (_sizeSlider != null) _sizeSlider.Value = PercentToSliderPosition(percent);
+                        UpdatePercentText(percent);
+                        _isUpdating = false;
+                    }
+                }
+                else
+                {
+                    if (_percentText != null) _percentText.Text = "Custom";
                 }
             }
         }
 
         private void OnHeightChanged(object sender, AvaloniaPropertyChangedEventArgs e)
         {
-            if (e.Property.Name == "Text" && !_isUpdating && _ratioCheckbox.IsChecked == true)
+            if (e.Property.Name == "Text" && !_isUpdating)
             {
-                if (int.TryParse(_heightInput.Text, out int h))
+                if (_ratioCheckbox.IsChecked == true)
                 {
-                    _isUpdating = true;
-                    _widthInput.Text = Math.Max(1, (int)Math.Round(h * _ratio)).ToString();
-                    double percent = _originalHeight == 0 ? 100 : h * 100.0 / _originalHeight;
-                    _sizeSlider.Value = PercentToSliderPosition(percent);
-                    UpdatePercentText(percent);
-                    _isUpdating = false;
+                    if (int.TryParse(_heightInput.Text, out int h))
+                    {
+                        _isUpdating = true;
+                        _widthInput.Text = Math.Max(1, (int)Math.Round(h * _ratio)).ToString();
+                        double percent = _originalHeight == 0 ? 100 : h * 100.0 / _originalHeight;
+                        if (_sizeSlider != null) _sizeSlider.Value = PercentToSliderPosition(percent);
+                        UpdatePercentText(percent);
+                        _isUpdating = false;
+                    }
+                }
+                else
+                {
+                    if (_percentText != null) _percentText.Text = "Custom";
                 }
             }
         }
@@ -199,7 +252,21 @@ namespace snapvox.editor.forms
 
         private async void OnOkClick(object sender, RoutedEventArgs e)
         {
-            if (!int.TryParse(_widthInput.Text, out int w) || !int.TryParse(_heightInput.Text, out int h)) return;
+            bool validW = int.TryParse(_widthInput.Text, out int w);
+            bool validH = int.TryParse(_heightInput.Text, out int h);
+
+            if (!validW || !validH)
+            {
+                await snapvox.editor.helpers.ConfirmDialog.ShowAlertAsync(
+                    this,
+                    "Invalid Dimensions",
+                    "Please enter valid whole numbers for width and height.",
+                    "OK",
+                    true).ConfigureAwait(true);
+                if (!validW) _widthInput?.Focus();
+                else _heightInput?.Focus();
+                return;
+            }
 
             if (w < 1 || h < 1)
             {

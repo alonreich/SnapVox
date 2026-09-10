@@ -22,6 +22,59 @@
                 </Canvas>
             </VisualBrush.Visual>
         </VisualBrush>
+
+        <ControlTheme x:Key="BottomToolbarScrollBarThumb" TargetType="Thumb">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="#60FFFFFF" CornerRadius="2" />
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^:pointerover /template/ Border">
+                <Setter Property="Background" Value="#A0FFFFFF" />
+            </Style>
+            <Style Selector="^:pressed /template/ Border">
+                <Setter Property="Background" Value="#D0FFFFFF" />
+            </Style>
+        </ControlTheme>
+
+        <ControlTheme x:Key="BottomToolbarScrollBarPage" TargetType="RepeatButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+
+        <ControlTheme x:Key="BottomToolbarScrollBarTheme" TargetType="ScrollBar">
+            <Setter Property="Height" Value="6" />
+            <Setter Property="MinHeight" Value="6" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#80FFFFFF" />
+            <Setter Property="Opacity" Value="0.8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="AllowAutoHide" Value="False" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid Background="{TemplateBinding Background}" Height="6" Cursor="Hand">
+                        <Track Name="PART_Track" Orientation="Horizontal"
+                               Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                               Value="{TemplateBinding Value, Mode=TwoWay}" ViewportSize="{TemplateBinding ViewportSize}" Cursor="Hand">
+                            <Track.DecreaseButton>
+                                <RepeatButton Name="PART_PageLeftButton" Theme="{StaticResource BottomToolbarScrollBarPage}" Interval="60" Delay="250" />
+                            </Track.DecreaseButton>
+                            <Track.Thumb>
+                                <Thumb Theme="{StaticResource BottomToolbarScrollBarThumb}" MinWidth="30" Height="4" Margin="0,1" />
+                            </Track.Thumb>
+                            <Track.IncreaseButton>
+                                <RepeatButton Name="PART_PageRightButton" Theme="{StaticResource BottomToolbarScrollBarPage}" Interval="60" Delay="250" />
+                            </Track.IncreaseButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
     </Window.Resources>
 
     
@@ -122,10 +175,10 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}" />
             <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="4,6" />
+            <Setter Property="Padding" Value="2,6" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Width" Value="86" />
-            <Setter Property="Height" Value="72" />
+            <Setter Property="Width" Value="96" />
+            <Setter Property="Height" Value="74" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
@@ -134,7 +187,7 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}" />
             <Setter Property="Background" Value="{DynamicResource SnapVoxActionButtonBrush}" />
-            <Setter Property="Padding" Value="4,6" />
+            <Setter Property="Padding" Value="2,6" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
@@ -154,15 +207,32 @@
         
         
 
+        <Style Selector="Button.destructive">
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxDestructiveBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.destructive /template/ ContentPresenter">
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxDestructiveBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.destructive TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxDestructiveHoverBrush}" />
+        </Style>
         <Style Selector="Button.destructive:hover /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveBrush}" />
             <Setter Property="BorderThickness" Value="2,2,1,1" />
             <Setter Property="BorderBrush" Value="#88000000" />
         </Style>
+        <Style Selector="Button.destructive:hover TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
+        </Style>
         <Style Selector="Button.destructive:pressed /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SnapVoxDestructiveHoverBrush}" />
             <Setter Property="BorderThickness" Value="2,2,1,1" />
             <Setter Property="BorderBrush" Value="#88000000" />
+        </Style>
+        <Style Selector="Button.destructive:pressed TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
         </Style>
         
         <Style Selector="ScrollBar">
@@ -202,7 +272,7 @@
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
             <Setter Property="BorderThickness" Value="2" />
         </Style>
-        <Style Selector="Rectangle.selection-indicator">
+        <Style Selector=":is(Shape).selection-indicator">
             <Setter Property="Stroke" Value="Yellow"/>
             <Setter Property="StrokeThickness" Value="1"/>
             <Setter Property="StrokeDashArray" Value="4,2"/>
@@ -218,7 +288,8 @@
             </Style.Animations>
         </Style>
         <Style Selector="Button.thickness">
-            <Setter Property="Width" Value="18" />
+            <Setter Property="Width" Value="24" />
+            <Setter Property="MinWidth" Value="24" />
             <Setter Property="Height" Value="28" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -339,11 +410,64 @@
                 </Animation>
             </Style.Animations>
         </Style>
+
+        <Style Selector="Border.annotation-text-border > TextBox">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.annotation-text-border > TextBox /template/ ScrollViewer#PART_ScrollViewer">
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Border.annotation-text-border > TextBox /template/ TextPresenter#PART_TextPresenter">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="ScrollViewer.bottom-toolbar-scroller">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid RowDefinitions="60,Auto" ColumnDefinitions="*">
+                        <ScrollContentPresenter Name="PART_ContentPresenter"
+                                                Grid.Row="0"
+                                                MinHeight="60"
+                                                Height="60"
+                                                Background="{TemplateBinding Background}"
+                                                HorizontalSnapPointsType="{TemplateBinding HorizontalSnapPointsType}"
+                                                HorizontalSnapPointsAlignment="{TemplateBinding HorizontalSnapPointsAlignment}"
+                                                VerticalSnapPointsType="{TemplateBinding VerticalSnapPointsType}"
+                                                VerticalSnapPointsAlignment="{TemplateBinding VerticalSnapPointsAlignment}"
+                                                ScrollViewer.IsScrollInertiaEnabled="{TemplateBinding IsScrollInertiaEnabled}">
+                            <ScrollContentPresenter.GestureRecognizers>
+                                <ScrollGestureRecognizer
+                                    CanHorizontallyScroll="{Binding CanHorizontallyScroll, ElementName=PART_ContentPresenter}"
+                                    CanVerticallyScroll="{Binding CanVerticallyScroll, ElementName=PART_ContentPresenter}"
+                                    IsScrollInertiaEnabled="{Binding (ScrollViewer.IsScrollInertiaEnabled), ElementName=PART_ContentPresenter}" />
+                            </ScrollContentPresenter.GestureRecognizers>
+                        </ScrollContentPresenter>
+                        <ScrollBar Name="PART_HorizontalScrollBar"
+                                   Theme="{StaticResource BottomToolbarScrollBarTheme}"
+                                   Orientation="Horizontal"
+                                   Grid.Row="1"
+                                   Margin="8,0,8,2" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+
+        <Style Selector="ScrollViewer.bottom-toolbar-scroller ScrollBar">
+            <Setter Property="Theme" Value="{StaticResource BottomToolbarScrollBarTheme}" />
+        </Style>
     </Window.Styles>
 
     <Panel>
     <Grid Name="EditorContentRoot" RowDefinitions="Auto,Auto,*,Auto">
-        <Grid Grid.Row="0" Name="TitleBar" Height="32" ColumnDefinitions="Auto,*,Auto" Background="{DynamicResource SnapVoxPanelDarkBrush}" Cursor="Arrow" PointerPressed="OnTitleBarPointerPressed">
+        <Grid Grid.Row="0" Name="TitleBar" FlowDirection="LeftToRight" Height="32" ColumnDefinitions="Auto,*,Auto" Background="{DynamicResource SnapVoxPanelDarkBrush}" Cursor="Arrow" PointerPressed="OnTitleBarPointerPressed">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
                 <Image Source="avares://SnapVox/SnapVox.ico" Width="16" Height="16" Margin="0,0,8,0" AutomationProperties.AccessibilityView="Raw"/>
                 <TextBlock Text="SnapVox Editor" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="{DynamicResource SnapVoxTitleFontSize}" VerticalAlignment="Center"/>
@@ -390,16 +514,16 @@
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/crop.svg" />
                     </Button>
                     <Popup Name="CropModePopup" Placement="BottomEdgeAlignedLeft" VerticalOffset="8" HorizontalOffset="-6" IsLightDismissEnabled="False">
-                        <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="12,10" Width="652" BoxShadow="0 6 20 0 #AA000000">
+                        <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="12,10" Width="732" BoxShadow="0 6 20 0 #AA000000">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="CROP SHAPE" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
-                                <StackPanel Name="CropModeButtons" Orientation="Horizontal" Spacing="4">
+                                <StackPanel Name="CropModeButtons" Orientation="Horizontal" Spacing="5">
                                 <Button Classes="cropmode" Name="CropModeRegular" Tag="Regular" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
                                         AutomationProperties.Name="Free crop"
                                         AutomationProperties.HelpText="Free crop. Drag any box you like - the picture keeps exactly what is inside it, in whatever shape you drew."
                                         ToolTip.Tip="Free crop. Drag any box you like - the picture keeps exactly what is inside it, in whatever shape you drew.">
                                     <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="32" Height="32" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-free.svg" />
+                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-free.svg" />
                                         <TextBlock Text="Free Crop" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
@@ -408,7 +532,7 @@
                                         AutomationProperties.HelpText="Same shape as now. The box is locked to this picture's current shape, so the result looks like the original - just a smaller piece of it."
                                         ToolTip.Tip="Same shape as now. The box is locked to this picture's current shape, so the result looks like the original - just a smaller piece of it.">
                                     <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="32" Height="32" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-keep-ratio.svg" />
+                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-keep-ratio.svg" />
                                         <TextBlock Text="Keep Ratio" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
@@ -417,7 +541,7 @@
                                         AutomationProperties.HelpText="Perfect square. Width and height come out equal - the shape profile pictures and app icons use."
                                         ToolTip.Tip="Perfect square. Width and height come out equal - the shape profile pictures and app icons use.">
                                     <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="32" Height="32" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-square.svg" />
+                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-square.svg" />
                                         <TextBlock Text="1:1 Square" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
@@ -426,7 +550,7 @@
                                         AutomationProperties.HelpText="Wide screen. The long, letterbox shape of a TV or a YouTube video."
                                         ToolTip.Tip="Wide screen. The long, letterbox shape of a TV or a YouTube video.">
                                     <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="32" Height="32" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-wide.svg" />
+                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-wide.svg" />
                                         <TextBlock Text="16:9 Wide" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
@@ -435,7 +559,7 @@
                                         AutomationProperties.HelpText="Tall phone screen. The upright shape of a Story, a Reel or a TikTok."
                                         ToolTip.Tip="Tall phone screen. The upright shape of a Story, a Reel or a TikTok.">
                                     <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="32" Height="32" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-tall.svg" />
+                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-tall.svg" />
                                         <TextBlock Text="9:16 Tall" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
@@ -444,8 +568,8 @@
                                         AutomationProperties.HelpText="Cut out a vertical slice. The selected middle column is deleted, and the left and right pieces weld together seamlessly."
                                         ToolTip.Tip="Cut Out Vertical: select a middle slice to delete; the left and right sides weld together seamlessly.">
                                     <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="32" Height="32" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-column.svg" />
-                                        <TextBlock Text="Cut Vertical" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-column.svg" />
+                                        <TextBlock Text="Cut Vertical" FontSize="10.5" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
                                 <Button Classes="cropmode" Name="CropModeHorizontalStrip" Tag="HorizontalStrip" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
@@ -453,13 +577,13 @@
                                         AutomationProperties.HelpText="Cut out a horizontal slice. The selected middle band is deleted, and the top and bottom pieces weld together seamlessly."
                                         ToolTip.Tip="Cut Out Horizontal: select a middle slice to delete; the top and bottom sides weld together seamlessly.">
                                     <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="32" Height="32" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-band.svg" />
-                                        <TextBlock Text="Cut Horiz." FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-band.svg" />
+                                        <TextBlock Text="Cut Horiz." FontSize="10.5" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
                                 </StackPanel>
                                 <Border Background="{DynamicResource SnapVoxCanvasBrush}" CornerRadius="4" Padding="10,8" Margin="0,4,0,0">
-                                    <TextBlock Name="CropModeDescription" TextWrapping="Wrap" MaxWidth="620" FontSize="11.5" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" LineHeight="16" />
+                                    <TextBlock Name="CropModeDescription" TextWrapping="Wrap" MaxWidth="700" FontSize="11.5" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" LineHeight="16" />
                                 </Border>
                             </StackPanel>
                         </Border>
@@ -572,6 +696,7 @@
                             <Image Name="EditorImage" AutomationProperties.Name="Captured image" Margin="0" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
                         </Border>
                         <Canvas Name="AnnotationCanvas" Background="Transparent" 
+                                Focusable="True"
                                 HorizontalAlignment="Left" VerticalAlignment="Top"
                                 PointerPressed="OnCanvasPointerPressed" 
                                 PointerMoved="OnCanvasPointerMoved" 
@@ -685,10 +810,10 @@
         </Grid>
 
         <!-- Row 3: Bottom Toolbar -->
-        <Border Grid.Row="3" Name="BottomToolbarBorder" Background="{DynamicResource SnapVoxToolbarBrush}" Height="60" MinHeight="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,1,0,0" Cursor="Arrow">
+        <Border Grid.Row="3" Name="BottomToolbarBorder" Background="{DynamicResource SnapVoxToolbarBrush}" MinHeight="60" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="0,1,0,0" Cursor="Arrow">
             <Grid ColumnDefinitions="*,Auto">
-                <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,0,8,0">
-                    <StackPanel Orientation="Horizontal" Margin="10,0" Spacing="0" VerticalAlignment="Center" HorizontalAlignment="Left">
+                <ScrollViewer Grid.Column="0" Classes="bottom-toolbar-scroller" Name="BottomToolbarScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="0,0,8,0" PointerWheelChanged="OnBottomToolbarPointerWheelChanged">
+                    <StackPanel Orientation="Horizontal" Margin="10,0" Spacing="0" VerticalAlignment="Center" MinHeight="60" HorizontalAlignment="Left">
                         <StackPanel Name="ColorPresetsPanel" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
                             <Button Classes="color-preset" Background="#000000" Click="OnColorSelectClick" Tag="#000000" AutomationProperties.Name="Black" ToolTip.Tip="Black" />
                             <Button Classes="color-preset" Background="#00FF00" Click="OnColorSelectClick" Tag="#00FF00" AutomationProperties.Name="Green" ToolTip.Tip="Green" />
@@ -809,7 +934,7 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="10,0" Spacing="10">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Height="60" HorizontalAlignment="Right" Margin="10,0" Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                         <Button Classes="toolbar" Name="SnapToggleBtn" AutomationProperties.Name="Toggle magnetic snapping" ToolTip.Tip="Toggle Magnetic Snapping" Click="OnSnapToggleClick">
                             <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/magnet.svg" />
@@ -843,9 +968,9 @@
                 <TextBlock Text="Unsaved Changes" FontWeight="Bold" FontSize="{DynamicResource SnapVoxDialogTitleFontSize}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
                 <TextBlock Name="ClosePromptMessage" Text="You have unsaved changes. Discard permanently deletes everything you added to this image." TextWrapping="Wrap" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
                 <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
-                    <Button Name="ClosePromptSaveButton" Content="Save and Close" Click="OnPromptSaveClose" AutomationProperties.Name="Save and close" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" MinWidth="110" MinHeight="32" HorizontalContentAlignment="Center" Padding="12,6" Cursor="Hand" />
+                    <Button Name="ClosePromptSaveButton" Content="Save and Close" Click="OnPromptSaveClose" AutomationProperties.Name="Save and close" Background="{DynamicResource SnapVoxAccentBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" MinWidth="110" MinHeight="32" HorizontalContentAlignment="Center" Padding="12,6" Cursor="Hand" IsDefault="True" />
                     <Button Name="ClosePromptDiscardButton" Content="Discard" Click="OnPromptDiscard" AutomationProperties.Name="Discard changes and close" Background="{DynamicResource SnapVoxDestructiveBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" MinWidth="90" MinHeight="32" HorizontalContentAlignment="Center" Padding="12,6" Cursor="Hand" />
-                    <Button Name="ClosePromptCancelButton" Content="Cancel" Click="OnPromptCancel" AutomationProperties.Name="Keep editing" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" MinWidth="90" MinHeight="32" HorizontalContentAlignment="Center" Padding="12,6" Cursor="Hand" />
+                    <Button Name="ClosePromptCancelButton" Content="Cancel" Click="OnPromptCancel" AutomationProperties.Name="Keep editing" Background="{DynamicResource SnapVoxSecondaryButtonBrush}" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" MinWidth="90" MinHeight="32" HorizontalContentAlignment="Center" Padding="12,6" Cursor="Hand" IsCancel="True" />
                 </StackPanel>
             </StackPanel>
         </Border>

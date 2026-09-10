@@ -25,22 +25,6 @@ namespace snapvox.helpers
     {
         private static readonly ILog Log = LogHelper.GetLogger(typeof(CaptureHelper));
 
-        public static int FrameBorderThickness => Config?.FrameBorderThickness > 0 ? Config.FrameBorderThickness : 4;
-        public static SixLabors.ImageSharp.Color GetFrameBorderColor()
-        {
-            string hex = Config?.FrameBorderColor?.Trim();
-            if (!string.IsNullOrEmpty(hex))
-            {
-                try
-                {
-                    if (!hex.StartsWith("#")) hex = "#" + hex;
-                    return SixLabors.ImageSharp.Color.ParseHex(hex);
-                }
-                catch { }
-            }
-            return SixLabors.ImageSharp.Color.FromRgb(0x43, 0x43, 0x43);
-        }
-
         private static readonly object LastRegionSync = new object();
         private static RECT _lastRegion = RECT.Empty;
 
@@ -52,6 +36,17 @@ namespace snapvox.helpers
         public static bool IsFrozenSnapshotReady => _frozenSnapshot != null;
 
         public static string LastActiveWindowTitle { get; set; }
+
+        internal static async Task CopyCaptureToClipboardAsync(ImageSharpImage image)
+        {
+            try { await UiClipboard.SetImageAsync(image).ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                // Clipboard failure must not prevent the captured picture opening.
+                Log.Error("Capture retained for editing; clipboard transfer failed.", ex);
+                ToastHelper.ShowToast("Picture was not copied", "Your capture will open in the editor. Use Copy or Save there to keep it.");
+            }
+        }
         public static void CaptureRegion(bool fromHotkey)
         {
             LastActiveWindowTitle = snapvox.native.Win32WindowHelper.GetActiveWindowTitle();
@@ -360,13 +355,8 @@ namespace snapvox.helpers
                                     }
                                 }
 
-                                if (Config.AddFrameBorders)
-                                {
-                                    ApplyFrameBorder(owned);
-                                }
-
                                 RememberRegion(rawRect);
-                                await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
+                                await CaptureHelper.CopyCaptureToClipboardAsync(owned).ConfigureAwait(false);
                                 ImageSharpImage imageForEditor = owned;
                                 await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, rawRect, "region"));
                                 owned = null;
@@ -420,12 +410,7 @@ namespace snapvox.helpers
                             }
                         }
 
-                        if (Config.AddFrameBorders)
-                        {
-                            ApplyFrameBorder(owned);
-                        }
-
-                        await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
+                        await CaptureHelper.CopyCaptureToClipboardAsync(owned).ConfigureAwait(false);
                         ImageSharpImage imageForEditor = owned;
                         await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, virtualBounds, "region"));
                         owned = null;
@@ -477,16 +462,24 @@ namespace snapvox.helpers
 
         public static void CaptureLastRegion(bool fromHotkey)
         {
-            ScreenTintBypass.InvalidateCache();
-            App.ForceRedTrayIcon(true);
-            RECT lastRegion;
-            lock (LastRegionSync) lastRegion = _lastRegion;
-            if (lastRegion.IsEmpty || lastRegion.Width <= 0 || lastRegion.Height <= 0)
+            try
+            {
+                ScreenTintBypass.InvalidateCache();
+                App.ForceRedTrayIcon(true);
+                RECT lastRegion;
+                lock (LastRegionSync) lastRegion = _lastRegion;
+                if (lastRegion.IsEmpty || lastRegion.Width <= 0 || lastRegion.Height <= 0)
+                {
+                    App.ForceRedTrayIcon(false);
+                    return;
+                }
+                OpenEditorForRegionAsync(lastRegion);
+            }
+            catch (Exception ex)
             {
                 App.ForceRedTrayIcon(false);
-                return;
+                Log.Fatal("CaptureLastRegion failed.", ex);
             }
-            OpenEditorForRegionAsync(lastRegion);
         }
 
         private const int SmXVirtualScreen = 76;
@@ -537,11 +530,6 @@ namespace snapvox.helpers
                                 Log.Error("[TEMP_SAVE_FAILURE] Failed to save raw capture.", ex);
                             }
                         }
-
-                        if (Config.AddFrameBorders)
-                        {
-                            ApplyFrameBorder(owned);
-                        }
                     }
 
                     if (owned == null)
@@ -550,7 +538,7 @@ namespace snapvox.helpers
                         return;
                     }
                     RememberRegion(region);
-                    await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
+                    await CaptureHelper.CopyCaptureToClipboardAsync(owned).ConfigureAwait(false);
                     ImageSharpImage imageForEditor = owned;
                     await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, region, "region"));
                     owned = null;
@@ -591,24 +579,6 @@ namespace snapvox.helpers
                 editor?.Close();
                 Log.Fatal("ShowEditorForOwnedImage failed.", ex);
             }
-        }
-
-        /// <summary>
-        /// Bakes the 3px navy snip frame into <paramref name="image"/> in place. Crops the outer
-        /// ring away and pads it back with the frame colour, so content never shifts position.
-        /// </summary>
-        public static void ApplyFrameBorder(ImageSharpImage image)
-        {
-            if (image == null) return;
-
-            int width = image.Width;
-            int height = image.Height;
-            int thickness = FrameBorderThickness;
-            if (width <= thickness * 2 || height <= thickness * 2) return;
-
-            image.Mutate(x => x
-                .Crop(new Rectangle(thickness, thickness, width - thickness * 2, height - thickness * 2))
-                .Pad(width, height, GetFrameBorderColor()));
         }
 
         private static Rectangle ClampCropRectangle(Rectangle rectangle, int imageWidth, int imageHeight)

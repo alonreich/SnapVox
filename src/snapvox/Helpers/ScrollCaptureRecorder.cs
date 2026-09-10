@@ -37,6 +37,7 @@ namespace snapvox.helpers
         }
 
         public int AcceptedFrames => _stitcher.AcceptedFrames;
+        public double EstimatedScreens => _stitcher.EstimatedScreens;
 
         public void Start()
         {
@@ -49,7 +50,7 @@ namespace snapvox.helpers
             _cts.Cancel();
             _frames.Writer.TryComplete();
             await WaitForTasksAsync().ConfigureAwait(false);
-            if (_trackingFailed || _stitcher.AcceptedFrames < 1)
+            if (_stitcher.AcceptedFrames < 1)
             {
                 return null;
             }
@@ -62,6 +63,7 @@ namespace snapvox.helpers
             _cts.Cancel();
             _frames.Writer.TryComplete();
             await WaitForTasksAsync().ConfigureAwait(false);
+            DrainPendingFrames();
         }
 
         public async ValueTask DisposeAsync()
@@ -69,6 +71,14 @@ namespace snapvox.helpers
             await CancelAsync().ConfigureAwait(false);
             _cts.Dispose();
             _stitcher.Dispose();
+        }
+
+        private void DrainPendingFrames()
+        {
+            while (_frames.Reader.TryRead(out var frame))
+            {
+                frame?.Dispose();
+            }
         }
 
         private async Task ProduceAsync()
@@ -80,15 +90,6 @@ namespace snapvox.helpers
                     Image<Bgra32> frame = NativeCapture.CaptureRegion(_target, false);
                     if (frame != null)
                     {
-                        await Task.Delay(35, _cts.Token).ConfigureAwait(false);
-                        using Image<Bgra32> confirm = NativeCapture.CaptureRegion(_target, false);
-                        if (confirm != null && !IsFrameSettled(frame, confirm))
-                        {
-                            frame.Dispose();
-                            await Task.Delay(45, _cts.Token).ConfigureAwait(false);
-                            continue;
-                        }
-
                         try
                         {
                             await _frames.Writer.WriteAsync(frame, _cts.Token).ConfigureAwait(false);
@@ -100,7 +101,7 @@ namespace snapvox.helpers
                         }
                     }
 
-                    await Task.Delay(80, _cts.Token).ConfigureAwait(false);
+                    await Task.Delay(75, _cts.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -117,28 +118,6 @@ namespace snapvox.helpers
             }
         }
 
-        private static bool IsFrameSettled(Image<Bgra32> first, Image<Bgra32> second)
-        {
-            if (first.Width != second.Width || first.Height != second.Height) return false;
-            long diff = 0;
-            long count = 0;
-            int stride = Math.Max(4, Math.Min(first.Width, first.Height) / 120);
-            first.ProcessPixelRows(second, (a, b) =>
-            {
-                for (int y = 0; y < a.Height; y += stride)
-                {
-                    Span<Bgra32> rowA = a.GetRowSpan(y);
-                    Span<Bgra32> rowB = b.GetRowSpan(y);
-                    for (int x = 0; x < a.Width; x += stride)
-                    {
-                        diff += Math.Abs(rowA[x].R - rowB[x].R);
-                        count++;
-                    }
-                }
-            });
-            return count == 0 || (double)diff / count < 2.5;
-        }
-
         private async Task ConsumeAsync()
         {
             try
@@ -149,12 +128,6 @@ namespace snapvox.helpers
                     if (status == ScrollFrameStatus.Rejected)
                     {
                         _rejectedFrames++;
-                        if (_rejectedFrames >= 5 && _stitcher.AcceptedFrames > 0)
-                        {
-                            _trackingFailed = true;
-                            _cts.Cancel();
-                            break;
-                        }
                     }
                     else if (status == ScrollFrameStatus.Accepted)
                     {
@@ -168,7 +141,10 @@ namespace snapvox.helpers
             catch (Exception ex)
             {
                 Log.Error("Scroll capture consumer failed.", ex);
-                _trackingFailed = true;
+            }
+            finally
+            {
+                DrainPendingFrames();
             }
         }
 
@@ -189,7 +165,7 @@ namespace snapvox.helpers
     internal sealed class ScrollFrameStitcher : IDisposable
     {
         private static readonly ILog Log = LogHelper.GetLogger(typeof(ScrollFrameStitcher));
-        private const int MinMovementPixels = 12;
+        private const int MinMovementPixels = 6;
         private const double MaxAverageDiff = 30.0;
         private const double MaxRefinedDiff = 16.0;
         private const int BandHeightPixels = 257;
@@ -212,6 +188,16 @@ namespace snapvox.helpers
         private Rectangle _viewport;
 
         public int AcceptedFrames { get; private set; }
+
+        public double EstimatedScreens
+        {
+            get
+            {
+                if (_frameHeight <= 0) return 1.0;
+                int scrollDist = Math.Max(Math.Abs(_offsetY), Math.Abs(_offsetX));
+                return 1.0 + ((double)scrollDist / _frameHeight);
+            }
+        }
 
         public ScrollFrameStatus AddFrame(Image<Bgra32> frame)
         {
@@ -314,31 +300,12 @@ namespace snapvox.helpers
                 return diff < a.Width * 2;
             }
 
-            bool ColMatch(int x, int t, int bot)
-            {
-                long diff = 0;
-                a.ProcessPixelRows(b, (aa, bb) =>
-                {
-                    for (int y = t; y <= bot; y += 4)
-                    {
-                        diff += Math.Abs(aa.GetRowSpan(y)[x].R - bb.GetRowSpan(y)[x].R);
-                    }
-                });
-                return diff < (bot - t) * 2;
-            }
-
             for (int y = 0; y < a.Height; y++) if (!RowMatch(y)) { top = y; break; }
             for (int y = a.Height - 1; y > top; y--) if (!RowMatch(y)) { bottom = y; break; }
-            for (int x = 0; x < a.Width; x++) if (!ColMatch(x, top, bottom)) { left = x; break; }
-            for (int x = a.Width - 1; x > left; x--) if (!ColMatch(x, top, bottom)) { right = x; break; }
 
-            int safeTop = a.Height / 5;
-            int safeBottom = a.Height - a.Height / 10 - 1;
-            int safeLeft = a.Width / 10;
-            int safeRight = a.Width - a.Width / 10 - 1;
-
-            if (bottom - top < a.Height / 3) { top = safeTop; bottom = safeBottom; }
-            if (right - left < a.Width / 3) { left = safeLeft; right = safeRight; }
+            // Guard against excessive header/footer matches
+            if (top > a.Height / 3) top = 0;
+            if (bottom < a.Height * 2 / 3) bottom = a.Height - 1;
 
             return new Rectangle(left, top, right - left + 1, bottom - top + 1);
         }
@@ -369,36 +336,71 @@ namespace snapvox.helpers
             if (width <= 0 || height <= 0 || totalPixels > MaxCompositePixels) return null;
 
             var result = new Image<Bgra32>(width, height);
+            Image<Bgra32> header = null;
+            Image<Bgra32> footer = null;
+            Image<Bgra32> leftBar = null;
+            Image<Bgra32> rightBar = null;
 
-            var header = _firstFrame.Clone(c => c.Crop(new Rectangle(0, 0, _frameWidth, _viewport.Top)));
-            var footer = _lastFrame.Clone(c => c.Crop(new Rectangle(0, _viewport.Bottom, _frameWidth, _frameHeight - _viewport.Bottom)));
-            var leftBar = _firstFrame.Clone(c => c.Crop(new Rectangle(0, _viewport.Top, _viewport.Left, _viewport.Height)));
-            var rightBar = _firstFrame.Clone(c => c.Crop(new Rectangle(_viewport.Right, _viewport.Top, _frameWidth - _viewport.Right, _viewport.Height)));
-
-            result.Mutate(ctx => 
+            try
             {
-                ctx.DrawImage(header, new Point(0, 0), 1f);
-                ctx.DrawImage(footer, new Point(0, height - footer.Height), 1f);
-            });
+                if (_viewport.Top > 0 && _frameWidth > 0)
+                {
+                    header = _firstFrame.Clone(c => c.Crop(new Rectangle(0, 0, _frameWidth, _viewport.Top)));
+                    result.Mutate(ctx => ctx.DrawImage(header, new Point(0, 0), 1f));
+                }
 
-            int currentY = _viewport.Top;
-            while (currentY < height - footer.Height)
-            {
-                result.Mutate(ctx => ctx.DrawImage(leftBar, new Point(0, currentY), 1f));
-                result.Mutate(ctx => ctx.DrawImage(rightBar, new Point(_viewport.Right, currentY), 1f));
-                currentY += _viewport.Height;
+                int footerHeight = _frameHeight - _viewport.Bottom;
+                if (footerHeight > 0 && _frameWidth > 0)
+                {
+                    footer = _lastFrame.Clone(c => c.Crop(new Rectangle(0, _viewport.Bottom, _frameWidth, footerHeight)));
+                    result.Mutate(ctx => ctx.DrawImage(footer, new Point(0, height - footer.Height), 1f));
+                }
+
+                if (_viewport.Left > 0 && _viewport.Height > 0)
+                {
+                    leftBar = _firstFrame.Clone(c => c.Crop(new Rectangle(0, _viewport.Top, _viewport.Left, _viewport.Height)));
+                }
+
+                int rightBarWidth = _frameWidth - _viewport.Right;
+                if (rightBarWidth > 0 && _viewport.Height > 0)
+                {
+                    rightBar = _firstFrame.Clone(c => c.Crop(new Rectangle(_viewport.Right, _viewport.Top, rightBarWidth, _viewport.Height)));
+                }
+
+                int currentY = Math.Max(0, _viewport.Top);
+                int bottomLimit = footer != null ? height - footer.Height : height;
+                int stepY = Math.Max(1, _viewport.Height);
+
+                while (currentY < bottomLimit)
+                {
+                    if (leftBar != null)
+                    {
+                        result.Mutate(ctx => ctx.DrawImage(leftBar, new Point(0, currentY), 1f));
+                    }
+                    if (rightBar != null)
+                    {
+                        result.Mutate(ctx => ctx.DrawImage(rightBar, new Point(_viewport.Right, currentY), 1f));
+                    }
+                    currentY += stepY;
+                }
+
+                int count = 0;
+                foreach (var segment in _segments)
+                {
+                    result.Mutate(ctx => ctx.DrawImage(segment.Image, new Point(segment.X - minX + _viewport.Left, segment.Y - minY + _viewport.Top), 1f));
+                    count++;
+                    progress?.Report((double)count / _segments.Count);
+                }
+
+                return result;
             }
-
-            int count = 0;
-            foreach (var segment in _segments)
+            finally
             {
-                result.Mutate(ctx => ctx.DrawImage(segment.Image, new Point(segment.X - minX + _viewport.Left, segment.Y - minY + _viewport.Top), 1f));
-                count++;
-                progress?.Report((double)count / _segments.Count);
+                header?.Dispose();
+                footer?.Dispose();
+                leftBar?.Dispose();
+                rightBar?.Dispose();
             }
-
-            header.Dispose(); footer.Dispose(); leftBar.Dispose(); rightBar.Dispose();
-            return result;
         }
 
         public void Dispose()
@@ -444,7 +446,7 @@ namespace snapvox.helpers
 
             int width = previous.Width;
             int height = previous.Height;
-            int maxDx = Math.Max(1, (int)(width * 0.70));
+            int maxDx = Math.Max(1, Math.Min(14, (int)(width * 0.12)));
             int maxDy = Math.Max(1, (int)(height * 0.85));
             int minOverlap = Math.Max(32, (width * height) / 10);
             double bestScore = double.MaxValue;

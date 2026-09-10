@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>SnapVox</RootNamespace>
@@ -57,11 +57,15 @@
 
   <ItemGroup Condition="'$(USE_TESSERACT)' == 'true' And '$(EmbedOcrPayload)' != 'false'">
     <EmbeddedResource Include="tessdata\**\*.*" />
-    <EmbeddedResource Include="Native\x64\*.dll" Exclude="Native\x64\vcruntime140_cor3.dll" />
+    <EmbeddedResource Include="Native\x64\*.dll" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(USE_TESSERACT)' != 'true'">
     <Compile Remove="Native\TesseractOcrProvider.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="snapvox.tests" />
   </ItemGroup>
 
 </Project>

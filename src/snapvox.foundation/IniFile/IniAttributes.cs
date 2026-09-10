@@ -34,9 +34,6 @@ namespace snapvox.foundation.IniFile
         public string Separator { get; set; }
         public string DefaultValue { get; set; }
 
-        public string LanguageKey { get; set; }
-
-        public bool Encrypted { get; set; }
         public bool FixedValue { get; set; }
         public bool Expert { get; set; }
         public bool ExcludeIfNull { get; set; }

@@ -53,9 +53,31 @@ namespace snapvox.helpers
             {
                 var now = DateTime.Now;
                 
+                bool IsProtectedPath(string path)
+                {
+                    try
+                    {
+                        string relative = Path.GetRelativePath(TempStorage, path);
+                        string[] parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length > 0)
+                        {
+                            string topDir = parts[0];
+                            if (topDir.Equals("Lifecycle", StringComparison.OrdinalIgnoreCase) ||
+                                topDir.Equals("Runtime", StringComparison.OrdinalIgnoreCase) ||
+                                topDir.Equals("tessdata", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    catch { }
+                    return false;
+                }
+
                 var allFiles = Directory.GetFiles(TempStorage, "*", SearchOption.AllDirectories);
                 foreach (var file in allFiles)
                 {
+                    if (IsProtectedPath(file)) continue;
                     try
                     {
                         var creationTime = File.GetCreationTime(file);
@@ -71,6 +93,7 @@ namespace snapvox.helpers
                     .OrderByDescending(d => d.Length);
                 foreach (var dir in allDirs)
                 {
+                    if (IsProtectedPath(dir)) continue;
                     try
                     {
                         if (!Directory.EnumerateFileSystemEntries(dir).Any())

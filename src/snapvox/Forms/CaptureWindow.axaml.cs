@@ -80,6 +80,7 @@ namespace snapvox.forms
         private Avalonia.Controls.Shapes.Rectangle _guideLineHorizontal;
         private static readonly IBrush GuideLineBrush = new SolidColorBrush(AvaloniaColor.FromArgb(96, 0, 162, 237));
         private TextBlock _dimensionText;
+        private TextBlock _copyText;
         private TextBlock _ocrText;
         private Border _ocrProcessingStatus;
         private CancellationTokenSource _ocrCts;
@@ -355,6 +356,7 @@ namespace snapvox.forms
             _dimensionBadge = this.FindControl<Border>("DimensionBadge");
             _windowSnapBadge = this.FindControl<Border>("WindowSnapBadge");
             _dimensionText = this.FindControl<TextBlock>("DimensionText");
+            _copyText = this.FindControl<TextBlock>("CopyText");
             _ocrText = this.FindControl<TextBlock>("OcrText");
             _ocrProcessingStatus = this.FindControl<Border>("OcrProcessingStatus");
             _magnifierPanel = this.FindControl<Border>("MagnifierPanel");
@@ -405,7 +407,7 @@ namespace snapvox.forms
             
             LayoutInstructionBanner(null);
             LayoutOcrStatus();
-            UiClipboard.Register(this, text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask);
+            UiClipboard.Register(this, text => Clipboard?.SetTextAsync(text) ?? Task.FromException(new InvalidOperationException("Clipboard unavailable.")));
             if (_highlightBorder != null) _highlightBorder.IsVisible = false;
             if (_windowSnapBadge != null) _windowSnapBadge.IsVisible = false;
         }
@@ -426,35 +428,42 @@ namespace snapvox.forms
 
         private async void OnClosed(object sender, EventArgs e)
         {
-            _isWindowOpen = false;
-            UiClipboard.Unregister(this);
-            CancelLocalPreemptiveOcr();
-            await StopLocalOcrAsync().ConfigureAwait(true);
-
-            bool isLastWindow;
-            lock (_activeWindows)
+            try
             {
-                _activeWindows.Remove(this);
-                isLastWindow = _activeWindows.Count == 0;
-            }
+                _isWindowOpen = false;
+                UiClipboard.Unregister(this);
+                CancelLocalPreemptiveOcr();
+                await StopLocalOcrAsync().ConfigureAwait(true);
 
-            if (isLastWindow)
-            {
-                if (!_captureCompleted)
+                bool isLastWindow;
+                lock (_activeWindows)
                 {
-                    EndCaptureSession();
+                    _activeWindows.Remove(this);
+                    isLastWindow = _activeWindows.Count == 0;
                 }
-                _globalOcrMode = false;
-                CaptureHelper.ClearFrozenSnapshot();
-            }
-            
-            if (_backgroundControl != null)
-            {
-                _backgroundControl.Source = null;
-            }
 
-            _backgroundBitmap?.Dispose();
-            _backgroundBitmap = null;
+                if (isLastWindow)
+                {
+                    if (!_captureCompleted)
+                    {
+                        EndCaptureSession();
+                    }
+                    _globalOcrMode = false;
+                    CaptureHelper.ClearFrozenSnapshot();
+                }
+                
+                if (_backgroundControl != null)
+                {
+                    _backgroundControl.Source = null;
+                }
+
+                _backgroundBitmap?.Dispose();
+                _backgroundBitmap = null;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.GetLogger(typeof(CaptureWindow)).Error("CaptureWindow.OnClosed cleanup failed", ex);
+            }
         }
 
         protected override void OnClosing(WindowClosingEventArgs e)
@@ -908,6 +917,7 @@ namespace snapvox.forms
                 _ocrText.Text = "T = Exit text capture";
                 _ocrText.Foreground = Brushes.White;
             }
+            if (_copyText != null) _copyText.IsVisible = false;
             Cursor = HandCursor;
             _rubberband.IsVisible = false;
             if (_highlightBorder != null) _highlightBorder.IsVisible = false;
@@ -948,6 +958,7 @@ namespace snapvox.forms
             if (_instructionBorder != null) _instructionBorder.IsVisible = true;
 
             if (instructionText != null) instructionText.Text = "Drag to capture or hover window";
+            if (_copyText != null) _copyText.IsVisible = true;
             if (_ocrText != null)
             {
                 _ocrText.Text = "T = Text capture";
@@ -1003,7 +1014,7 @@ namespace snapvox.forms
                 }
             }
 
-            await UiClipboard.SetImageAsync(captured).ConfigureAwait(false);
+            await CaptureHelper.CopyCaptureToClipboardAsync(captured).ConfigureAwait(false);
             captured.Dispose();
             TryPostToUi(CloseAllCaptureOverlays);
         }
@@ -1334,7 +1345,13 @@ namespace snapvox.forms
                     if (handler != null)
                     {
                         string text = snapvox.helpers.OcrTextLayout.BuildVisualSelectionText(_paintedWords);
-                        await handler.HandleOcrResult(text).ConfigureAwait(false);
+                        try { await handler.HandleOcrResult(text).ConfigureAwait(false); }
+                        catch (Exception ex)
+                        {
+                            Log.Error("OCR result was not delivered; keeping the capture open.", ex);
+                            TryPostToUi(() => snapvox.editor.forms.NotificationOverlayWindow.ShowNotification("COPY FAILED - PLEASE RETRY", this));
+                            return;
+                        }
                     }
                     TryPostToUi(CloseAllCaptureOverlays);
                 }
@@ -1421,15 +1438,21 @@ namespace snapvox.forms
             try
             {
                 var nativeRect = RECT.FromXYWH(rect.X, rect.Y, rect.Width, rect.Height);
-                ImageSharpImage frozenCaptured = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false);
-                if (frozenCaptured == null && windowHandle != IntPtr.Zero)
+                ImageSharpImage frozenCaptured = null;
+
+                if (windowHandle != IntPtr.Zero)
                 {
-                    frozenCaptured = await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, rect)).ConfigureAwait(false);
+                    frozenCaptured = await Task.Run(() => NativeCapture.CaptureWindow(windowHandle, null)).ConfigureAwait(false);
                     if (frozenCaptured != null && NativeCapture.IsLikelyBlankBlackFrame(frozenCaptured))
                     {
                         frozenCaptured.Dispose();
                         frozenCaptured = null;
                     }
+                }
+
+                if (frozenCaptured == null)
+                {
+                    frozenCaptured = await Task.Run(() => CaptureHelper.GetFrozenSnapshot(nativeRect)).ConfigureAwait(false);
                 }
                 if (frozenCaptured == null)
                 {
@@ -1472,12 +1495,16 @@ namespace snapvox.forms
                     return;
                 }
 
-                await UiClipboard.SetImageAsync(owned).ConfigureAwait(false);
+                await CaptureHelper.CopyCaptureToClipboardAsync(owned).ConfigureAwait(false);
 
                 ImageSharpImage imageForEditor = owned;
                 owned = null;
                 string targetTitle = windowHandle != IntPtr.Zero ? Win32WindowHelper.GetWindowTitle(windowHandle) : null;
                 if (string.IsNullOrWhiteSpace(targetTitle)) targetTitle = CaptureHelper.LastActiveWindowTitle;
+                if (imageForEditor != null && (imageForEditor.Width != rect.Width || imageForEditor.Height != rect.Height))
+                {
+                    rect = RECT.FromXYWH(rect.X, rect.Y, imageForEditor.Width, imageForEditor.Height);
+                }
                 try
                 {
                     await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, rect, targetTitle));

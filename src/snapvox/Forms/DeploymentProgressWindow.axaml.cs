@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using System;
@@ -58,6 +58,20 @@ namespace snapvox.forms
             _cancelButton = this.FindControl<Button>("CancelButton");
             _errorBanner = this.FindControl<Border>("ErrorBanner");
             _errorText = this.FindControl<TextBlock>("ErrorText");
+            KeyDown += (s, e) =>
+            {
+                if (e.Key == Avalonia.Input.Key.Escape)
+                {
+                    if (_finishButton != null && _finishButton.IsVisible && _finishButton.IsEnabled)
+                    {
+                        Close();
+                    }
+                    else if (_cancelButton != null && _cancelButton.IsVisible && _cancelButton.IsEnabled)
+                    {
+                        OnCancelClick(this, null);
+                    }
+                }
+            };
         }
 
         protected override void OnOpened(EventArgs e)
@@ -96,7 +110,6 @@ namespace snapvox.forms
         {
             UpdateStatus("Installation cancelled by user.");
             ShowError("Installation was cancelled. You can safely close this window and retry.");
-            if (_cancelButton != null) _cancelButton.IsEnabled = false;
         }
 
         public void ShowError(string message)
@@ -113,9 +126,22 @@ namespace snapvox.forms
                     _errorBanner.IsVisible = true;
                 }
 
+                if (_progressBar != null)
+                {
+                    _progressBar.IsVisible = false;
+                }
+
                 if (_cancelButton != null)
                 {
-                    _cancelButton.IsEnabled = false;
+                    _cancelButton.IsVisible = false;
+                }
+
+                if (_finishButton != null)
+                {
+                    _finishButton.Content = "Close";
+                    _finishButton.IsVisible = true;
+                    _finishButton.IsEnabled = true;
+                    _finishButton.Focus();
                 }
             });
         }

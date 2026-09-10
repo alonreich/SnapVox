@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <rect x="2.5" y="3" width="5" height="18" rx="1" fill="#FFFFFF" fill-opacity="0.85" stroke="#FFFFFF" stroke-width="1" />
-  <rect x="16.5" y="3" width="5" height="18" rx="1" fill="#FFFFFF" fill-opacity="0.85" stroke="#FFFFFF" stroke-width="1" />
-  <line x1="8.5" y1="2" x2="8.5" y2="22" stroke="#FFFFFF" stroke-width="1.4" stroke-dasharray="2 2" stroke-opacity="0.5" />
-  <line x1="15.5" y1="2" x2="15.5" y2="22" stroke="#FFFFFF" stroke-width="1.4" stroke-dasharray="2 2" stroke-opacity="0.5" />
-  <path d="M7 12 h3 m-1.5 -2.5 l2.5 2.5 l-2.5 2.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-  <path d="M17 12 h-3 m1.5 -2.5 l-2.5 2.5 l2.5 2.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <rect x="2" y="2" width="20" height="20" rx="1.5" fill="none" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="2.5 2" stroke-opacity="0.35" />
+  <rect x="2.5" y="3" width="7" height="18" rx="1.5" fill="#FFFFFF" fill-opacity="0.25" stroke="#FFFFFF" stroke-width="1.8" />
+  <polygon points="5,9.5 8,12 5,14.5" fill="#FFFFFF" />
+  <rect x="14.5" y="3" width="7" height="18" rx="1.5" fill="#FFFFFF" fill-opacity="0.25" stroke="#FFFFFF" stroke-width="1.8" />
+  <polygon points="19,9.5 16,12 19,14.5" fill="#FFFFFF" />
+  <rect x="10" y="3" width="4" height="18" rx="1" fill="none" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="2 2" stroke-opacity="0.5" />
 </svg>

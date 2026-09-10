@@ -124,12 +124,9 @@ internal static class DeploymentFootprint
 
     public static IEnumerable<string> GetUserArtifactPatterns()
     {
-        string downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-
-        yield return Path.Combine(downloads, "OCR_*.txt");
-        yield return Path.Combine(downloads, "Capture_*.jpg");
-        yield return Path.Combine(downloads, "Capture_*.png");
-        yield return Path.Combine(Path.GetTempPath(), "snapvox*.*");
+        // User exports are documents, not installation residue. Only the dedicated
+        // SnapVox directories returned by GetDirectoryPurgeTargets may be cleaned.
+        return Array.Empty<string>();
     }
 
     public static IEnumerable<string> GetDirectoryPurgeTargets(bool includeInstallFolder)

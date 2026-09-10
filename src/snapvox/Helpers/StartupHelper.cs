@@ -86,8 +86,16 @@ namespace snapvox.helpers
 
         public static void SetRunUser(string arguments = null, string executablePath = null)
         {
-            try { using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RunKey, true)) { key?.SetValue(ApplicationName, GetExecutablePath(arguments, executablePath)); } }
-            catch (Exception e) { Log.Error("Error in setRunUser.", e); }
+            try
+            {
+                using RegistryKey key = Registry.CurrentUser.CreateSubKey(RunKey, true)
+                    ?? throw new IOException("The Windows startup registry key could not be opened.");
+                string command = GetExecutablePath(arguments, executablePath);
+                key.SetValue(ApplicationName, command);
+                if (!string.Equals(key.GetValue(ApplicationName) as string, command, StringComparison.Ordinal))
+                    throw new IOException("Windows startup registration could not be verified.");
+            }
+            catch (Exception e) { Log.Error("Error in setRunUser.", e); throw; }
         }
 
         public static void DeleteStartupFolderShortcut()

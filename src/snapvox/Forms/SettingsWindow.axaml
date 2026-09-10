@@ -8,6 +8,9 @@
         Background="{DynamicResource SnapVoxCanvasBrush}"
         Closing="OnSettingsClosing"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <x:Double x:Key="ButtonSpinnerRepeatButtonMinWidth">18</x:Double>
+    </Window.Resources>
     <!-- ISSUE_012: RequestedThemeVariant is set once at the Application level (App.axaml). -->
     <Window.Styles>
         <Style Selector="TextBlock.header">
@@ -50,34 +53,83 @@
         </Style>
         <Style Selector="NumericUpDown">
             <Setter Property="Height" Value="28"/>
-            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="MinHeight" Value="28"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SnapVoxPanelDarkBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
+            <Setter Property="ClipToBounds" Value="True"/>
         </Style>
         <Style Selector="NumericUpDown /template/ ButtonSpinner">
-            <Setter Property="MinWidth" Value="18"/>
-            <Setter Property="Width" Value="18"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
-        <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton">
+        <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ StackPanel#PART_SpinnerPanel">
+            <Setter Property="Margin" Value="0,0,2,0"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ StackPanel#PART_SpinnerPanel > RepeatButton">
             <Setter Property="MinWidth" Value="18"/>
             <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="22"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Margin" Value="1,0"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ ButtonSpinner:right /template/ StackPanel#PART_SpinnerPanel > RepeatButton">
+            <Setter Property="MinWidth" Value="18"/>
+            <Setter Property="Width" Value="18"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverBrush}"/>
         </Style>
         <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton Path">
             <Setter Property="Width" Value="8"/>
-            <Setter Property="Height" Value="4"/>
+            <Setter Property="Height" Value="5"/>
             <Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="Fill" Value="{DynamicResource SnapVoxSecondaryTextBrush}"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:pointerover Path">
+            <Setter Property="Fill" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
         </Style>
         <Style Selector="NumericUpDown /template/ TextBox#PART_TextBox">
             <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Height" Value="26"/>
             <Setter Property="Padding" Value="6,2,2,2"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Center"/>
             <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+        <Style Selector="NumericUpDown /template/ TextBox#PART_TextBox /template/ ScrollViewer#PART_ScrollViewer">
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+        <Style Selector="Button.color-preset">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.color-preset:pointerover">
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}"/>
         </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
@@ -93,38 +145,38 @@
                         <CheckBox Name="ChkWarnClose" Content="Warn before closing the image editor with unsaved changes" AutomationProperties.Name="Warn before closing the image editor with unsaved changes" />
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="0,2">
                             <CheckBox Name="ChkAddBorder" Content="Add a frame border to captures" AutomationProperties.Name="Add a frame border to captures" VerticalAlignment="Center" />
-                            <StackPanel Name="FrameBorderOptionsPanel" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                <Rectangle Width="1" Height="16" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="2,0" />
-                                <TextBlock Text="Color:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" />
-                                <Button Name="FrameBorderColorBtn" Padding="3" MinWidth="26" Height="24" VerticalAlignment="Center" Cursor="Hand" ToolTip.Tip="Frame border color">
+                            <StackPanel Name="FrameBorderOptionsPanel" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Rectangle Width="1" Height="18" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="4,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Color:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="12" />
+                                <Button Name="FrameBorderColorBtn" AutomationProperties.Name="Frame border color" Padding="3" Width="38" Height="28" VerticalAlignment="Center" Cursor="Hand" ToolTip.Tip="Frame border color" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" Background="{DynamicResource SnapVoxPanelDarkBrush}">
                                     <Button.Flyout>
                                         <Flyout Placement="Bottom">
                                             <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="6" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="8">
                                                 <StackPanel Spacing="6">
                                                     <TextBlock Text="PRESET COLORS" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
                                                     <WrapPanel Name="FrameBorderColorPresets" MaxWidth="150">
-                                                        <Button Classes="color-preset" Background="#434343" Width="22" Height="22" Margin="2" Tag="#434343" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="#434343 (Default)" />
-                                                        <Button Classes="color-preset" Background="#000000" Width="22" Height="22" Margin="2" Tag="#000000" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Black" />
-                                                        <Button Classes="color-preset" Background="#000080" Width="22" Height="22" Margin="2" Tag="#000080" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Navy Blue" />
-                                                        <Button Classes="color-preset" Background="#007ACC" Width="22" Height="22" Margin="2" Tag="#007ACC" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="SnapVox Blue" />
-                                                        <Button Classes="color-preset" Background="#FF0000" Width="22" Height="22" Margin="2" Tag="#FF0000" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Red" />
-                                                        <Button Classes="color-preset" Background="#00FF00" Width="22" Height="22" Margin="2" Tag="#00FF00" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Green" />
-                                                        <Button Classes="color-preset" Background="#FFFF00" Width="22" Height="22" Margin="2" Tag="#FFFF00" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Yellow" />
-                                                        <Button Classes="color-preset" Background="#FFFFFF" Width="22" Height="22" Margin="2" Tag="#FFFFFF" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="White" />
+                                                        <Button Classes="color-preset" Background="#434343" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#434343" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="#434343 (Default)" AutomationProperties.Name="Default dark gray" />
+                                                        <Button Classes="color-preset" Background="#000000" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#000000" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Black" AutomationProperties.Name="Black" />
+                                                        <Button Classes="color-preset" Background="#000080" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#000080" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Navy Blue" AutomationProperties.Name="Navy blue" />
+                                                        <Button Classes="color-preset" Background="#007ACC" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#007ACC" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="SnapVox Blue" AutomationProperties.Name="SnapVox blue" />
+                                                        <Button Classes="color-preset" Background="#FF0000" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#FF0000" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Red" AutomationProperties.Name="Red" />
+                                                        <Button Classes="color-preset" Background="#00FF00" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#00FF00" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Green" AutomationProperties.Name="Green" />
+                                                        <Button Classes="color-preset" Background="#FFFF00" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#FFFF00" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="Yellow" AutomationProperties.Name="Yellow" />
+                                                        <Button Classes="color-preset" Background="#FFFFFF" Width="24" Height="24" MinWidth="24" MinHeight="24" Margin="2" Tag="#FFFFFF" Click="OnFrameBorderColorPresetClick" ToolTip.Tip="White" AutomationProperties.Name="White" />
                                                     </WrapPanel>
                                                     <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
                                                         <TextBlock Text="Hex: " VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" />
-                                                        <TextBox Grid.Column="1" Name="TxtFrameBorderColorHex" Watermark="#434343" MaxLength="9" FontSize="11" Padding="4,2" />
+                                                        <TextBox Grid.Column="1" Name="TxtFrameBorderColorHex" Watermark="#434343" MaxLength="9" FontSize="11" Padding="4,2" AutomationProperties.Name="Frame border color hex code" />
                                                     </Grid>
                                                 </StackPanel>
                                             </Border>
                                         </Flyout>
                                     </Button.Flyout>
-                                    <Border Name="FrameBorderColorPreview" Width="16" Height="16" CornerRadius="2" BorderBrush="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="1" Background="#434343" />
+                                    <Border Name="FrameBorderColorPreview" Width="28" Height="18" CornerRadius="2" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Background="#434343" />
                                 </Button>
-                                <TextBlock Text="Thickness:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" Margin="4,0,0,0" />
-                                <NumericUpDown Name="NumFrameBorderThickness" Minimum="1" Maximum="30" Value="4" Increment="1" FormatString="0" Width="82" Height="28" VerticalAlignment="Center" ToolTip.Tip="Border thickness in pixels" />
-                                <TextBlock Text="px" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="11" />
+                                <TextBlock Text="Thickness:" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="12" Margin="4,0,0,0" />
+                                <NumericUpDown Name="NumFrameBorderThickness" Minimum="1" Maximum="50" Value="4" Increment="1" FormatString="0" Width="84" Height="28" VerticalAlignment="Center" ToolTip.Tip="Border thickness in pixels" AutomationProperties.Name="Border thickness in pixels" />
+                                <TextBlock Text="px" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" FontSize="12" Margin="2,0,0,0" />
                             </StackPanel>
                         </StackPanel>
                         <CheckBox Name="ChkLeavePictureAsIs" Content="Leave the picture as-is while extracting text (OCR)" AutomationProperties.Name="Leave the picture as-is while extracting text" />

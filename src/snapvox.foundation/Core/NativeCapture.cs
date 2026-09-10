@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -188,10 +188,12 @@ namespace snapvox.foundation.core
                 }
 
                 int length = checked(region.Width * region.Height);
-                return Image.LoadPixelData<Bgra32>(
+                Image<Bgra32> capturedImage = Image.LoadPixelData<Bgra32>(
                     new ReadOnlySpan<Bgra32>(pBits.ToPointer(), length),
                     region.Width,
                     region.Height);
+                ScreenTintBypass.ApplyColorCorrectionIfActive(capturedImage);
+                return capturedImage;
             }
             catch (Exception ex)
             {

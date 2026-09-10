@@ -35,6 +35,7 @@ namespace snapvox.forms
         private static bool IsRecording;
         private static bool IsClosingAll;
         private static bool IsFinishing;
+        private static ScrollCaptureBarWindow BarWindow;
         private static readonly bool IsSnapVoxElevated = Win32WindowHelper.IsProcessElevated((uint)Environment.ProcessId);
 
         private PixelRect _screenBounds;
@@ -85,7 +86,13 @@ namespace snapvox.forms
                 {
                     if (Recorder != null)
                     {
-                        BroadcastStatus("SCROLLING ACTIVE", $"Scroll down · Space/Enter finishes | {Recorder.AcceptedFrames} frames");
+                        string hotkeyLabel = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().ScrollCaptureDelimiterHotkey;
+                        if (string.IsNullOrWhiteSpace(hotkeyLabel)) hotkeyLabel = "Space";
+                        double screens = Recorder.EstimatedScreens;
+                        int frames = Recorder.AcceptedFrames;
+                        string screenWord = screens <= 1.05 ? "screen" : "screens";
+                        BroadcastStatus("SCROLLING ACTIVE", $"Scroll down · {hotkeyLabel}/Enter finishes | {screens:0.0} {screenWord} ({frames} frames)");
+                        BarWindow?.UpdateStats(screens, frames);
                     }
                 }
                 else
@@ -97,10 +104,10 @@ namespace snapvox.forms
                 ticks++;
                 if (ticks < 10) return;
 
-                bool spacePressed = (GetAsyncKeyState(0x20) & 0x8000) != 0;
+                bool delimiterPressed = IsConfiguredDelimiterPressed();
                 bool enterPressed = (GetAsyncKeyState(0x0D) & 0x8000) != 0;
 
-                if (spacePressed || enterPressed)
+                if (delimiterPressed || enterPressed)
                 {
                     StopInputPolling();
                     _ = FinishRecordingAsync();
@@ -117,6 +124,41 @@ namespace snapvox.forms
                 }
             };
             _pollTimer.Start();
+        }
+
+        private static bool IsConfiguredDelimiterPressed()
+        {
+            var config = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>();
+            string key = config.ScrollCaptureDelimiterHotkey;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                key = "Space";
+            }
+
+            bool ctrlReq = key.Contains("Ctrl", StringComparison.OrdinalIgnoreCase);
+            bool altReq = key.Contains("Alt", StringComparison.OrdinalIgnoreCase);
+            bool shiftReq = key.Contains("Shift", StringComparison.OrdinalIgnoreCase);
+            bool winReq = key.Contains("Win", StringComparison.OrdinalIgnoreCase);
+
+            bool ctrlDown = (GetAsyncKeyState(0x11) & 0x8000) != 0;
+            bool altDown = (GetAsyncKeyState(0x12) & 0x8000) != 0;
+            bool shiftDown = (GetAsyncKeyState(0x10) & 0x8000) != 0;
+            bool winDown = (GetAsyncKeyState(0x5B) & 0x8000) != 0 || (GetAsyncKeyState(0x5C) & 0x8000) != 0;
+
+            if (ctrlReq != ctrlDown) return false;
+            if (altReq != altDown) return false;
+            if (shiftReq != shiftDown) return false;
+            if (winReq != winDown) return false;
+
+            string keyName = key.Split('+').Last().Trim();
+            int vkCode = 0x20;
+            if (string.Equals(keyName, "Space", StringComparison.OrdinalIgnoreCase)) vkCode = 0x20;
+            else if (string.Equals(keyName, "Enter", StringComparison.OrdinalIgnoreCase) || string.Equals(keyName, "Return", StringComparison.OrdinalIgnoreCase)) vkCode = 0x0D;
+            else if (string.Equals(keyName, "Escape", StringComparison.OrdinalIgnoreCase) || string.Equals(keyName, "Esc", StringComparison.OrdinalIgnoreCase)) vkCode = 0x1B;
+            else if (string.Equals(keyName, "Tab", StringComparison.OrdinalIgnoreCase)) vkCode = 0x09;
+            else if (Enum.TryParse<snapvox.foundation.core.AvaloniaShims.Keys>(keyName, true, out var parsedKey)) vkCode = (int)parsedKey;
+
+            return (GetAsyncKeyState(vkCode) & 0x8000) != 0;
         }
 
         private static void StopInputPolling()
@@ -139,6 +181,7 @@ namespace snapvox.forms
         {
             _screenBounds = screenBounds;
             InitializeComponent();
+            snapvox.foundation.core.UiLayoutDirection.Apply(this);
             App.ForceRedTrayIcon(true);
 
             double scaling = 1.0;
@@ -388,13 +431,21 @@ namespace snapvox.forms
                     win.SetClickThrough(true);
                     if (win._highlightBorder != null) win._highlightBorder.IsVisible = false;
                     if (win._recordingDot != null) { win._recordingDot.IsVisible = true; win._recordingDot.Classes.Add("pulse"); }
+                    if (win._exitButton != null) win._exitButton.IsVisible = false;
                 }
+                ShowFloatingBar(rect);
                 StartInputPolling();
-                BroadcastStatus("SCROLLING ACTIVE", "Scroll slowly · Space finishes");
+                string hotkeyLabel = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().ScrollCaptureDelimiterHotkey;
+                if (string.IsNullOrWhiteSpace(hotkeyLabel)) hotkeyLabel = "Space";
+                BroadcastStatus("SCROLLING ACTIVE", $"Scroll slowly · {hotkeyLabel}/Enter finishes");
             }
             catch (Exception ex)
             {
                 Log.Error("Could not start scroll capture.", ex);
+                foreach (var win in ActiveWindows)
+                {
+                    if (win._exitButton != null) win._exitButton.IsVisible = true;
+                }
                 if (!IsSnapVoxElevated)
                 {
                     BroadcastStatus("ACCESS DENIED / BLOCKED", "Run SnapVox as Admin to capture this app");
@@ -408,6 +459,65 @@ namespace snapvox.forms
             }
         }
 
+        public static async Task FinishRecordingFromBarAsync()
+        {
+            StopInputPolling();
+            await FinishRecordingAsync().ConfigureAwait(false);
+        }
+
+        public static async Task ExitModeFromBarAsync()
+        {
+            StopInputPolling();
+            await ExitModeAsync().ConfigureAwait(false);
+        }
+
+        private static void ShowFloatingBar(RECT targetRect)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    if (BarWindow != null)
+                    {
+                        BarWindow.Close();
+                        BarWindow = null;
+                    }
+
+                    BarWindow = new ScrollCaptureBarWindow();
+
+                    double scaling = 1.0;
+                    var lifetime = Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
+                    var probeWindow = lifetime?.Windows.FirstOrDefault();
+                    var screens = probeWindow?.Screens;
+                    if (screens != null)
+                    {
+                        var screen = screens.ScreenFromPoint(new PixelPoint(targetRect.Left + targetRect.Width / 2, targetRect.Top + 20))
+                                     ?? screens.Primary;
+                        if (screen != null)
+                        {
+                            scaling = screen.Scaling;
+                            double barWidth = 460;
+                            double targetCenterX = (targetRect.Left + targetRect.Width / 2.0);
+                            double screenLeft = screen.Bounds.X;
+                            double screenWidth = screen.Bounds.Width;
+
+                            double desiredPixelX = Math.Clamp(targetCenterX - (barWidth * scaling / 2.0), screenLeft + 20, screenLeft + screenWidth - (barWidth * scaling) - 20);
+                            double desiredPixelY = Math.Max(screen.Bounds.Y + 24, targetRect.Top + 16);
+
+                            BarWindow.Position = new PixelPoint((int)desiredPixelX, (int)desiredPixelY);
+                        }
+                    }
+
+                    BarWindow.Show();
+                    BarWindow.Topmost = true;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Could not display scroll capture floating bar.", ex);
+                }
+            });
+        }
+
         private static async Task FinishRecordingAsync()
         {
             if (IsFinishing)
@@ -417,10 +527,15 @@ namespace snapvox.forms
 
             IsFinishing = true;
             StopInputPolling();
+            if (BarWindow != null)
+            {
+                BarWindow.SetHint("Stitching frames together...");
+            }
             foreach (var win in ActiveWindows) 
             { 
                 win.SetClickThrough(false); 
                 if (win._recordingDot != null) { win._recordingDot.IsVisible = false; win._recordingDot.Classes.Remove("pulse"); }
+                if (win._exitButton != null) win._exitButton.IsVisible = true;
             }
             BroadcastStatus("Building image", "Preparing pixels...");
             ScrollCaptureRecorder recorder = Recorder;
@@ -444,6 +559,11 @@ namespace snapvox.forms
                 {
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
+                        if (BarWindow != null)
+                        {
+                            BarWindow.Close();
+                            BarWindow = null;
+                        }
                         BroadcastStatus("Try again more slowly", "Space = start");
                         IsFinishing = false;
                     });
@@ -461,7 +581,7 @@ namespace snapvox.forms
                         CaptureHelper.OpenEditorForOwnedImage(result, captureRect);
                         result = null;
                     });
-                    await UiClipboard.SetImageAsync(clipboardImage).ConfigureAwait(false);
+                    await CaptureHelper.CopyCaptureToClipboardAsync(clipboardImage).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -474,6 +594,11 @@ namespace snapvox.forms
                 Log.Error("Scroll capture finish failed.", ex);
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
+                    if (BarWindow != null)
+                    {
+                        BarWindow.Close();
+                        BarWindow = null;
+                    }
                     BroadcastStatus("Try again more slowly", "Space = start");
                     IsFinishing = false;
                 });
@@ -510,8 +635,27 @@ namespace snapvox.forms
             if (_instructionBorder != null)
             {
                 double scaling = RenderScaling;
-                double x = (cursor.X - _screenBounds.X) / scaling + 25;
-                double y = (cursor.Y - _screenBounds.Y) / scaling + 25;
+                if (scaling <= 0) scaling = 1.0;
+                double curX = (cursor.X - _screenBounds.X) / scaling;
+                double curY = (cursor.Y - _screenBounds.Y) / scaling;
+                double bannerWidth = _instructionBorder.Bounds.Width > 0 ? _instructionBorder.Bounds.Width : 350;
+                double bannerHeight = _instructionBorder.Bounds.Height > 0 ? _instructionBorder.Bounds.Height : 50;
+
+                double x = curX + 25;
+                double y = curY + 25;
+
+                if (x + bannerWidth > Width - 10)
+                {
+                    x = curX - bannerWidth - 25;
+                }
+                if (y + bannerHeight > Height - 10)
+                {
+                    y = curY - bannerHeight - 25;
+                }
+
+                x = Math.Max(10, Math.Min(Width - bannerWidth - 10, x));
+                y = Math.Max(10, Math.Min(Height - bannerHeight - 10, y));
+
                 Canvas.SetLeft(_instructionBorder, x);
                 Canvas.SetTop(_instructionBorder, y);
             }
@@ -635,6 +779,12 @@ namespace snapvox.forms
             foreach (ScrollCaptureWindow window in windows)
             {
                 window.Close();
+            }
+
+            if (BarWindow != null)
+            {
+                BarWindow.Close();
+                BarWindow = null;
             }
 
             App.ForceRedTrayIcon(false);

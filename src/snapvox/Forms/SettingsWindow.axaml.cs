@@ -11,6 +11,7 @@ using snapvox.helpers;
 using snapvox.foundation.interfaces.Ocr;
 using snapvox.foundation.core.AvaloniaShims;
 using snapvox.editor.helpers;
+using snapvox.Services;
 using System.Linq;
 using System.Threading.Tasks;
 using AvaloniaColor = Avalonia.Media.Color;
@@ -19,13 +20,19 @@ namespace snapvox.Forms
 {
     public partial class SettingsWindow : Window
     {
+        private readonly ISettingsService _settingsService;
         private CoreConfiguration _config;
         private string _loadedFingerprint = string.Empty;
         private bool _savedAndClosing;
         private bool _saveInProgress;
 
-        public SettingsWindow()
+        public SettingsWindow() : this(SimpleServiceProvider.Current.GetInstance<ISettingsService>(isOptional: true) ?? new SettingsService())
         {
+        }
+
+        public SettingsWindow(ISettingsService settingsService)
+        {
+            _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
             InitializeComponent();
             UiLayoutDirection.Apply(this);
             _config = IniConfig.GetIniSection<CoreConfiguration>();
@@ -35,24 +42,26 @@ namespace snapvox.Forms
 
         private string BuildFingerprint()
         {
-            var parts = new System.Collections.Generic.List<string>();
-            foreach (var box in this.GetVisualDescendants().OfType<TextBox>())
+            var values = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, object>>
             {
-                parts.Add((box.Name ?? string.Empty) + "=" + (box.Text ?? string.Empty));
+                new("ChkKeepBackup", this.FindControl<CheckBox>("ChkKeepBackup")?.IsChecked),
+                new("ChkCloseEditor", this.FindControl<CheckBox>("ChkCloseEditor")?.IsChecked),
+                new("ChkWarnClose", this.FindControl<CheckBox>("ChkWarnClose")?.IsChecked),
+                new("ChkAddBorder", this.FindControl<CheckBox>("ChkAddBorder")?.IsChecked),
+                new("NumFrameBorderThickness", this.FindControl<NumericUpDown>("NumFrameBorderThickness")?.Value),
+                new("TxtFrameBorderColorHex", this.FindControl<TextBox>("TxtFrameBorderColorHex")?.Text?.Trim()),
+                new("ChkLeavePictureAsIs", this.FindControl<CheckBox>("ChkLeavePictureAsIs")?.IsChecked),
+                new("CboOverlayDuration", this.FindControl<ComboBox>("CboOverlayDuration")?.SelectedItem),
+                new("CboOcrEngine", this.FindControl<ComboBox>("CboOcrEngine")?.SelectedItem),
+                new("ChkOcrAdaptiveThreshold", this.FindControl<CheckBox>("ChkOcrAdaptiveThreshold")?.IsChecked)
+            };
+
+            foreach (var keyName in _settingsService.DefaultHotkeys.Keys)
+            {
+                values.Add(new(keyName, this.FindControl<TextBox>(keyName)?.Text?.Trim()));
             }
 
-            foreach (var check in this.GetVisualDescendants().OfType<CheckBox>())
-            {
-                parts.Add((check.Name ?? string.Empty) + "=" + (check.IsChecked ?? false));
-            }
-
-            foreach (var combo in this.GetVisualDescendants().OfType<ComboBox>())
-            {
-                parts.Add((combo.Name ?? string.Empty) + "=" + (combo.SelectedItem?.ToString() ?? string.Empty));
-            }
-
-            parts.Sort(System.StringComparer.Ordinal);
-            return string.Join("|", parts);
+            return _settingsService.BuildFingerprint(values);
         }
 
         private bool HasUnsavedChanges()
@@ -114,15 +123,8 @@ namespace snapvox.Forms
             var cboOverlayDuration = this.FindControl<ComboBox>("CboOverlayDuration");
             if (cboOverlayDuration != null)
             {
-                var overlayChoices = new[] { "0.5 s (fast)", "1 s (normal)", "2 s (slow)", "3 s (slower)", "5 s (longest)" };
-                cboOverlayDuration.ItemsSource = overlayChoices;
-                int overlayMs = _config.NotificationOverlayDurationMs;
-                string overlaySelected = overlayMs <= 500 ? overlayChoices[0]
-                    : overlayMs <= 1000 ? overlayChoices[1]
-                    : overlayMs <= 2000 ? overlayChoices[2]
-                    : overlayMs <= 3000 ? overlayChoices[3]
-                    : overlayChoices[4];
-                cboOverlayDuration.SelectedItem = overlaySelected;
+                cboOverlayDuration.ItemsSource = _settingsService.OverlayDurationChoices;
+                cboOverlayDuration.SelectedItem = _settingsService.GetOverlayChoiceForDuration(_config.NotificationOverlayDurationMs);
             }
 
             var ocrPanel = this.FindControl<StackPanel>("OcrEnginePanel");
@@ -137,7 +139,7 @@ namespace snapvox.Forms
                 cboOcrEngine.SelectedItem = providerNames.Contains(_config.OcrEngine) ? _config.OcrEngine : providerNames.FirstOrDefault();
 
                 bool hasProviders = providerNames.Count > 0;
-                bool hasUsableProvider = providers.Any(provider => SafeHasLanguages(provider));
+                bool hasUsableProvider = providers.Any(provider => _settingsService.HasRequiredLanguagesSafe(provider));
 
                 var chkAdaptive = this.FindControl<CheckBox>("ChkOcrAdaptiveThreshold");
                 if (chkAdaptive != null)
@@ -239,27 +241,10 @@ namespace snapvox.Forms
 
             if (!confirmed) return;
 
-            SetHotkeyTextBox("TxtRegionKey", "PrintScreen");
-            SetHotkeyTextBox("TxtWindowKey", "Alt + PrintScreen");
-            SetHotkeyTextBox("TxtFullscreenKey", "Ctrl + PrintScreen");
-            SetHotkeyTextBox("TxtLastRegionKey", "None");
-            SetHotkeyTextBox("TxtClipboardKey", "None");
-            SetHotkeyTextBox("TxtScrollCaptureDelimiterKey", "Space");
-            SetHotkeyTextBox("TxtArrowKey", "A");
-            SetHotkeyTextBox("TxtLineKey", "L");
-            SetHotkeyTextBox("TxtTextKey", "T");
-            SetHotkeyTextBox("TxtResizeKey", "R");
-            SetHotkeyTextBox("TxtFreehandKey", "D");
-            SetHotkeyTextBox("TxtEmojiKey", "E");
-            SetHotkeyTextBox("TxtCounterKey", "I");
-            SetHotkeyTextBox("TxtHighlightKey", "H");
-            SetHotkeyTextBox("TxtPixelate1Key", "O");
-            SetHotkeyTextBox("TxtPixelate2Key", "P");
-            SetHotkeyTextBox("TxtCropKey", "C");
-            SetHotkeyTextBox("TxtRotateCwKey", "Right");
-            SetHotkeyTextBox("TxtRotateCcwKey", "Left");
-            SetHotkeyTextBox("TxtDuplicateObjectKey", "Ctrl + D");
-            SetHotkeyTextBox("TxtDeleteObjectKey", "Delete");
+            foreach (var (name, defaultValue) in _settingsService.DefaultHotkeys)
+            {
+                SetHotkeyTextBox(name, defaultValue);
+            }
 
             foreach (var textBox in this.GetVisualDescendants().OfType<TextBox>())
             {
@@ -289,7 +274,7 @@ namespace snapvox.Forms
                     textBox.Text = combined;
                     e.Handled = true;
 
-                    if (GlobalHotkeyBoxNames.Contains(textBox.Name, StringComparer.Ordinal))
+                    if (_settingsService.GlobalHotkeyBoxNames.Contains(textBox.Name, StringComparer.Ordinal))
                     {
                         ValidateGlobalHotkeys();
                     }
@@ -301,71 +286,33 @@ namespace snapvox.Forms
             }
         }
 
-        private static readonly string[] GlobalHotkeyBoxNames =
-        {
-            "TxtRegionKey", "TxtWindowKey", "TxtFullscreenKey", "TxtLastRegionKey", "TxtClipboardKey"
-        };
-
         private void ValidateGlobalHotkeys()
         {
             var warning = this.FindControl<TextBlock>("TxtHotkeyWarning");
             ClearHotkeyConflictStyles();
 
-            var seen = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
-            string firstMessage = null;
+            var hotkeyDict = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var name in _settingsService.GlobalHotkeyBoxNames)
+            {
+                hotkeyDict[name] = this.FindControl<TextBox>(name)?.Text;
+            }
 
-            foreach (var name in GlobalHotkeyBoxNames)
+            var result = _settingsService.ValidateGlobalHotkeys(hotkeyDict);
+
+            foreach (var name in result.ConflictedBoxNames)
             {
                 var box = this.FindControl<TextBox>(name);
-                string hotkey = box?.Text;
-                if (box == null || string.IsNullOrWhiteSpace(hotkey) || string.Equals(hotkey, "None", StringComparison.OrdinalIgnoreCase))
+                if (box != null)
                 {
-                    continue;
+                    box.Classes.Add("hotkey-conflict");
+                    box.Tag = "conflict";
                 }
-
-                string message = null;
-
-                string normalized = HotkeyManager.NormalizeHotkey(hotkey);
-                if (normalized.Length == 0)
-                {
-                    message = $"\"{hotkey}\" is not a shortcut Windows can register.";
-                }
-                else if (seen.ContainsKey(normalized))
-                {
-                    message = $"\"{hotkey}\" is already assigned to another SnapVox shortcut on this tab.";
-                }
-                else
-                {
-                    seen[normalized] = name;
-
-                    bool taken;
-                    try
-                    {
-                        taken = !HotkeyManager.IsHotkeyAvailable(hotkey);
-                    }
-                    catch
-                    {
-                        taken = true;
-                    }
-
-                    if (taken) message = $"\"{hotkey}\" is already in use by another application.";
-                }
-
-                if (message == null)
-                {
-                    box.Tag = null;
-                    continue;
-                }
-
-                box.Classes.Add("hotkey-conflict");
-                box.Tag = "conflict";
-                firstMessage ??= message;
             }
 
             if (warning != null)
             {
-                warning.Text = firstMessage ?? string.Empty;
-                warning.IsVisible = firstMessage != null;
+                warning.Text = result.FirstErrorMessage ?? string.Empty;
+                warning.IsVisible = !result.IsValid;
             }
         }
 
@@ -419,35 +366,23 @@ namespace snapvox.Forms
             Close();
         }
 
-        private static bool SafeHasLanguages(IOcrProvider provider)
-        {
-            try
-            {
-                return provider != null && provider.HasRequiredLanguages();
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         private async Task UpdateAdminButtonStateAsync()
         {
             var btn = this.FindControl<Button>("BtnToggleAdmin");
             var stateLabel = this.FindControl<TextBlock>("AdminStateLabel");
-            bool isAdmin = await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true);
+            bool isAdmin = await _settingsService.IsAdminStartupConfiguredAsync().ConfigureAwait(true);
 
             if (btn != null)
             {
                 if (isAdmin)
                 {
                     btn.Content = "Remove Administrator Permissions";
-                    btn.Background = new SolidColorBrush(Avalonia.Media.Color.Parse("#AA4444"));
+                    btn.Background = this.TryFindResource("SnapVoxDestructiveBrush", out var destBrush) && destBrush is IBrush db ? db : new SolidColorBrush(Avalonia.Media.Color.Parse("#A51D2D"));
                 }
                 else
                 {
                     btn.Content = "Run This App As an Administrator (Highest Privileges)";
-                    btn.Background = new SolidColorBrush(Avalonia.Media.Color.Parse("#333333"));
+                    btn.Background = this.TryFindResource("SnapVoxActionButtonBrush", out var actionBrush) && actionBrush is IBrush ab ? ab : new SolidColorBrush(Avalonia.Media.Color.Parse("#3E3E42"));
                 }
             }
 
@@ -459,36 +394,17 @@ namespace snapvox.Forms
 
         private async void OnToggleAdminClick(object sender, RoutedEventArgs e)
         {
-            bool wasAdmin = await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true);
+            bool wasAdmin = await _settingsService.IsAdminStartupConfiguredAsync().ConfigureAwait(true);
             try
             {
-                if (wasAdmin)
+                bool success = await _settingsService.ConfigureAdminStartupAsync(!wasAdmin, _config).ConfigureAwait(true);
+                if (success)
                 {
-                    bool removed = await StartupTaskHelper.DeleteElevatedStartupTaskAsync().ConfigureAwait(true);
-                    if (removed && !await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true))
-                    {
-                        _config.RunAsAdministratorOnStartup = false;
-                        IniConfig.Save();
-                        OverlayHelper.ShowNotification("Admin Startup Removed", this);
-                    }
-                    else
-                    {
-                        OverlayHelper.ShowNotification("Failed to Remove Admin", this);
-                    }
+                    OverlayHelper.ShowNotification(wasAdmin ? "Admin Startup Removed" : "Admin Startup Configured", this);
                 }
                 else
                 {
-                    bool configured = await StartupTaskHelper.ConfigureElevatedStartupTaskAsync().ConfigureAwait(true);
-                    if (configured && await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(true))
-                    {
-                        _config.RunAsAdministratorOnStartup = true;
-                        IniConfig.Save();
-                        OverlayHelper.ShowNotification("Admin Startup Configured", this);
-                    }
-                    else
-                    {
-                        OverlayHelper.ShowNotification("Failed to Configure Admin", this);
-                    }
+                    OverlayHelper.ShowNotification(wasAdmin ? "Failed to Remove Admin" : "Failed to Configure Admin", this);
                 }
             }
             catch
@@ -505,7 +421,7 @@ namespace snapvox.Forms
             try
             {
                 ValidateGlobalHotkeys();
-                foreach (var name in GlobalHotkeyBoxNames)
+                foreach (var name in _settingsService.GlobalHotkeyBoxNames)
                 {
                     var tb = this.FindControl<TextBox>(name);
                     if (tb != null && tb.Tag is string tag && tag == "conflict")
@@ -543,11 +459,9 @@ namespace snapvox.Forms
                 }
 
                 var txtBorderHex = this.FindControl<TextBox>("TxtFrameBorderColorHex");
-                if (txtBorderHex != null && !string.IsNullOrWhiteSpace(txtBorderHex.Text))
+                if (txtBorderHex != null)
                 {
-                    string hex = txtBorderHex.Text.Trim();
-                    if (!hex.StartsWith("#")) hex = "#" + hex;
-                    _config.FrameBorderColor = hex;
+                    _config.FrameBorderColor = _settingsService.NormalizeHexColor(txtBorderHex.Text, _config.FrameBorderColor);
                 }
 
                 var chkLeavePictureAsIs = this.FindControl<CheckBox>("ChkLeavePictureAsIs");
@@ -561,12 +475,7 @@ namespace snapvox.Forms
                 var cboOverlayDuration = this.FindControl<ComboBox>("CboOverlayDuration");
                 if (cboOverlayDuration?.SelectedItem is string overlayChoice)
                 {
-                    int overlayMs = overlayChoice.StartsWith("0.5") ? 500
-                        : overlayChoice.StartsWith("1 ") ? 1000
-                        : overlayChoice.StartsWith("2 ") ? 2000
-                        : overlayChoice.StartsWith("3 ") ? 3000
-                        : 5000;
-                    _config.NotificationOverlayDurationMs = overlayMs;
+                    _config.NotificationOverlayDurationMs = _settingsService.ParseOverlayDurationMs(overlayChoice);
                 }
 
                 var cboOcrEngine = this.FindControl<ComboBox>("CboOcrEngine");
@@ -604,12 +513,13 @@ namespace snapvox.Forms
                 _config.ClipboardHotkey = this.FindControl<TextBox>("TxtClipboardKey")?.Text ?? _config.ClipboardHotkey;
                 _config.ScrollCaptureDelimiterHotkey = this.FindControl<TextBox>("TxtScrollCaptureDelimiterKey")?.Text ?? _config.ScrollCaptureDelimiterHotkey;
 
-                IniConfig.Save();
-                
-                if (oldRegion != _config.RegionHotkey || oldWindow != _config.WindowHotkey || oldFull != _config.FullscreenHotkey || oldLast != _config.LastregionHotkey || oldClip != _config.ClipboardHotkey)
-                {
-                    await HotkeyManager.RestartAsync().ConfigureAwait(true);
-                }
+                bool hotkeysChanged = oldRegion != _config.RegionHotkey ||
+                                      oldWindow != _config.WindowHotkey ||
+                                      oldFull != _config.FullscreenHotkey ||
+                                      oldLast != _config.LastregionHotkey ||
+                                      oldClip != _config.ClipboardHotkey;
+
+                await _settingsService.SaveSettingsAsync(_config, hotkeysChanged).ConfigureAwait(true);
                 
                 _loadedFingerprint = BuildFingerprint();
                 _savedAndClosing = true;
@@ -637,6 +547,8 @@ namespace snapvox.Forms
                 {
                     previewBorder.Background = new SolidColorBrush(color);
                 }
+                var btnColor = this.FindControl<Button>("FrameBorderColorBtn");
+                btnColor?.Flyout?.Hide();
             }
         }
     }
