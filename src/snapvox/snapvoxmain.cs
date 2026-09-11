@@ -18,6 +18,7 @@ public class snapvoxMain
 {
     private static ILog LOG;
     public static string LogFileLocation;
+    private static Mutex s_singleInstanceMutex;
 
     static snapvoxMain()
     {
@@ -58,13 +59,13 @@ public class snapvoxMain
             return;
         }
 
-        Mutex appMutex = null;
         if (!isInstaller && !isLifecycle && !hasFiles)
         {
-            appMutex = new Mutex(false, "Global\\SnapVox_SingleInstance_Mutex", out bool createdNew);
+            s_singleInstanceMutex = new Mutex(false, "Global\\SnapVox_SingleInstance_Mutex", out bool createdNew);
             if (!createdNew)
             {
-                appMutex.Dispose();
+                s_singleInstanceMutex.Dispose();
+                s_singleInstanceMutex = null;
                 return;
             }
         }
@@ -155,7 +156,8 @@ public class snapvoxMain
         }
         finally
         {
-            appMutex?.Dispose();
+            s_singleInstanceMutex?.Dispose();
+            s_singleInstanceMutex = null;
         }
     }
 

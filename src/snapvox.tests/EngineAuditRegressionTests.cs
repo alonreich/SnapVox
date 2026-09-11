@@ -144,5 +144,14 @@ namespace snapvox.tests
             bool result = ScreenTintBypass.ShouldExcludeLayeredWindows(region);
             Assert.True(result || !result);
         }
+
+        [Fact]
+        public void ScreenTintBypass_NeutralizeDisplayGammaScope_ExecutesSafely()
+        {
+            using (var scope = ScreenTintBypass.NeutralizeDisplayGammaScope())
+            {
+                Assert.NotNull(scope);
+            }
+        }
     }
 }

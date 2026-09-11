@@ -389,8 +389,9 @@ namespace snapvox.helpers
                     int delay = Config.CaptureDelay > 0 ? Config.CaptureDelay : (fromHotkey ? 0 : 400);
                     if (delay > 0) await Task.Delay(delay).ConfigureAwait(false);
 
-                    RECT virtualBounds = GetVirtualDesktopBounds();
-                    using var fullSnapshot = NativeCapture.CaptureRegion(virtualBounds, Config.CaptureMousepointer);
+                    ScreenCaptureMode effectiveMode = mode != ScreenCaptureMode.Auto ? mode : Config.ScreenCaptureMode;
+                    RECT targetBounds = GetBoundsForMode(effectiveMode);
+                    using var fullSnapshot = NativeCapture.CaptureRegion(targetBounds, Config.CaptureMousepointer);
 
                     if (fullSnapshot != null)
                     {
@@ -412,7 +413,7 @@ namespace snapvox.helpers
 
                         await CaptureHelper.CopyCaptureToClipboardAsync(owned).ConfigureAwait(false);
                         ImageSharpImage imageForEditor = owned;
-                        await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, virtualBounds, "region"));
+                        await Dispatcher.UIThread.InvokeAsync(() => ShowEditorForOwnedImageAsync(imageForEditor, targetBounds, "region"));
                         owned = null;
                         editorShown = true;
                     }
@@ -424,6 +425,15 @@ namespace snapvox.helpers
                     if (!editorShown) App.ForceRedTrayIcon(false);
                 }
             });
+        }
+
+        public static RECT GetBoundsForMode(ScreenCaptureMode mode)
+        {
+            if (mode == ScreenCaptureMode.FullScreen)
+            {
+                return RECT.FromXYWH(0, 0, GetSystemMetrics(0), GetSystemMetrics(1));
+            }
+            return GetVirtualDesktopBounds();
         }
 
         public static void CaptureClipboard()

@@ -141,12 +141,6 @@ internal static class DeploymentLifecycle
                 await logger.LogAsync("INSTALL", "CONFLICT_OVERRIDE", $"User chose to continue despite {conflict}", ct).ConfigureAwait(false);
             }
 
-
-
-
-
-
-
             bool upgradeDetected = DetectExistingInstallation();
             bool keepUserSettings = false;
             bool cleanWipeRequested = false;
@@ -171,7 +165,7 @@ internal static class DeploymentLifecycle
             }
 
             if (!await WaitForApplicationsToCloseAsync(progress, ct).ConfigureAwait(false)) return 0;
-            bool restoreAdminStartup = keepUserSettings && await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(false);
+            bool restoreAdminStartup = keepUserSettings && (await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(false) || DetectAdminStartupInSettingsCandidates());
             string settingsBackupFolder = keepUserSettings ? await BackupUserSettingsAsync(logger, ct).ConfigureAwait(false) : null;
             try
             {
@@ -183,8 +177,6 @@ internal static class DeploymentLifecycle
                 if (settingsBackupFolder != null) await RestoreUserSettingsAsync(settingsBackupFolder, logger, ct).ConfigureAwait(false);
                 await RestoreStartupAfterInstallAsync(keepUserSettings, restoreAdminStartup).ConfigureAwait(false);
                 await LaunchInstalledApplicationAsync();
-                // Only a fully restored, configured, and launched installation may
-                // discard the recovery copy. Never delete it from a finally block.
                 CleanupSettingsBackup(settingsBackupFolder);
                 await ReportAsync(progress, logger, 100, "SUCCESS", "COMPLETE", "Deployment finalized.", ct).ConfigureAwait(false);
                 await AwaitUserAcknowledgementAsync(progress, logger, "Installation complete. Click Finish to close.", ct).ConfigureAwait(false);
@@ -1240,12 +1232,33 @@ internal static class DeploymentLifecycle
         await logger.LogAsync("UPGRADE", "RESTORED", "Settings verified from " + folder, ct).ConfigureAwait(false);
     }
 
+    private static bool DetectAdminStartupInSettingsCandidates()
+    {
+        try
+        {
+            foreach (string file in GetSettingsCandidates())
+            {
+                if (File.Exists(file))
+                {
+                    string text = File.ReadAllText(file);
+                    if (text.IndexOf("RunAsAdministratorOnStartup=true", StringComparison.OrdinalIgnoreCase) >= 0
+                        || text.IndexOf("RunAsAdministratorOnStartup = true", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
     private static async Task RestoreStartupAfterInstallAsync(bool keepUserSettings, bool hadElevatedStartup)
     {
         IniConfig.IniDirectory = StartupTaskHelper.ConfigurationFolder;
         IniConfig.Init("snapvox", IniConfigurationDeployer.ConfigBaseName);
         var config = IniConfig.GetIniSection<CoreConfiguration>(allowSave: false);
-        bool elevated = keepUserSettings && (hadElevatedStartup || config.RunAsAdministratorOnStartup);
+        bool elevated = keepUserSettings && (hadElevatedStartup || config.RunAsAdministratorOnStartup || DetectAdminStartupInSettingsCandidates());
         if (elevated)
         {
             if (!await StartupTaskHelper.ConfigureElevatedStartupTaskAsync(StartupTaskHelper.InstallPath).ConfigureAwait(false))
@@ -1257,6 +1270,13 @@ internal static class DeploymentLifecycle
         }
         config.RunAsAdministratorOnStartup = elevated;
         IniConfig.SaveTo(Path.Combine(StartupTaskHelper.ConfigurationFolder, "snapvox.ini"));
+        foreach (string candidate in GetSettingsCandidates())
+        {
+            if (File.Exists(candidate) && !string.Equals(candidate, Path.Combine(StartupTaskHelper.ConfigurationFolder, "snapvox.ini"), StringComparison.OrdinalIgnoreCase))
+            {
+                try { IniConfig.SaveTo(candidate); } catch { }
+            }
+        }
     }
 
     private static async Task<bool> WaitForApplicationsToCloseAsync(DeploymentProgress progress, CancellationToken ct)

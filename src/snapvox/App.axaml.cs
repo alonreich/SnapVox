@@ -33,6 +33,7 @@ namespace snapvox
         private static WindowIcon _redIcon;
         private static IClassicDesktopStyleApplicationLifetime _desktop;
         private static CancellationTokenSource _mainAppCts = new CancellationTokenSource();
+        private static helpers.ResourceMutex s_instanceMutex;
         public static bool IsNoTrayMode { get; set; }
 
         public override void Initialize() { AvaloniaXamlLoader.Load(this); }
@@ -95,14 +96,13 @@ namespace snapvox
                 ExecutionTrace.Start();
                 var options = snapvoxCommandLine.Parse(args);
                 UiClipboard.RegisterGetter(() => desktop.MainWindow?.Clipboard ?? (desktop.Windows.FirstOrDefault()?.Clipboard));
-                using (var instanceMutex = ResourceMutex.Create("snapvox_MainForm", "snapvox instance", true))
+                s_instanceMutex = helpers.ResourceMutex.Create("snapvox_MainForm", "snapvox instance", true);
+                if (!s_instanceMutex.IsLocked)
                 {
-                    if (!instanceMutex.IsLocked)
-                    {
-                        log.Warn("Another instance of SnapVox is already running.");
-                        if (options.Files.Length > 0) { IsNoTrayMode = true; log.Info("Proceeding in No-Tray mode for file processing."); }
-                        else { log.Info("Shutting down duplicate instance."); Dispatcher.UIThread.Post(() => desktop.Shutdown()); return; }
-                    }
+                    log.Warn("Another instance of SnapVox is already running.");
+                    if (options.Files.Length > 0) { IsNoTrayMode = true; log.Info("Proceeding in No-Tray mode for file processing."); }
+                    else { log.Info("Shutting down duplicate instance."); Dispatcher.UIThread.Post(() => desktop.Shutdown()); return; }
+                }
                     SimpleServiceProvider.Current.AddService<IAppLifecycleCoordinator>(new AppLifecycleCoordinator());
                     SimpleServiceProvider.Current.AddService<ISettingsService>(new SettingsService());
                     SimpleServiceProvider.Current.AddService<IOcrResultHandler>(new OcrResultHandler());
@@ -112,6 +112,7 @@ namespace snapvox
                     var tesseractProvider = new native.TesseractOcrProvider();
                     ocrProviders.Add(new native.MixedLanguageOcrProvider(tesseractProvider));
                     ocrProviders.Add(tesseractProvider);
+                    ocrProviders.Add(new native.Win10OcrProvider());
 #else
                     log.Info("Using Windows 10 OCR Provider.");
                     ocrProviders.Add(new native.Win10OcrProvider());
@@ -119,6 +120,7 @@ namespace snapvox
                     SimpleServiceProvider.Current.AddService<IOcrProvider>(ocrProviders);
                     await OcrInstallationHelper.InstallHebrewOcrAsync();
                     RetentionHelper.Start();
+                    _ = Task.Run(() => StartupTaskHelper.EnsureBatteryRestrictionsDisabledAsync());
                     snapvox.editor.forms.ImageEditorWindow.RequestRegionCaptureAction = () => CaptureHelper.CaptureRegion(true);
                     if (!IsNoTrayMode) 
                     { 
@@ -177,7 +179,6 @@ namespace snapvox
                     if (IsNoTrayMode && desktop.Windows.Count == 0) { log.Info("No files processed and No-Tray mode active. Shutting down."); Dispatcher.UIThread.Post(() => desktop.Shutdown()); return; }
                     log.Info("Application initialization complete. Entering wait loop.");
                     await Task.Delay(Timeout.Infinite, cancellationToken);
-                }
             }
             catch (TaskCanceledException) { }
             catch (Exception ex) 
@@ -187,6 +188,8 @@ namespace snapvox
             }
             finally
             {
+                s_instanceMutex?.Dispose();
+                s_instanceMutex = null;
                 ForceRedTrayIcon(false);
                 RetentionHelper.Stop();
                 ExecutionTrace.Stop();
@@ -342,6 +345,29 @@ namespace snapvox
                 catch (Exception ex)
                 {
                     LogHelper.GetLogger(typeof(App)).Error("Failed to update tray menu hotkeys", ex);
+                }
+            });
+        }
+
+        public static void RestoreTrayIcon()
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    if (Current is App app && _trayIcon != null)
+                    {
+                        _trayIcon.IsVisible = false;
+                        _trayIcon.IsVisible = true;
+                        var initialIcon = _currentIconIsRed && _redIcon != null ? _redIcon : _blueIcon;
+                        if (initialIcon != null) _trayIcon.Icon = initialIcon;
+                        UpdateTrayMenuHotkeys();
+                        BootstrapDebug.Log("RestoreTrayIcon: Tray icon restored successfully.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    BootstrapDebug.Log($"RestoreTrayIcon error: {ex.Message}");
                 }
             });
         }
@@ -554,6 +580,8 @@ namespace snapvox
                 HotkeyManager.Stop();
             }
             _mainAppCts.Cancel();
+            s_instanceMutex?.Dispose();
+            s_instanceMutex = null;
             _desktop?.Shutdown();
         }
     }

@@ -131,7 +131,7 @@ public static class StartupTaskHelper
         return 1;
     }
 
-    private static async Task<bool> CreateElevatedStartupTaskAsync(string executablePath)
+    private static async Task<bool> CreateElevatedStartupTaskAsync(string executablePath, bool elevated = true)
     {
         string definitionPath = Path.Combine(Path.GetTempPath(), "SnapVox", "Lifecycle", "Startup_" + Guid.NewGuid().ToString("N") + ".xml");
         try
@@ -139,7 +139,7 @@ public static class StartupTaskHelper
             using var identity = WindowsIdentity.GetCurrent();
             string sid = identity.User?.Value ?? throw new InvalidOperationException("Cannot identify the startup user.");
             Directory.CreateDirectory(Path.GetDirectoryName(definitionPath));
-            await File.WriteAllTextAsync(definitionPath, StartupTaskDefinition.Create(executablePath, sid)).ConfigureAwait(false);
+            await File.WriteAllTextAsync(definitionPath, StartupTaskDefinition.Create(executablePath, sid, elevated)).ConfigureAwait(false);
             int exitCode = await RunHiddenProcessAsync("schtasks.exe",
                 $"/Create /TN \"{ScheduledTaskName}\" /XML \"{definitionPath}\" /F", 15000).ConfigureAwait(false);
             if (exitCode != 0)
@@ -159,6 +159,20 @@ public static class StartupTaskHelper
         {
             try { if (File.Exists(definitionPath)) File.Delete(definitionPath); }
             catch (Exception ex) { LogSuppressedException("DeleteStartupDefinition", ex); }
+        }
+    }
+
+    public static async Task EnsureBatteryRestrictionsDisabledAsync()
+    {
+        try
+        {
+            if (!await HasElevatedStartupTaskAsync().ConfigureAwait(false)) return;
+            string executable = GetStartupTaskExecutablePath();
+            await ConfigureElevatedStartupTaskAsync(executable).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LogSuppressedException("EnsureBatteryRestrictionsDisabled", ex);
         }
     }
 

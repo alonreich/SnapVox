@@ -201,6 +201,10 @@ namespace snapvox.editor.forms
         private StackPanel _thicknessPanel;
         private StackPanel _thicknessChoicesPanel;
         private TextBlock _thicknessLabel;
+        private WrapPanel _thicknessFlyoutPanel;
+        private Slider _thicknessFlyoutSlider;
+        private TextBlock _thicknessFlyoutValueText;
+        private bool _syncingThicknessSlider;
         private Button _fillToggleBtn;
         private TextBlock _fillToggleText;
         private Button _resetCounterBtn;
@@ -452,6 +456,9 @@ namespace snapvox.editor.forms
             _thicknessPanel = this.FindControl<StackPanel>("ThicknessPanel");
             _thicknessChoicesPanel = this.FindControl<StackPanel>("ThicknessChoicesPanel");
             _thicknessLabel = this.FindControl<TextBlock>("ThicknessLabel");
+            _thicknessFlyoutPanel = this.FindControl<WrapPanel>("ThicknessFlyoutPanel");
+            _thicknessFlyoutSlider = this.FindControl<Slider>("ThicknessFlyoutSlider");
+            _thicknessFlyoutValueText = this.FindControl<TextBlock>("ThicknessFlyoutValueText");
             _fillToggleBtn = this.FindControl<Button>("FillToggleBtn");
             _fillToggleText = this.FindControl<TextBlock>("FillToggleText");
             _resetCounterBtn = this.FindControl<Button>("ResetCounterBtn");
@@ -5950,7 +5957,7 @@ namespace snapvox.editor.forms
 
                 DownloadTarget target = await GetEffectiveDownloadPathAsync().ConfigureAwait(true);
                 bool savedToDownloads = target.IsDownloadsFolder;
-                Directory.CreateDirectory(target.Path);
+                await Task.Run(() => Directory.CreateDirectory(target.Path)).ConfigureAwait(true);
                 string downloadedFilePath = Path.Combine(target.Path, fileName);
                 await EditorExportService.SaveImageAsync(tempImage, downloadedFilePath, config.OutputFileAllowPng, config.OutputFileJpegQuality).ConfigureAwait(true);
                 saved = true;
@@ -6174,7 +6181,7 @@ namespace snapvox.editor.forms
                     if (config.KeepBackup)
                     {
                         string tempDir = Path.Combine(Path.GetTempPath(), "SnapVox");
-                        Directory.CreateDirectory(tempDir);
+                        await Task.Run(() => Directory.CreateDirectory(tempDir)).ConfigureAwait(true);
                         string fileName = $"OCR_{DateTime.Now:yyyy-MM-dd_HH-mm-ss_fff}.txt";
                         string fullPath = Path.Combine(tempDir, fileName);
                         
@@ -6785,11 +6792,13 @@ namespace snapvox.editor.forms
 
         private void SyncThicknessUI(double val) 
         { 
-            var panel = _thicknessPanel; 
-            if (panel != null) 
+            int intVal = (int)Math.Round(val);
+            string tag = intVal.ToString(); 
+
+            var choicesPanel = _thicknessChoicesPanel; 
+            if (choicesPanel != null) 
             { 
-                string tag = ((int)val).ToString(); 
-                foreach (var b in panel.Children.OfType<Button>().Where(x => x.Classes.Contains("thickness"))) 
+                foreach (var b in choicesPanel.Children.OfType<Button>().Where(x => x.Classes.Contains("thickness"))) 
                 { 
                     if (b.Tag?.ToString() == tag) {
                         b.Classes.Add("selected");
@@ -6798,6 +6807,31 @@ namespace snapvox.editor.forms
                     }
                 } 
             } 
+
+            var flyoutPanel = _thicknessFlyoutPanel;
+            if (flyoutPanel != null)
+            {
+                foreach (var b in flyoutPanel.Children.OfType<Button>().Where(x => x.Classes.Contains("flyout-thickness")))
+                {
+                    if (b.Tag?.ToString() == tag) {
+                        b.Classes.Add("selected");
+                    } else {
+                        b.Classes.Remove("selected");
+                    }
+                }
+            }
+
+            if (_thicknessFlyoutSlider != null && Math.Abs(_thicknessFlyoutSlider.Value - val) > 0.4)
+            {
+                _syncingThicknessSlider = true;
+                try { _thicknessFlyoutSlider.Value = val; }
+                finally { _syncingThicknessSlider = false; }
+            }
+
+            if (_thicknessFlyoutValueText != null)
+            {
+                _thicknessFlyoutValueText.Text = $"{intVal} px";
+            }
         }
 
         private static bool IsThicknessRelevantForTool(EditorTool tool) => tool is EditorTool.Arrow
@@ -6874,40 +6908,50 @@ namespace snapvox.editor.forms
             if (label != null) label.Text = GetThicknessLabelText();
             SyncThicknessUI(_currentThickness);
         }
+        private void ApplyThicknessValue(double val) { 
+            _currentThickness = val; 
+            SyncThicknessUI(val); 
+            
+            var config = IniConfig.GetIniSection<CoreConfiguration>();
+            bool saveConfig = false;
+
+            if (_selectedControl != null) { 
+                SaveUndoState(true); 
+                UpdateControlThickness(_selectedControl, val); 
+                var inferred = GetToolFromControl(_selectedControl); 
+                if (inferred != EditorTool.None) {
+                    _toolThicknesses[inferred] = val; 
+                    if (inferred == EditorTool.Text) { config.TextToolThickness = val; saveConfig = true; }
+                }
+                OverlayHelper.ShowLightToast("THICKNESS UPDATED", this); 
+                ShowUndoAvailableHint(); 
+            } else if (_currentTool != EditorTool.None) { 
+                _toolThicknesses[_currentTool] = val; 
+                if (_currentTool == EditorTool.Text) { config.TextToolThickness = val; saveConfig = true; }
+            } else if (_currentTool == EditorTool.None) { 
+                foreach (EditorTool tool in Enum.GetValues<EditorTool>()) { 
+                    if (tool != EditorTool.None) _toolThicknesses[tool] = val; 
+                } 
+                config.TextToolThickness = val;
+                saveConfig = true;
+            } 
+            
+            if (saveConfig) IniConfig.Save();
+            SaveToolPreferences();
+            _ghostSettingsDirty = true; 
+            Log.Info($"Thickness set to: {val}");
+        }
+
         private void OnThicknessClick(object sender, RoutedEventArgs e) { 
             if (sender is Button btn && btn.Tag is string tStr && double.TryParse(tStr, out var val)) { 
-                _currentThickness = val; 
-                SyncThicknessUI(val); 
-                
-                var config = IniConfig.GetIniSection<CoreConfiguration>();
-                bool saveConfig = false;
-
-                if (_selectedControl != null) { 
-                    SaveUndoState(true); 
-                    UpdateControlThickness(_selectedControl, val); 
-                    var inferred = GetToolFromControl(_selectedControl); 
-                    if (inferred != EditorTool.None) {
-                        _toolThicknesses[inferred] = val; 
-                        if (inferred == EditorTool.Text) { config.TextToolThickness = val; saveConfig = true; }
-                    }
-                    OverlayHelper.ShowLightToast("THICKNESS UPDATED", this); 
-                    ShowUndoAvailableHint(); 
-                } else if (_currentTool != EditorTool.None) { 
-                    _toolThicknesses[_currentTool] = val; 
-                    if (_currentTool == EditorTool.Text) { config.TextToolThickness = val; saveConfig = true; }
-                } else if (_currentTool == EditorTool.None) { 
-                    foreach (EditorTool tool in Enum.GetValues<EditorTool>()) { 
-                        if (tool != EditorTool.None) _toolThicknesses[tool] = val; 
-                    } 
-                    config.TextToolThickness = val;
-                    saveConfig = true;
-                } 
-                
-                if (saveConfig) IniConfig.Save();
-                SaveToolPreferences();
-                _ghostSettingsDirty = true; 
-                Log.Info($"Thickness set to: {val}");
+                ApplyThicknessValue(val);
             } 
+        }
+
+        private void OnThicknessSliderChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingThicknessSlider) return;
+            ApplyThicknessValue(Math.Round(e.NewValue));
         }
 
         private void OnFillToggleClick(object sender, RoutedEventArgs e)

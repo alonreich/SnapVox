@@ -214,8 +214,9 @@ namespace snapvox.foundation.core
         public override void AfterLoad()
         {
             if (ClipboardFormats == null || ClipboardFormats.Count == 0) ClipboardFormats = new List<ClipboardFormat> { ClipboardFormat.DIB };
-            OutputFileFormat = OutputFormat.jpg;
-            OutputFileJpegQuality = 100;
+            if (OutputFileAllowPng) OutputFileFormat = OutputFormat.png;
+            else if (OutputFileFormat == OutputFormat.png) OutputFileAllowPng = true;
+            if (OutputFileJpegQuality <= 0 || OutputFileJpegQuality > 100) OutputFileJpegQuality = 100;
         }
     }
 }

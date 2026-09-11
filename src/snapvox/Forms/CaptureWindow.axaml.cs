@@ -1435,10 +1435,11 @@ namespace snapvox.forms
         {
             _captureCompleted = true;
             ImageSharpImage owned = null;
+            ImageSharpImage frozenCaptured = null;
+            ImageSharpImage imageForEditor = null;
             try
             {
                 var nativeRect = RECT.FromXYWH(rect.X, rect.Y, rect.Width, rect.Height);
-                ImageSharpImage frozenCaptured = null;
 
                 if (windowHandle != IntPtr.Zero)
                 {
@@ -1497,7 +1498,7 @@ namespace snapvox.forms
 
                 await CaptureHelper.CopyCaptureToClipboardAsync(owned).ConfigureAwait(false);
 
-                ImageSharpImage imageForEditor = owned;
+                imageForEditor = owned;
                 owned = null;
                 string targetTitle = windowHandle != IntPtr.Zero ? Win32WindowHelper.GetWindowTitle(windowHandle) : null;
                 if (string.IsNullOrWhiteSpace(targetTitle)) targetTitle = CaptureHelper.LastActiveWindowTitle;
@@ -1516,6 +1517,8 @@ namespace snapvox.forms
             }
             catch (Exception ex)
             {
+                frozenCaptured?.Dispose();
+                imageForEditor?.Dispose();
                 owned?.Dispose();
                 CaptureHelper.ClearFrozenSnapshot();
                 Log.Fatal("CaptureAfterOverlaysHiddenAsync failed.", ex);

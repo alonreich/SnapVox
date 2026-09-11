@@ -33,6 +33,21 @@ namespace snapvox.helpers
         private const int WM_HOTKEY = 0x0312;
         private const int WM_APP_EXIT = 0x8001;
         private const int WM_DESTROY = 0x0002;
+        private const uint WM_POWERBROADCAST = 0x0218;
+        private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
+        private const int PBT_APMRESUMESUSPEND = 0x0007;
+        private const uint WM_DISPLAYCHANGE = 0x007E;
+        private const uint WM_WTSSESSION_CHANGE = 0x02B1;
+        private const uint NOTIFY_FOR_THIS_SESSION = 0;
+        private const int WTS_CONSOLE_CONNECT = 0x1;
+        private const int WTS_CONSOLE_DISCONNECT = 0x2;
+        private const int WTS_REMOTE_CONNECT = 0x3;
+        private const int WTS_REMOTE_DISCONNECT = 0x4;
+        private const int WTS_SESSION_LOGON = 0x5;
+        private const int WTS_SESSION_LOGOFF = 0x6;
+        private const int WTS_SESSION_LOCK = 0x7;
+        private const int WTS_SESSION_UNLOCK = 0x8;
+        private static uint _wmTaskbarCreated;
         private const int HOTKEY_REGION = 1;
         private const int HOTKEY_WINDOW = 2;
         private const int HOTKEY_FULLSCREEN = 3;
@@ -52,6 +67,15 @@ namespace snapvox.helpers
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern uint RegisterWindowMessageW(string lpString);
+
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        private static extern bool WTSRegisterSessionNotification(IntPtr hWnd, uint dwFlags);
+
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        private static extern bool WTSUnRegisterSessionNotification(IntPtr hWnd);
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern IntPtr CreateWindowExW(uint dwExStyle, string lpClassName, string lpWindowName, uint dwStyle, int x, int y, int nWidth, int nHeight, IntPtr hWndParent, IntPtr hMenu, IntPtr hInstance, IntPtr lpParam);
@@ -111,25 +135,86 @@ namespace snapvox.helpers
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
         private static IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
-            if (msg == WM_HOTKEY)
+            try
             {
-                int id = (int)wParam;
-                HandleHotkey(id);
-                return IntPtr.Zero;
-            }
+                if (msg == WM_HOTKEY)
+                {
+                    int id = (int)wParam;
+                    HandleHotkey(id);
+                    return IntPtr.Zero;
+                }
 
-            if (msg == WM_APP_EXIT)
+                if (msg == WM_APP_EXIT)
+                {
+                    PostQuitMessage(0);
+                    return IntPtr.Zero;
+                }
+
+                if (msg == WM_DESTROY)
+                {
+                    return IntPtr.Zero;
+                }
+
+                if (_wmTaskbarCreated != 0 && msg == _wmTaskbarCreated)
+                {
+                    BootstrapDebug.Log("HotkeyManager: TaskbarCreated broadcast received. Restoring tray icon and re-verifying hotkeys.");
+                    App.RestoreTrayIcon();
+                    RegisterAll();
+                    return IntPtr.Zero;
+                }
+
+                if (msg == WM_POWERBROADCAST)
+                {
+                    int pbt = wParam.ToInt32();
+                    if (pbt == PBT_APMRESUMEAUTOMATIC || pbt == PBT_APMRESUMESUSPEND)
+                    {
+                        BootstrapDebug.Log($"HotkeyManager: System resumed from suspend/sleep ({pbt}). Restoring tray icon and re-verifying hotkeys.");
+                        App.RestoreTrayIcon();
+                        RegisterAll();
+                    }
+                    return IntPtr.Zero;
+                }
+
+                if (msg == WM_WTSSESSION_CHANGE)
+                {
+                    int sessionEvent = wParam.ToInt32();
+                    BootstrapDebug.Log($"HotkeyManager: Session change event received: {sessionEvent}");
+                    if (sessionEvent is WTS_REMOTE_CONNECT or WTS_CONSOLE_CONNECT or WTS_SESSION_UNLOCK or WTS_SESSION_LOGON)
+                    {
+                        BootstrapDebug.Log("HotkeyManager: RDP or terminal session connect/unlock detected. Restoring tray icon and refreshing hotkeys.");
+                        App.RestoreTrayIcon();
+                        RegisterAll();
+
+                        Task.Delay(1000).ContinueWith(_ =>
+                        {
+                            App.RestoreTrayIcon();
+                            RegisterAll();
+                        });
+                    }
+                    return IntPtr.Zero;
+                }
+
+                if (msg == WM_DISPLAYCHANGE)
+                {
+                    BootstrapDebug.Log("HotkeyManager: Display change notification received. Restoring tray icon and refreshing hotkeys.");
+                    App.RestoreTrayIcon();
+                    RegisterAll();
+
+                    Task.Delay(1000).ContinueWith(_ =>
+                    {
+                        App.RestoreTrayIcon();
+                        RegisterAll();
+                    });
+                    return IntPtr.Zero;
+                }
+
+                return DefWindowProcW(hWnd, msg, wParam, lParam);
+            }
+            catch (Exception ex)
             {
-                PostQuitMessage(0);
-                return IntPtr.Zero;
+                BootstrapDebug.Log($"HotkeyManager WndProc unhandled exception: {ex}");
+                return DefWindowProcW(hWnd, msg, wParam, lParam);
             }
-
-            if (msg == WM_DESTROY)
-            {
-                return IntPtr.Zero;
-            }
-
-            return DefWindowProcW(hWnd, msg, wParam, lParam);
         }
 
         public static void Start()
@@ -141,19 +226,44 @@ namespace snapvox.helpers
                     return;
                 }
 
-                if (!LoopExited.Wait(LoopShutdownTimeout))
+                if (!LoopExited.Wait(0))
                 {
-                    BootstrapDebug.Log("HotkeyManager: previous message loop did not release its hotkeys in time; continuing anyway.");
+                    if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                    {
+                        Task.Run(() =>
+                        {
+                            if (!LoopExited.Wait(LoopShutdownTimeout))
+                            {
+                                BootstrapDebug.Log("HotkeyManager: previous message loop did not release its hotkeys in time; continuing anyway.");
+                            }
+                            lock (StartStopSync)
+                            {
+                                if (_running) return;
+                                LaunchLoopThreadLocked();
+                            }
+                        });
+                        return;
+                    }
+
+                    if (!LoopExited.Wait(LoopShutdownTimeout))
+                    {
+                        BootstrapDebug.Log("HotkeyManager: previous message loop did not release its hotkeys in time; continuing anyway.");
+                    }
                 }
 
-                _registrationCompleted = false;
-                _ownedHotkeys = Array.Empty<string>();
-                _running = true;
-                _shouldRun = true;
-                LoopExited.Reset();
-                _msgLoopThread = new Thread(MessageLoop) { IsBackground = true, Name = "HotkeyLoop" };
-                _msgLoopThread.Start();
+                LaunchLoopThreadLocked();
             }
+        }
+
+        private static void LaunchLoopThreadLocked()
+        {
+            _registrationCompleted = false;
+            _ownedHotkeys = Array.Empty<string>();
+            _running = true;
+            _shouldRun = true;
+            LoopExited.Reset();
+            _msgLoopThread = new Thread(MessageLoop) { IsBackground = true, Name = "HotkeyLoop" };
+            _msgLoopThread.Start();
         }
 
         public static Task RestartAsync()
@@ -186,7 +296,8 @@ namespace snapvox.helpers
                     return;
                 }
 
-                IntPtr hostWindow = CreateWindowExW(0, className, "LG_Hotkey_Host", 0, 0, 0, 0, 0, (IntPtr)(-3), IntPtr.Zero, wc.hInstance, IntPtr.Zero);
+                _wmTaskbarCreated = RegisterWindowMessageW("TaskbarCreated");
+                IntPtr hostWindow = CreateWindowExW(0, className, "LG_Hotkey_Host", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
                 if (hostWindow == IntPtr.Zero)
                 {
                     ReportHotkeyHostFailure("create the hotkey listener window", Marshal.GetLastWin32Error());
@@ -195,6 +306,15 @@ namespace snapvox.helpers
 
                 _hwnd = hostWindow;
                 ownedWindow = hostWindow;
+
+                try
+                {
+                    WTSRegisterSessionNotification(hostWindow, NOTIFY_FOR_THIS_SESSION);
+                }
+                catch (Exception ex)
+                {
+                    BootstrapDebug.Log($"HotkeyManager: WTSRegisterSessionNotification warning: {ex.Message}");
+                }
 
                 RegisterAll();
 
@@ -222,6 +342,7 @@ namespace snapvox.helpers
                 Marshal.FreeHGlobal(classNamePtr);
                 if (ownedWindow != IntPtr.Zero)
                 {
+                    try { WTSUnRegisterSessionNotification(ownedWindow); } catch { }
                     UnregisterAll(ownedWindow);
                     DestroyWindow(ownedWindow);
                     Interlocked.CompareExchange(ref _hwnd, IntPtr.Zero, ownedWindow);

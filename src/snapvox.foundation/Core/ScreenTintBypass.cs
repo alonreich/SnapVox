@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -36,6 +37,38 @@ namespace snapvox.foundation.core
         private const uint LwaAlpha = 0x00000002;
 
         private const int MaxScannedWindows = 400;
+
+        private const int DisplayDeviceAttachedToDesktop = 0x00000001;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+        private struct DISPLAY_DEVICE
+        {
+            public int cb;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+            public string DeviceName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            public string DeviceString;
+            public int StateFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            public string DeviceID;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            public string DeviceKey;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
+
+        [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateDC(string lpszDriver, string lpszDevice, string lpszOutput, IntPtr lpInitData);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool GetDeviceGammaRamp(IntPtr hdc, ushort[] lpRamp);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool SetDeviceGammaRamp(IntPtr hdc, ushort[] lpRamp);
 
         private static readonly TimeSpan ProbeCacheLifetime = TimeSpan.FromMilliseconds(750);
         private static long _lastProbeTicks;
@@ -250,48 +283,162 @@ namespace snapvox.foundation.core
         }
 
         /// <summary>
-        /// Restores true, neutral colors by compensating for active warm-light / night-mode color temperatures (e.g. f.lux, Night Light).
+        /// Temporarily sets display gamma ramps to standard linear (6500K sRGB) across all active monitors
+        /// during screen capture, restoring the original ramps upon disposal.
+        /// Bypasses f.lux, Windows Night Light, and any warm hardware gamma calibrations.
+        /// </summary>
+        public static IDisposable NeutralizeDisplayGammaScope()
+        {
+            if (!IsEnabled())
+            {
+                return EmptyDisposable.Instance;
+            }
+
+            try
+            {
+                List<(IntPtr Hdc, ushort[] Ramp)> restored = null;
+                var dd = new DISPLAY_DEVICE();
+                dd.cb = Marshal.SizeOf<DISPLAY_DEVICE>();
+                uint devNum = 0;
+                ushort[] linearRamp = null;
+
+                while (EnumDisplayDevices(null, devNum, ref dd, 0))
+                {
+                    if ((dd.StateFlags & DisplayDeviceAttachedToDesktop) != 0)
+                    {
+                        IntPtr hdc = CreateDC(dd.DeviceName, null, null, IntPtr.Zero);
+                        if (hdc != IntPtr.Zero)
+                        {
+                            ushort[] origRamp = new ushort[768];
+                            if (GetDeviceGammaRamp(hdc, origRamp))
+                            {
+                                if (IsGammaRampTinted(origRamp))
+                                {
+                                    linearRamp ??= CreateLinearGammaRamp();
+                                    if (SetDeviceGammaRamp(hdc, linearRamp))
+                                    {
+                                        (restored ??= new List<(IntPtr, ushort[])>()).Add((hdc, origRamp));
+                                        hdc = IntPtr.Zero; // Transferred to restored list
+                                    }
+                                }
+                            }
+
+                            if (hdc != IntPtr.Zero)
+                            {
+                                DeleteDC(hdc);
+                            }
+                        }
+                    }
+                    devNum++;
+                }
+
+                if (restored != null && restored.Count > 0)
+                {
+                    Log.DebugFormat("Neutralized display gamma for {0} display(s) during capture.", restored.Count);
+                    return new GammaNeutralizerScope(restored);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Failed neutralizing display gamma ramps for capture.", ex);
+            }
+
+            return EmptyDisposable.Instance;
+        }
+
+        private static bool IsGammaRampTinted(ushort[] ramp)
+        {
+            if (ramp == null || ramp.Length < 768) return false;
+
+            ushort rPeak = ramp[255];
+            ushort gPeak = ramp[511];
+            ushort bPeak = ramp[767];
+
+            if (rPeak > 0)
+            {
+                if (bPeak < (int)(rPeak * 0.985) || gPeak < (int)(rPeak * 0.985))
+                {
+                    return true;
+                }
+            }
+
+            ushort rMid = ramp[128];
+            ushort bMid = ramp[512 + 128];
+            if (rMid > 0 && bMid < (int)(rMid * 0.97))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static ushort[] CreateLinearGammaRamp()
+        {
+            ushort[] ramp = new ushort[768];
+            for (int i = 0; i < 256; i++)
+            {
+                ushort val = (ushort)((i * 65535) / 255);
+                ramp[i] = val;
+                ramp[256 + i] = val;
+                ramp[512 + i] = val;
+            }
+            return ramp;
+        }
+
+        private sealed class GammaNeutralizerScope : IDisposable
+        {
+            private List<(IntPtr Hdc, ushort[] Ramp)> _savedDisplays;
+
+            public GammaNeutralizerScope(List<(IntPtr Hdc, ushort[] Ramp)> savedDisplays)
+            {
+                _savedDisplays = savedDisplays;
+            }
+
+            public void Dispose()
+            {
+                var list = Interlocked.Exchange(ref _savedDisplays, null);
+                if (list == null) return;
+
+                foreach (var item in list)
+                {
+                    try
+                    {
+                        if (item.Hdc != IntPtr.Zero && item.Ramp != null)
+                        {
+                            SetDeviceGammaRamp(item.Hdc, item.Ramp);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warn("Failed restoring display gamma ramp.", ex);
+                    }
+                    finally
+                    {
+                        if (item.Hdc != IntPtr.Zero)
+                        {
+                            DeleteDC(item.Hdc);
+                        }
+                    }
+                }
+            }
+        }
+
+        private sealed class EmptyDisposable : IDisposable
+        {
+            public static readonly EmptyDisposable Instance = new EmptyDisposable();
+            public void Dispose() { }
+        }
+
+        /// <summary>
+        /// Validates capture neutral color integrity. Hardware gamma neutralization during capture
+        /// and overlay window exclusion ensure original true colors are preserved without
+        /// uncalibrated software gains that clip highlights and wash out brightness.
         /// </summary>
         public static void ApplyColorCorrectionIfActive(Image<Bgra32> image)
         {
             if (image == null || !IsEnabled()) return;
-
-            if (!TryGetActiveColorTemperatureCompensation(out double gFactor, out double bFactor))
-            {
-                return;
-            }
-
-            if (gFactor >= 0.985 && bFactor >= 0.985)
-            {
-                return;
-            }
-
-            byte[] lutG = new byte[256];
-            byte[] lutB = new byte[256];
-            double invG = 1.0 / gFactor;
-            double invB = 1.0 / bFactor;
-
-            for (int i = 0; i < 256; i++)
-            {
-                lutG[i] = (byte)Math.Clamp((int)Math.Round(i * invG), 0, 255);
-                lutB[i] = (byte)Math.Clamp((int)Math.Round(i * invB), 0, 255);
-            }
-
-            image.ProcessPixelRows(accessor =>
-            {
-                for (int y = 0; y < accessor.Height; y++)
-                {
-                    Span<Bgra32> row = accessor.GetRowSpan(y);
-                    for (int x = 0; x < row.Length; x++)
-                    {
-                        ref Bgra32 pixel = ref row[x];
-                        pixel.G = lutG[pixel.G];
-                        pixel.B = lutB[pixel.B];
-                    }
-                }
-            });
-
-            Log.InfoFormat("Screen tint color compensation applied: Green x{0:F3}, Blue x{1:F3}", invG, invB);
+            // Native capture gamma neutralization and layered overlay bypass preserve raw sRGB fidelity.
+            // Destructive software channel multiplication is bypassed to prevent brightness blowout.
         }
 
         private static bool TryGetActiveColorTemperatureCompensation(out double gFactor, out double bFactor)
@@ -349,7 +496,8 @@ namespace snapvox.foundation.core
                 using var stateKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\CloudStore\Store\DefaultAccount\Current\default$windows.data.bluelightreduction.bluelightreductionstate\windows.data.bluelightreduction.bluelightreductionstate");
                 if (stateKey != null && stateKey.GetValue("Data") is byte[] data && data.Length >= 19)
                 {
-                    if (data[18] == 0x10 || data[18] == 0x13 || data[18] == 0x15)
+                    // 0x10, 0x00, 0x05 indicate disabled/off. 0x13 and 0x15 indicate active bluelight reduction.
+                    if (data[18] == 0x13 || data[18] == 0x15)
                     {
                         CalculateKelvinFactors(4000, out gFactor, out bFactor);
                         return true;

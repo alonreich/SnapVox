@@ -255,20 +255,41 @@
             <Setter Property="Theme" Value="{StaticResource SnapVoxScrollBarHorizontal}" />
         </Style>
         <Style Selector="Button.color-preset">
-            <Setter Property="Width" Value="28" />
+            <Setter Property="Width" Value="24" />
             <Setter Property="Height" Value="28" />
-            <Setter Property="CornerRadius" Value="14" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSecondaryButtonBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Transitions">
-                <Transitions>
-                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.05" />
-                </Transitions>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                        <Border Name="ColorCircle"
+                                Width="16" Height="16"
+                                CornerRadius="8"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="1"
+                                BorderBrush="{DynamicResource SnapVoxSecondaryButtonBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                            <Border.Transitions>
+                                <Transitions>
+                                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.05" />
+                                    <BrushTransition Property="BorderBrush" Duration="0:0:0.1" />
+                                </Transitions>
+                            </Border.Transitions>
+                        </Border>
+                    </Border>
+                </ControlTemplate>
             </Setter>
         </Style>
-        <Style Selector="Button.color-preset.selected">
+        <Style Selector="Button.color-preset:hover /template/ Border#ColorCircle">
+            <Setter Property="RenderTransform" Value="scale(1.15)" />
+        </Style>
+        <Style Selector="Button.color-preset:pressed /template/ Border#ColorCircle">
+            <Setter Property="RenderTransform" Value="scale(0.92)" />
+        </Style>
+        <Style Selector="Button.color-preset.selected /template/ Border#ColorCircle">
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
             <Setter Property="BorderThickness" Value="2" />
         </Style>
@@ -288,8 +309,8 @@
             </Style.Animations>
         </Style>
         <Style Selector="Button.thickness">
-            <Setter Property="Width" Value="24" />
-            <Setter Property="MinWidth" Value="24" />
+            <Setter Property="Width" Value="16" />
+            <Setter Property="MinWidth" Value="16" />
             <Setter Property="Height" Value="28" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -310,6 +331,48 @@
         <Style Selector="Button.thickness.selected">
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
             <Setter Property="BorderThickness" Value="1.5" />
+        </Style>
+        <Style Selector="Button.line-size-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.line-size-btn:hover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxAccentBrush}" />
+        </Style>
+        <Style Selector="Button.flyout-thickness">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinWidth" Value="36" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxSecondaryButtonBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxPrimaryTextBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.flyout-thickness:hover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxAccentBrush}" />
+        </Style>
+        <Style Selector="Button.flyout-thickness.selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SnapVoxSelectedSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxAccentBrush}" />
+        </Style>
+        <Style Selector="Slider.thickness-slider">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource SnapVoxAccentDarkBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SnapVoxSliderTrackBrush}" />
         </Style>
         <Style Selector="Slider.pixelate-strength">
             <Setter Property="Height" Value="44" />
@@ -826,7 +889,7 @@
                         <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="5,0" />
                         
                         <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Button Name="CustomColorBtn" MinWidth="74" MinHeight="40" VerticalAlignment="Center" Cursor="Hand" Padding="6,0" AutomationProperties.Name="Current colour, opens colour picker" ToolTip.Tip="Current color (click to open picker)">
+                            <Button Name="CustomColorBtn" MinWidth="59" MinHeight="40" VerticalAlignment="Center" Cursor="Hand" Padding="6,0,7,0" AutomationProperties.Name="Current colour, opens colour picker" ToolTip.Tip="Current color (click to open picker)">
                                 <Button.Flyout>
                                     <Flyout Placement="Top">
                                         <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="14" MinWidth="316" MaxWidth="420">
@@ -894,8 +957,50 @@
 
                         <StackPanel Name="ThicknessPanel" Orientation="Horizontal" Spacing="2" Margin="25,0,0,0" VerticalAlignment="Center">
                             <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,0,5,0" />
-                            <StackPanel Name="ThicknessChoicesPanel" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
-                                <TextBlock Name="ThicknessLabel" Text="Thickness" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" Margin="0,0,6,0" />
+                            <StackPanel Name="ThicknessChoicesPanel" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+                                <Button Name="LineSizeBtn" Classes="line-size-btn" AutomationProperties.Name="Line size variety selection" ToolTip.Tip="Line size menu (click for more thickness options)">
+                                    <Button.Flyout>
+                                        <Flyout Placement="Top">
+                                            <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="12" Width="268">
+                                                <StackPanel Spacing="8">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock Text="LINE SIZE SELECTION" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="1" Name="ThicknessFlyoutValueText" Text="3 px" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SnapVoxAccentBrush}" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                    <Border Height="1" Background="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,2,0,4" />
+                                                    <WrapPanel Name="ThicknessFlyoutPanel" Width="244" HorizontalAlignment="Center">
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="1" ToolTip.Tip="1px"><TextBlock Text="1" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="2" ToolTip.Tip="2px"><TextBlock Text="2" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="3" ToolTip.Tip="3px"><TextBlock Text="3" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="4" ToolTip.Tip="4px"><TextBlock Text="4" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="5" ToolTip.Tip="5px"><TextBlock Text="5" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="6" ToolTip.Tip="6px"><TextBlock Text="6" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="7" ToolTip.Tip="7px"><TextBlock Text="7" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="8" ToolTip.Tip="8px"><TextBlock Text="8" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="9" ToolTip.Tip="9px"><TextBlock Text="9" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="10" ToolTip.Tip="10px"><TextBlock Text="10" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="12" ToolTip.Tip="12px"><TextBlock Text="12" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="14" ToolTip.Tip="14px"><TextBlock Text="14" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="16" ToolTip.Tip="16px"><TextBlock Text="16" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="18" ToolTip.Tip="18px"><TextBlock Text="18" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="20" ToolTip.Tip="20px"><TextBlock Text="20" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="24" ToolTip.Tip="24px"><TextBlock Text="24" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="28" ToolTip.Tip="28px"><TextBlock Text="28" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="32" ToolTip.Tip="32px"><TextBlock Text="32" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                    </WrapPanel>
+                                                    <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
+                                                        <TextBlock Text="Custom:" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" Margin="0,0,8,0"/>
+                                                        <Slider Grid.Column="1" Name="ThicknessFlyoutSlider" Classes="thickness-slider" Minimum="1" Maximum="40" ValueChanged="OnThicknessSliderChanged" ToolTip.Tip="Fine-tune thickness" />
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock Name="ThicknessLabel" Text="Line size" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" />
+                                        <TextBlock Text="▾" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
+                                    </StackPanel>
+                                </Button>
                                 <Button Classes="thickness" Click="OnThicknessClick" Tag="1" AutomationProperties.Name="1 pixel thickness" ToolTip.Tip="1px">
                                     <Rectangle Width="1" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>

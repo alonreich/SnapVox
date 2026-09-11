@@ -167,7 +167,13 @@ namespace snapvox.foundation.core
                 uint rasterOperation = Srccopy;
                 if (!ScreenTintBypass.ShouldExcludeLayeredWindows(region)) rasterOperation |= CaptureBlt;
 
-                if (!BitBlt(hdcDest, 0, 0, region.Width, region.Height, hdcScreen, region.Left, region.Top, rasterOperation))
+                bool bltSuccess;
+                using (ScreenTintBypass.NeutralizeDisplayGammaScope())
+                {
+                    bltSuccess = BitBlt(hdcDest, 0, 0, region.Width, region.Height, hdcScreen, region.Left, region.Top, rasterOperation);
+                }
+
+                if (!bltSuccess)
                 {
                     return null;
                 }

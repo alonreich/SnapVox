@@ -133,49 +133,42 @@ namespace snapvox.helpers
         private bool _disposedValue;
 
         protected void Dispose(bool disposing)
-
         {
-
             if (_disposedValue) return;
 
             if (_applicationMutex != null)
-
             {
-
                 try
-
                 {
+                    if (disposing && IsLocked)
+                    {
+                        _applicationMutex.ReleaseMutex();
+                    }
 
-                    _applicationMutex.ReleaseMutex();
-
+                    _applicationMutex.Dispose();
                     _applicationMutex = null;
 
-                    Log.InfoFormat("Released Mutex {0} for {1}", _mutexId, _resourceName);
-
+                    if (disposing)
+                    {
+                        Log.InfoFormat("Released Mutex {0} for {1}", _mutexId, _resourceName);
+                    }
                 }
-
                 catch (Exception ex)
-
                 {
-
-                    Log.ErrorFormat("Error releasing Mutex {0} for {1}", _mutexId, _resourceName);
-
-                    Log.Error(ex);
-
+                    if (disposing)
+                    {
+                        Log.ErrorFormat("Error releasing Mutex {0} for {1}", _mutexId, _resourceName);
+                        Log.Error(ex);
+                    }
                 }
-
             }
 
             _disposedValue = true;
-
         }
 
         ~ResourceMutex()
-
         {
-
             Dispose(false);
-
         }
 
         public void Dispose()
