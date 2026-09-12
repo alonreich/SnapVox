@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Bmp;
 using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace snapvox.foundation.core
 {
@@ -32,6 +33,8 @@ namespace snapvox.foundation.core
         private static extern IntPtr CreateWindowExW(uint style, string className, string title, uint windowStyle,
             int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr parameter);
         [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr window);
+        [DllImport("user32.dll")] private static extern IntPtr GetClipboardOwner();
+        [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalLock(IntPtr hMem);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(IntPtr hMem);
@@ -43,7 +46,12 @@ namespace snapvox.foundation.core
 
         private const uint CF_UNICODETEXT = 13;
         private const uint CF_DIB = 8;
+        private const uint CF_DIBV5 = 17;
         private const uint GHND = 0x0042;
+        private static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
+        private static readonly object _ownerLock = new object();
+        private static readonly object _nativeClipboardLock = new object();
+        private static IntPtr _clipboardOwnerHwnd = IntPtr.Zero;
         private const int DefaultClipboardHistoryPromotionDelayMs = 400;
         private const string SnapVoxEditorImageFormat = "SnapVox.ImageEditorSource";
         private static readonly byte[] SnapVoxEditorImageBytes = { 1 };
@@ -151,24 +159,68 @@ namespace snapvox.foundation.core
             return false;
         }
 
+        public static IntPtr GetClipboardOwnerHwnd()
+        {
+            if (_clipboardOwnerHwnd != IntPtr.Zero && IsWindow(_clipboardOwnerHwnd))
+            {
+                return _clipboardOwnerHwnd;
+            }
+
+            lock (_ownerLock)
+            {
+                if (_clipboardOwnerHwnd != IntPtr.Zero && IsWindow(_clipboardOwnerHwnd))
+                {
+                    return _clipboardOwnerHwnd;
+                }
+
+                if (Dispatcher.UIThread != null && !Dispatcher.UIThread.CheckAccess())
+                {
+                    try
+                    {
+                        _clipboardOwnerHwnd = Dispatcher.UIThread.Invoke(CreateClipboardOwnerWindow);
+                        if (_clipboardOwnerHwnd != IntPtr.Zero && IsWindow(_clipboardOwnerHwnd))
+                        {
+                            return _clipboardOwnerHwnd;
+                        }
+                    }
+                    catch
+                    {
+                        // Fall back to creating on calling thread
+                    }
+                }
+
+                _clipboardOwnerHwnd = CreateClipboardOwnerWindow();
+                return _clipboardOwnerHwnd;
+            }
+        }
+
+        private static IntPtr CreateClipboardOwnerWindow()
+        {
+            return CreateWindowExW(0, "STATIC", "SnapVox Clipboard", 0,
+                0, 0, 0, 0, HWND_MESSAGE, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        public static IntPtr GetCurrentClipboardOwner() => GetClipboardOwner();
+        public static bool IsWindowHandle(IntPtr hWnd) => IsWindow(hWnd);
+
         private static bool TryWriteNativeClipboard(Func<bool> write)
         {
-            // EmptyClipboard with a NULL owner prevents SetClipboardData from
-            // succeeding. Create an owned message-only window on this thread.
-            IntPtr owner = CreateWindowExW(0, "STATIC", "SnapVox Clipboard", 0,
-                0, 0, 0, 0, new IntPtr(-3), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-            if (owner == IntPtr.Zero) return false;
-            try
+            lock (_nativeClipboardLock)
             {
+                IntPtr owner = GetClipboardOwnerHwnd();
+                if (owner == IntPtr.Zero) return false;
+
                 if (!OpenClipboard(owner)) return false;
                 try
                 {
                     if (!EmptyClipboard()) return false;
                     return write();
                 }
-                finally { CloseClipboard(); }
+                finally
+                {
+                    CloseClipboard();
+                }
             }
-            finally { DestroyWindow(owner); }
         }
 
 
@@ -243,7 +295,7 @@ namespace snapvox.foundation.core
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    return TryGetWin32ClipboardImage();
+                    return await Task.Run(() => TryGetWin32ClipboardImage()).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -357,52 +409,80 @@ namespace snapvox.foundation.core
 
         private static Image TryGetWin32ClipboardImage()
         {
-            if (!OpenClipboard(IntPtr.Zero))
+            lock (_nativeClipboardLock)
             {
+                const int maxRetries = 10;
+                for (int attempt = 0; attempt < maxRetries; attempt++)
+                {
+                    if (OpenClipboard(IntPtr.Zero))
+                    {
+                        try
+                        {
+                            foreach (string formatName in new[] { "PNG", "image/png", "JPEG", "JPG", "JFIF", "image/jpeg", "image/jpg" })
+                            {
+                                uint format = RegisterClipboardFormat(formatName);
+                                if (format == 0 || !IsClipboardFormatAvailable(format))
+                                {
+                                    continue;
+                                }
+
+                                byte[] bytes = CopyClipboardGlobalBytes(format);
+                                if (bytes == null || bytes.Length == 0)
+                                {
+                                    continue;
+                                }
+
+                                try
+                                {
+                                    using var ms = new MemoryStream(bytes);
+                                    return Image.Load(ms);
+                                }
+                                catch
+                                {
+                                }
+                            }
+
+                            if (IsClipboardFormatAvailable(CF_DIBV5))
+                            {
+                                byte[] dibV5Data = CopyClipboardGlobalBytes(CF_DIBV5);
+                                if (dibV5Data != null && dibV5Data.Length > 0)
+                                {
+                                    try
+                                    {
+                                        var v5Image = LoadDibImage(dibV5Data);
+                                        if (v5Image != null) return v5Image;
+                                    }
+                                    catch
+                                    {
+                                    }
+                                }
+                            }
+
+                            if (IsClipboardFormatAvailable(CF_DIB))
+                            {
+                                byte[] dibData = CopyClipboardGlobalBytes(CF_DIB);
+                                if (dibData != null && dibData.Length > 0)
+                                {
+                                    return LoadDibImage(dibData);
+                                }
+                            }
+
+                            return null;
+                        }
+                        finally
+                        {
+                            CloseClipboard();
+                        }
+                    }
+
+                    if (attempt < maxRetries - 1)
+                    {
+                        Thread.Sleep(50);
+                    }
+                }
+
                 return null;
             }
-
-            try
-            {
-                foreach (string formatName in new[] { "PNG", "image/png", "JPEG", "JPG", "JFIF", "image/jpeg", "image/jpg" })
-                {
-                    uint format = RegisterClipboardFormat(formatName);
-                    if (format == 0 || !IsClipboardFormatAvailable(format))
-                    {
-                        continue;
-                    }
-
-                    byte[] bytes = CopyClipboardGlobalBytes(format);
-                    if (bytes == null || bytes.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        using var ms = new MemoryStream(bytes);
-                        return Image.Load(ms);
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                if (IsClipboardFormatAvailable(CF_DIB))
-                {
-                    byte[] dibData = CopyClipboardGlobalBytes(CF_DIB);
-                    if (dibData != null && dibData.Length > 0)
-                    {
-                        return LoadDibImage(dibData);
-                    }
-                }
-            }
-            finally
-            {
-                CloseClipboard();
-            }
-
-            return null;
         }
 
         private static byte[] CopyClipboardGlobalBytes(uint format)
@@ -545,22 +625,51 @@ namespace snapvox.foundation.core
                 byte[] dibBytes = encoded.DibBytes;
                 byte[] bmpFullBytes = encoded.BmpFullBytes;
                 byte[] pngBytes = encoded.PngBytes;
+                byte[] dibV5Bytes = await Task.Run(() => HasAlphaChannel(image) ? CreateDibV5(image) : null).ConfigureAwait(false);
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && dibBytes != null)
                 {
                     bool success = false;
+                    uint pngFormat = RegisterClipboardFormat("PNG");
+                    uint imagePngFormat = RegisterClipboardFormat("image/png");
                     uint snapVoxFormat = markSnapVoxEditorImage ? RegisterClipboardFormat(SnapVoxEditorImageFormat) : 0;
+
                     for (int i = 0; i < 5; i++)
                     {
                         success = TryWriteNativeClipboard(() =>
                         {
+                            // 1. CF_DIB format for legacy Win32 applications (Office, Paint)
                             if (!SetClipboardBytes(CF_DIB, dibBytes)) return false;
-                            if (snapVoxFormat != 0) SetClipboardBytes(snapVoxFormat, SnapVoxEditorImageBytes);
+
+                            // 2. CF_DIBV5 format if image contains an alpha channel
+                            if (dibV5Bytes != null && dibV5Bytes.Length > 0)
+                            {
+                                SetClipboardBytes(CF_DIBV5, dibV5Bytes);
+                            }
+
+                            // 3. Registered "PNG" and "image/png" formats for alpha-aware applications (Chromium, Electron, messaging apps)
+                            if (pngFormat != 0 && pngBytes != null && pngBytes.Length > 0)
+                            {
+                                SetClipboardBytes(pngFormat, pngBytes);
+                            }
+                            if (imagePngFormat != 0 && pngBytes != null && pngBytes.Length > 0)
+                            {
+                                SetClipboardBytes(imagePngFormat, pngBytes);
+                            }
+
+                            // 4. SnapVox editor source marker
+                            if (snapVoxFormat != 0)
+                            {
+                                SetClipboardBytes(snapVoxFormat, SnapVoxEditorImageBytes);
+                            }
+
                             return true;
                         });
+
                         if (success) break;
                         await Task.Delay(50).ConfigureAwait(false);
                     }
+
                     if (success) return;
                 }
 
@@ -588,6 +697,142 @@ namespace snapvox.foundation.core
                 LogHelper.GetLogger(typeof(UiClipboard)).Error("Failed to set image to clipboard", ex);
                 throw;
             }
+        }
+
+        private static bool HasAlphaChannel(Image image)
+        {
+            if (image == null) return false;
+
+            if (image is Image<Rgba32> rgba32)
+            {
+                return CheckRgba32Alpha(rgba32);
+            }
+
+            if (image is Image<Bgra32> bgra32)
+            {
+                return CheckBgra32Alpha(bgra32);
+            }
+
+            if (image.PixelType.BitsPerPixel == 32)
+            {
+                using var clone = image.CloneAs<Rgba32>();
+                return CheckRgba32Alpha(clone);
+            }
+
+            return false;
+        }
+
+        private static bool CheckRgba32Alpha(Image<Rgba32> img)
+        {
+            bool hasAlpha = false;
+            img.ProcessPixelRows(accessor =>
+            {
+                for (int y = 0; y < accessor.Height; y++)
+                {
+                    var row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x++)
+                    {
+                        if (row[x].A < 255)
+                        {
+                            hasAlpha = true;
+                            return;
+                        }
+                    }
+                }
+            });
+            return hasAlpha;
+        }
+
+        private static bool CheckBgra32Alpha(Image<Bgra32> img)
+        {
+            bool hasAlpha = false;
+            img.ProcessPixelRows(accessor =>
+            {
+                for (int y = 0; y < accessor.Height; y++)
+                {
+                    var row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x++)
+                    {
+                        if (row[x].A < 255)
+                        {
+                            hasAlpha = true;
+                            return;
+                        }
+                    }
+                }
+            });
+            return hasAlpha;
+        }
+
+        private static byte[] CreateDibV5(Image image)
+        {
+            int width = image.Width;
+            int height = image.Height;
+            const int headerSize = 124; // sizeof(BITMAPV5HEADER)
+            int imageSize = checked(width * height * 4);
+            byte[] dibV5 = new byte[checked(headerSize + imageSize)];
+
+            using (var ms = new MemoryStream(dibV5))
+            using (var bw = new BinaryWriter(ms))
+            {
+                bw.Write((uint)headerSize); // bV5Size
+                bw.Write((int)width);       // bV5Width
+                bw.Write((int)height);      // bV5Height (positive = bottom-up)
+                bw.Write((ushort)1);        // bV5Planes
+                bw.Write((ushort)32);       // bV5BitCount
+                bw.Write((uint)3);          // bV5Compression = BI_BITFIELDS
+                bw.Write((uint)imageSize);  // bV5SizeImage
+                bw.Write((int)0);           // bV5XPelsPerMeter
+                bw.Write((int)0);           // bV5YPelsPerMeter
+                bw.Write((uint)0);          // bV5ClrUsed
+                bw.Write((uint)0);          // bV5ClrImportant
+                bw.Write((uint)0x00FF0000); // bV5RedMask
+                bw.Write((uint)0x0000FF00); // bV5GreenMask
+                bw.Write((uint)0x000000FF); // bV5BlueMask
+                bw.Write((uint)0xFF000000); // bV5AlphaMask
+                bw.Write((uint)0x73524742); // bV5CSType = 'sRGB' (0x73524742)
+                // CIEXYZTRIPLE (36 bytes: 9 * int32)
+                for (int i = 0; i < 9; i++) bw.Write((int)0);
+                bw.Write((uint)0);          // bV5GammaRed
+                bw.Write((uint)0);          // bV5GammaGreen
+                bw.Write((uint)0);          // bV5GammaBlue
+                bw.Write((uint)4);          // bV5Intent = LCS_GM_IMAGES
+                bw.Write((uint)0);          // bV5ProfileData
+                bw.Write((uint)0);          // bV5ProfileSize
+                bw.Write((uint)0);          // bV5Reserved
+            }
+
+            Image<Bgra32> bgraImage = image as Image<Bgra32>;
+            bool disposeBgra = false;
+            if (bgraImage == null)
+            {
+                bgraImage = image.CloneAs<Bgra32>();
+                disposeBgra = true;
+            }
+
+            try
+            {
+                int rowStride = checked(width * 4);
+                int destOffset = headerSize;
+                bgraImage.ProcessPixelRows(accessor =>
+                {
+                    for (int y = height - 1; y >= 0; y--)
+                    {
+                        var rowSpan = accessor.GetRowSpan(y);
+                        MemoryMarshal.AsBytes(rowSpan).CopyTo(dibV5.AsSpan(destOffset, rowStride));
+                        destOffset += rowStride;
+                    }
+                });
+            }
+            finally
+            {
+                if (disposeBgra)
+                {
+                    bgraImage.Dispose();
+                }
+            }
+
+            return dibV5;
         }
 
         private static (byte[] DibBytes, byte[] BmpFullBytes, byte[] PngBytes) EncodeClipboardImage(Image image)

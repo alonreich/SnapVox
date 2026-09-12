@@ -1,16 +1,19 @@
 using snapvox.native;
 using snapvox.native.foundation;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using snapvox.foundation.core.AvaloniaShims;
 using Microsoft.Win32;
 using snapvox.foundation.core;
+using snapvox.foundation.IniFile;
 using log4net;
 using System.Linq;
 
@@ -23,10 +26,10 @@ public static class StartupTaskHelper
     private const string ConfigureAdminStartupArgument = "--configure-admin-startup";
     private const string RemoveAdminStartupArgument = "--remove-admin-startup";
 
-    public static readonly string InstallFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "snapvox");
-    public static readonly string ConfigurationFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "snapvox");
-    public static readonly string InstallPath = Path.Combine(InstallFolder, "snapvox.exe");
-    public static readonly string UninstallExePath = Path.Combine(InstallFolder, "Uninstall.exe");
+    public static string InstallFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "snapvox");
+    public static string ConfigurationFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "snapvox");
+    public static string InstallPath => Path.Combine(InstallFolder, "snapvox.exe");
+    public static string UninstallExePath => Path.Combine(InstallFolder, "Uninstall.exe");
 
     private static void LogSuppressedException(string operation, Exception ex)
     {
@@ -44,8 +47,11 @@ public static class StartupTaskHelper
         return ex is UnauthorizedAccessException || ex is InvalidOperationException || ex is Win32Exception || ex is NotSupportedException;
     }
 
+    internal static bool? IsElevatedOverride { get; set; }
+
     public static bool IsElevated()
     {
+        if (IsElevatedOverride.HasValue) return IsElevatedOverride.Value;
         using (var identity = WindowsIdentity.GetCurrent())
         {
             var principal = new WindowsPrincipal(identity);
@@ -53,8 +59,22 @@ public static class StartupTaskHelper
         }
     }
 
-    private static async Task<int> RunHiddenProcessAsync(string fileName, string arguments, int timeoutMilliseconds)
+    internal static Func<string, string, int, Task<int>> RunProcessHook { get; set; }
+    internal static Func<string, string, int, Task<(int ExitCode, string Output, string Error)>> RunProcessWithOutputHook { get; set; }
+
+    private static async Task<(int ExitCode, string Output, string Error)> RunHiddenProcessWithOutputAsync(string fileName, string arguments, int timeoutMilliseconds)
     {
+        if (RunProcessWithOutputHook != null)
+        {
+            return await RunProcessWithOutputHook(fileName, arguments, timeoutMilliseconds).ConfigureAwait(false);
+        }
+
+        if (RunProcessHook != null)
+        {
+            int exit = await RunProcessHook(fileName, arguments, timeoutMilliseconds).ConfigureAwait(false);
+            return (exit, string.Empty, string.Empty);
+        }
+
         using (var process = new Process())
         {
             process.StartInfo = new ProcessStartInfo
@@ -71,7 +91,7 @@ public static class StartupTaskHelper
             if (!process.Start())
             {
                 ExecutionTrace.LogEvent("StartupTaskHelper.RunHiddenProcess", "StartFailed", fileName + " " + arguments);
-                return -1;
+                return (-1, string.Empty, "Failed to start process");
             }
 
             var outputTask = process.StandardOutput.ReadToEndAsync();
@@ -86,14 +106,20 @@ public static class StartupTaskHelper
                 try { process.Kill(); } catch (Exception ex) { LogSuppressedException("RunHiddenProcess.Kill", ex); }
                 ExecutionTrace.LogEvent("StartupTaskHelper.RunHiddenProcess", "Timeout", fileName + " " + arguments);
                 try { await process.WaitForExitAsync().ConfigureAwait(false); } catch { }
-                return -2;
+                return (-2, string.Empty, "Timeout");
             }
 
             string output = await outputTask.ConfigureAwait(false);
             string error = await errorTask.ConfigureAwait(false);
             ExecutionTrace.LogEvent("StartupTaskHelper.RunHiddenProcess", "Exit", string.Format("{0};{1};{2};{3}", fileName, arguments, process.ExitCode, output + error));
-            return process.ExitCode;
+            return (process.ExitCode, output, error);
         }
+    }
+
+    private static async Task<int> RunHiddenProcessAsync(string fileName, string arguments, int timeoutMilliseconds)
+    {
+        var (exitCode, _, _) = await RunHiddenProcessWithOutputAsync(fileName, arguments, timeoutMilliseconds).ConfigureAwait(false);
+        return exitCode;
     }
 
     private static string GetStartupTaskExecutablePath()
@@ -167,13 +193,83 @@ public static class StartupTaskHelper
         try
         {
             if (!await HasElevatedStartupTaskAsync().ConfigureAwait(false)) return;
-            string executable = GetStartupTaskExecutablePath();
-            await ConfigureElevatedStartupTaskAsync(executable).ConfigureAwait(false);
+
+            if (await HasBatteryOrPowerRestrictionsAsync().ConfigureAwait(false))
+            {
+                Log?.Info("Power or battery restrictions detected on scheduled task. Re-registering with explicit overrides...");
+                string executable = GetStartupTaskExecutablePath();
+                await ConfigureElevatedStartupTaskAsync(executable).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
             LogSuppressedException("EnsureBatteryRestrictionsDisabled", ex);
         }
+    }
+
+    public static async Task<bool> HasBatteryOrPowerRestrictionsAsync()
+    {
+        try
+        {
+            var (exitCode, output, _) = await RunHiddenProcessWithOutputAsync("schtasks.exe", string.Format("/Query /TN \"{0}\" /XML", ScheduledTaskName), 10000).ConfigureAwait(false);
+            if (exitCode != 0 || string.IsNullOrWhiteSpace(output))
+            {
+                return false;
+            }
+
+            return HasBatteryOrPowerRestrictionsInXml(output);
+        }
+        catch (Exception ex)
+        {
+            LogSuppressedException("HasBatteryOrPowerRestrictions", ex);
+            return false;
+        }
+    }
+
+    internal static bool HasBatteryOrPowerRestrictionsInXml(string xmlContent)
+    {
+        if (string.IsNullOrWhiteSpace(xmlContent)) return false;
+        try
+        {
+            var doc = System.Xml.Linq.XDocument.Parse(xmlContent);
+            var settings = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Settings");
+            if (settings == null)
+            {
+                return HasBatteryOrPowerRestrictionsInTextFallback(xmlContent);
+            }
+
+            string GetElementValue(string localName) => settings.Elements().FirstOrDefault(e => e.Name.LocalName == localName)?.Value;
+
+            string disallowBatteries = GetElementValue("DisallowStartIfOnBatteries");
+            string stopOnBatteries = GetElementValue("StopIfGoingOnBatteries");
+            string runOnlyIfIdle = GetElementValue("RunOnlyIfIdle");
+            string executionTimeLimit = GetElementValue("ExecutionTimeLimit");
+
+            var idleSettings = settings.Elements().FirstOrDefault(e => e.Name.LocalName == "IdleSettings");
+            string stopOnIdleEnd = idleSettings?.Elements().FirstOrDefault(e => e.Name.LocalName == "StopOnIdleEnd")?.Value;
+
+            bool hasDisallowBatteries = string.Equals(disallowBatteries, "true", StringComparison.OrdinalIgnoreCase);
+            bool hasStopOnBattery = string.Equals(stopOnBatteries, "true", StringComparison.OrdinalIgnoreCase);
+            bool hasIdleRestriction = string.Equals(runOnlyIfIdle, "true", StringComparison.OrdinalIgnoreCase);
+            bool hasStopOnIdleEnd = string.Equals(stopOnIdleEnd, "true", StringComparison.OrdinalIgnoreCase);
+            bool hasExecutionTimeout = !string.IsNullOrEmpty(executionTimeLimit) && !string.Equals(executionTimeLimit, "PT0S", StringComparison.OrdinalIgnoreCase);
+
+            return hasDisallowBatteries || hasStopOnBattery || hasIdleRestriction || hasStopOnIdleEnd || hasExecutionTimeout;
+        }
+        catch
+        {
+            return HasBatteryOrPowerRestrictionsInTextFallback(xmlContent);
+        }
+    }
+
+    private static bool HasBatteryOrPowerRestrictionsInTextFallback(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        return text.Contains("<DisallowStartIfOnBatteries>true", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("<StopIfGoingOnBatteries>true", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("<RunOnlyIfIdle>true", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("<StopOnIdleEnd>true", StringComparison.OrdinalIgnoreCase)
+            || (!text.Contains("<ExecutionTimeLimit>PT0S", StringComparison.OrdinalIgnoreCase) && text.Contains("<ExecutionTimeLimit>", StringComparison.OrdinalIgnoreCase));
     }
 
     public static async Task<bool> ConfigureElevatedStartupTaskAsync(string executablePath = null)
@@ -211,9 +307,7 @@ public static class StartupTaskHelper
                 return false;
             }
 
-            StartupHelper.DeleteRunAll();
-            StartupHelper.DeleteRunUser();
-            StartupHelper.DeleteStartupFolderShortcut();
+            PurgeAllRunKeys();
             ExecutionTrace.LogEvent("StartupTaskHelper.ScheduledTask", "Configured", targetExecutable);
             return await HasElevatedStartupTaskAsync().ConfigureAwait(false);
         }
@@ -322,6 +416,149 @@ public static class StartupTaskHelper
         }
     }
 
+    public static string[] GetSettingsCandidates() => new[]
+    {
+        Path.Combine(InstallFolder, "snapvox.ini"),
+        Path.Combine(InstallFolder, @"Data\Settings\snapvox.ini"),
+        Path.Combine(ConfigurationFolder, "snapvox.ini")
+    };
+
+    public static bool DetectAdminStartupInSettingsCandidates(IEnumerable<string> candidates = null)
+    {
+        try
+        {
+            foreach (string file in candidates ?? GetSettingsCandidates())
+            {
+                if (File.Exists(file))
+                {
+                    string text = File.ReadAllText(file);
+                    if (text.IndexOf("RunAsAdministratorOnStartup=true", StringComparison.OrdinalIgnoreCase) >= 0
+                        || text.IndexOf("RunAsAdministratorOnStartup = true", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    public static void PurgeAllRunKeys()
+    {
+        string[] runSubKeys = {
+            @"Software\Microsoft\Windows\CurrentVersion\Run",
+            @"Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"
+        };
+        string[] valueNames = { "snapvox", "SnapVox" };
+
+        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
+        {
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                    foreach (var subKey in runSubKeys)
+                    {
+                        try
+                        {
+                            using var key = baseKey.OpenSubKey(subKey, true);
+                            if (key == null) continue;
+                            foreach (var name in valueNames)
+                            {
+                                try
+                                {
+                                    if (key.GetValue(name) != null)
+                                    {
+                                        key.DeleteValue(name, false);
+                                        LogInstallationElevationState($"Purged Run key: {hive}\\{subKey}\\{name} ({view})");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    LogSuppressedException("PurgeAllRunKeys.DeleteValue", ex);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogSuppressedException("PurgeAllRunKeys.OpenSubKey", ex);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogSuppressedException("PurgeAllRunKeys.OpenBaseKey", ex);
+                }
+            }
+        }
+
+        StartupHelper.DeleteStartupFolderShortcut();
+    }
+
+    public static void LogInstallationElevationState(string message)
+    {
+        try
+        {
+            string path = DeploymentFootprint.TempInstallationLogPath;
+            string logDir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(logDir) && !Directory.Exists(logDir))
+            {
+                Directory.CreateDirectory(logDir);
+            }
+            string line = $"{DateTime.Now:HH:mm:ss.fff}|STARTUP_ELEVATION|INFO|{message}{Environment.NewLine}";
+            File.AppendAllText(path, line, Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            LogSuppressedException("LogInstallationElevationState", ex);
+        }
+    }
+
+    public static async Task RestoreStartupAfterInstallAsync(bool keepUserSettings, bool hadElevatedStartup)
+    {
+        LogInstallationElevationState($"Beginning startup restoration: keepUserSettings={keepUserSettings}, hadElevatedStartup={hadElevatedStartup}");
+        IniConfig.IniDirectory = ConfigurationFolder;
+        IniConfig.Init("snapvox", IniConfigurationDeployer.ConfigBaseName);
+        var config = IniConfig.GetIniSection<CoreConfiguration>(allowSave: false);
+        bool candidatesHadElevated = DetectAdminStartupInSettingsCandidates();
+        bool elevated = keepUserSettings && (hadElevatedStartup || config.RunAsAdministratorOnStartup || candidatesHadElevated);
+        LogInstallationElevationState($"Evaluated elevation requirement: hadElevatedStartup={hadElevatedStartup}, configFlag={config.RunAsAdministratorOnStartup}, candidatesHadElevated={candidatesHadElevated} -> effectiveElevated={elevated}");
+
+        if (elevated)
+        {
+            LogInstallationElevationState("Configuring elevated scheduled task...");
+            if (!await ConfigureElevatedStartupTaskAsync(InstallPath).ConfigureAwait(false))
+            {
+                LogInstallationElevationState("FAILED to configure elevated scheduled task.");
+                throw new IOException("Could not restore administrator startup. Your settings backup has been kept.");
+            }
+            LogInstallationElevationState("Elevated scheduled task configured successfully. Purging Run registry entries to prevent dual startup.");
+            PurgeAllRunKeys();
+        }
+        else
+        {
+            LogInstallationElevationState("Configuring standard non-elevated user startup in HKCU Run...");
+            await DeleteElevatedStartupTaskAsync().ConfigureAwait(false);
+            PurgeAllRunKeys();
+            StartupHelper.SetRunUser("--autorun", InstallPath);
+            LogInstallationElevationState("Standard user Run startup configured.");
+        }
+
+        config.RunAsAdministratorOnStartup = elevated;
+        string primaryIni = Path.Combine(ConfigurationFolder, "snapvox.ini");
+        IniConfig.SaveTo(primaryIni);
+        foreach (string candidate in GetSettingsCandidates())
+        {
+            if (File.Exists(candidate) && !string.Equals(candidate, primaryIni, StringComparison.OrdinalIgnoreCase))
+            {
+                try { IniConfig.SaveTo(candidate); } catch { }
+            }
+        }
+        LogInstallationElevationState($"Startup restoration finalized with RunAsAdministratorOnStartup={elevated}");
+    }
+
     public static bool IsRunningFromInstallPath()
     {
         try
@@ -407,8 +644,16 @@ public static class StartupTaskHelper
     private const int IdYes = 6;
     private const int IdNo = 7;
 
+    internal static Func<string, string, MessageBoxButtons, MessageBoxIcon, IntPtr, DialogResult?> MessageBoxHook { get; set; }
+
     public static DialogResult ShowForegroundMessageBox(string message, string title, MessageBoxButtons buttons = MessageBoxButtons.OK, MessageBoxIcon icon = MessageBoxIcon.Information, IntPtr ownerHWnd = default)
     {
+        if (MessageBoxHook != null)
+        {
+            var hooked = MessageBoxHook(message, title, buttons, icon, ownerHWnd);
+            if (hooked.HasValue) return hooked.Value;
+        }
+
         try
         {
             uint type = MbOk;

@@ -12,6 +12,9 @@
         WindowStartupLocation="Manual"
         Cursor="Arrow">
     <Window.Resources>
+        <GridLength x:Key="SliderPreContentMargin">0</GridLength>
+        <GridLength x:Key="SliderPostContentMargin">0</GridLength>
+
         <VisualBrush x:Key="CheckerboardBrush" TileMode="Tile" SourceRect="0,0,20,20" DestinationRect="0,0,20,20">
             <VisualBrush.Visual>
                 <Canvas Width="20" Height="20">
@@ -175,11 +178,11 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}" />
             <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="2,6" />
+            <Setter Property="Padding" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Width" Value="96" />
             <Setter Property="Height" Value="74" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <Style Selector="Button.cropmode /template/ ContentPresenter">
@@ -187,8 +190,8 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="{DynamicResource SnapVoxSeparatorBrush}" />
             <Setter Property="Background" Value="{DynamicResource SnapVoxActionButtonBrush}" />
-            <Setter Property="Padding" Value="2,6" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <Style Selector="Button.cropmode:hover /template/ ContentPresenter">
@@ -309,12 +312,9 @@
             </Style.Animations>
         </Style>
         <Style Selector="Button.thickness">
-            <Setter Property="Width" Value="16" />
-            <Setter Property="MinWidth" Value="16" />
             <Setter Property="Height" Value="28" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Margin" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -370,18 +370,33 @@
         </Style>
         <Style Selector="Slider.thickness-slider">
             <Setter Property="Height" Value="32" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Foreground" Value="{DynamicResource SnapVoxAccentDarkBrush}" />
             <Setter Property="Background" Value="{DynamicResource SnapVoxSliderTrackBrush}" />
+            <Setter Property="ClipToBounds" Value="False" />
+        </Style>
+        <Style Selector="Slider.thickness-slider /template/ Track#PART_Track">
+            <Setter Property="ClipToBounds" Value="False" />
+        </Style>
+        <Style Selector="Slider.thickness-slider /template/ Grid#HorizontalTemplate">
+            <Setter Property="ClipToBounds" Value="False" />
+        </Style>
+        <Style Selector="Slider.thickness-slider /template/ Thumb">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ClipToBounds" Value="False" />
         </Style>
         <Style Selector="Slider.pixelate-strength">
             <Setter Property="Height" Value="44" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Foreground" Value="{DynamicResource SnapVoxAccentDarkBrush}" />
             <Setter Property="Background" Value="{DynamicResource SnapVoxSliderTrackBrush}" />
+            <Setter Property="ClipToBounds" Value="False" />
         </Style>
         <Style Selector="Slider.pixelate-strength /template/ Thumb">
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ClipToBounds" Value="False" />
         </Style>
         
         <Style Selector="Button.zoom-text">
@@ -576,8 +591,8 @@
                     <Button Classes="toolbar" Name="CropTool" AutomationProperties.Name="Crop tool" ToolTip.Tip="Crop region. Opens a menu of crop shapes. Esc exits this tool." Click="OnToolClick" Tag="Crop">
                         <svg:Svg Width="24" Height="24" Path="avares://snapvox.editor/Icons/crop.svg" />
                     </Button>
-                    <Popup Name="CropModePopup" Placement="BottomEdgeAlignedLeft" VerticalOffset="8" HorizontalOffset="-6" IsLightDismissEnabled="False">
-                        <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="12,10" Width="732" BoxShadow="0 6 20 0 #AA000000">
+                    <Popup Name="CropModePopup" FlowDirection="LeftToRight" Placement="BottomEdgeAlignedLeft" VerticalOffset="8" HorizontalOffset="-6" IsLightDismissEnabled="False">
+                        <Border FlowDirection="LeftToRight" Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="12,10" Width="732" BoxShadow="0 6 20 0 #AA000000">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="CROP SHAPE" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
                                 <StackPanel Name="CropModeButtons" Orientation="Horizontal" Spacing="5">
@@ -585,68 +600,68 @@
                                         AutomationProperties.Name="Free crop"
                                         AutomationProperties.HelpText="Free crop. Drag any box you like - the picture keeps exactly what is inside it, in whatever shape you drew."
                                         ToolTip.Tip="Free crop. Drag any box you like - the picture keeps exactly what is inside it, in whatever shape you drew.">
-                                    <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-free.svg" />
-                                        <TextBlock Text="Free Crop" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                                    </StackPanel>
+                                    <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                        <svg:Svg Grid.Row="0" Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-free.svg" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="Free Crop" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Stretch" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </Grid>
                                 </Button>
                                 <Button Classes="cropmode" Name="CropModeKeepRatio" Tag="KeepRatio" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
                                         AutomationProperties.Name="Keep the current shape"
                                         AutomationProperties.HelpText="Same shape as now. The box is locked to this picture's current shape, so the result looks like the original - just a smaller piece of it."
                                         ToolTip.Tip="Same shape as now. The box is locked to this picture's current shape, so the result looks like the original - just a smaller piece of it.">
-                                    <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-keep-ratio.svg" />
-                                        <TextBlock Text="Keep Ratio" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                                    </StackPanel>
+                                    <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                        <svg:Svg Grid.Row="0" Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-keep-ratio.svg" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="Keep Ratio" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Stretch" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </Grid>
                                 </Button>
                                 <Button Classes="cropmode" Name="CropModeSquare" Tag="Square" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
                                         AutomationProperties.Name="Square crop"
                                         AutomationProperties.HelpText="Perfect square. Width and height come out equal - the shape profile pictures and app icons use."
                                         ToolTip.Tip="Perfect square. Width and height come out equal - the shape profile pictures and app icons use.">
-                                    <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-square.svg" />
-                                        <TextBlock Text="1:1 Square" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                                    </StackPanel>
+                                    <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                        <svg:Svg Grid.Row="0" Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-square.svg" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="1:1 Square" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Stretch" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </Grid>
                                 </Button>
                                 <Button Classes="cropmode" Name="CropModeWide" Tag="Wide" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
                                         AutomationProperties.Name="Wide screen crop"
                                         AutomationProperties.HelpText="Wide screen. The long, letterbox shape of a TV or a YouTube video."
                                         ToolTip.Tip="Wide screen. The long, letterbox shape of a TV or a YouTube video.">
-                                    <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-wide.svg" />
-                                        <TextBlock Text="16:9 Wide" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                                    </StackPanel>
+                                    <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                        <svg:Svg Grid.Row="0" Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-wide.svg" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="16:9 Wide" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Stretch" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </Grid>
                                 </Button>
                                 <Button Classes="cropmode" Name="CropModeTall" Tag="Tall" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
                                         AutomationProperties.Name="Tall phone crop"
                                         AutomationProperties.HelpText="Tall phone screen. The upright shape of a Story, a Reel or a TikTok."
                                         ToolTip.Tip="Tall phone screen. The upright shape of a Story, a Reel or a TikTok.">
-                                    <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-tall.svg" />
-                                        <TextBlock Text="9:16 Tall" FontSize="11" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                                    </StackPanel>
+                                    <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                        <svg:Svg Grid.Row="0" Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-tall.svg" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="9:16 Tall" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Stretch" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </Grid>
                                 </Button>
                                 <Button Classes="cropmode" Name="CropModeVerticalStrip" Tag="VerticalStrip" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
                                         AutomationProperties.Name="Cut out vertical slice, stitching sides together"
                                         AutomationProperties.HelpText="Cut out a vertical slice. The selected middle column is deleted, and the left and right pieces weld together seamlessly."
                                         ToolTip.Tip="Cut Out Vertical: select a middle slice to delete; the left and right sides weld together seamlessly.">
-                                    <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-column.svg" />
-                                        <TextBlock Text="Cut Vertical" FontSize="10.5" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                                    </StackPanel>
+                                    <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                        <svg:Svg Grid.Row="0" Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-column.svg" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="Cut Vertical" FontSize="10.5" FontWeight="SemiBold" HorizontalAlignment="Stretch" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </Grid>
                                 </Button>
                                 <Button Classes="cropmode" Name="CropModeHorizontalStrip" Tag="HorizontalStrip" Click="OnCropModeClick" PointerEntered="OnCropModeHover" PointerExited="OnCropModeHoverEnd"
                                         AutomationProperties.Name="Cut out horizontal slice, stitching sides together"
                                         AutomationProperties.HelpText="Cut out a horizontal slice. The selected middle band is deleted, and the top and bottom pieces weld together seamlessly."
                                         ToolTip.Tip="Cut Out Horizontal: select a middle slice to delete; the top and bottom sides weld together seamlessly.">
-                                    <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <svg:Svg Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-band.svg" />
-                                        <TextBlock Text="Cut Horiz." FontSize="10.5" FontWeight="SemiBold" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
-                                    </StackPanel>
+                                    <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                        <svg:Svg Grid.Row="0" Width="28" Height="28" HorizontalAlignment="Center" Path="avares://snapvox.editor/Icons/crop-mode-band.svg" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,0" Text="Cut Horiz." FontSize="10.5" FontWeight="SemiBold" HorizontalAlignment="Stretch" TextAlignment="Center" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" />
+                                    </Grid>
                                 </Button>
                                 </StackPanel>
-                                <Border Background="{DynamicResource SnapVoxCanvasBrush}" CornerRadius="4" Padding="10,8" Margin="0,4,0,0">
-                                    <TextBlock Name="CropModeDescription" TextWrapping="Wrap" MaxWidth="700" FontSize="11.5" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" LineHeight="16" />
+                                <Border Background="{DynamicResource SnapVoxCanvasBrush}" CornerRadius="4" Padding="12,8" Margin="0,6,0,0" HorizontalAlignment="Stretch">
+                                    <TextBlock Name="CropModeDescription" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" FontSize="11.5" Foreground="{DynamicResource SnapVoxPrimaryTextBrush}" LineHeight="16" />
                                 </Border>
                             </StackPanel>
                         </Border>
@@ -889,7 +904,7 @@
                         <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="5,0" />
                         
                         <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Button Name="CustomColorBtn" MinWidth="59" MinHeight="40" VerticalAlignment="Center" Cursor="Hand" Padding="6,0,7,0" AutomationProperties.Name="Current colour, opens colour picker" ToolTip.Tip="Current color (click to open picker)">
+                            <Button Name="CustomColorBtn" MinWidth="64" MinHeight="40" VerticalAlignment="Center" Cursor="Hand" Padding="6,0,6,0" AutomationProperties.Name="Current colour, opens colour picker" ToolTip.Tip="Current color (click to open picker)">
                                 <Button.Flyout>
                                     <Flyout Placement="Top">
                                         <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="14" MinWidth="316" MaxWidth="420">
@@ -922,7 +937,7 @@
                                 </Button.Flyout>
                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                     <svg:Svg Width="18" Height="18" Path="avares://snapvox.editor/Icons/custom-color.svg" />
-                                    <Border Name="CurrentColorPreview" Width="20" Height="20" CornerRadius="3" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="1"/>
+                                    <Border Name="CurrentColorPreview" Width="24" Height="24" CornerRadius="4" Background="{DynamicResource SnapVoxAccentBrush}" BorderBrush="{DynamicResource SnapVoxPrimaryTextBrush}" BorderThickness="1"/>
                                 </StackPanel>
                             </Button>
                             <Button Name="CopyCurrentColorBtn" Classes="toolbar" Width="NaN" MinWidth="82" Height="36" Padding="6,0" Click="OnCopyCurrentColorClick" AutomationProperties.Name="Copy current hex color code" ToolTip.Tip="Copy color hex code to clipboard" Cursor="Hand">
@@ -957,70 +972,77 @@
 
                         <StackPanel Name="ThicknessPanel" Orientation="Horizontal" Spacing="2" Margin="25,0,0,0" VerticalAlignment="Center">
                             <Rectangle Width="1" Height="30" Fill="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,0,5,0" />
-                            <StackPanel Name="ThicknessChoicesPanel" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
-                                <Button Name="LineSizeBtn" Classes="line-size-btn" AutomationProperties.Name="Line size variety selection" ToolTip.Tip="Line size menu (click for more thickness options)">
-                                    <Button.Flyout>
-                                        <Flyout Placement="Top">
-                                            <Border Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="12" Width="268">
-                                                <StackPanel Spacing="8">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock Text="LINE SIZE SELECTION" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" />
-                                                        <TextBlock Grid.Column="1" Name="ThicknessFlyoutValueText" Text="3 px" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SnapVoxAccentBrush}" VerticalAlignment="Center" />
-                                                    </Grid>
-                                                    <Border Height="1" Background="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,2,0,4" />
-                                                    <WrapPanel Name="ThicknessFlyoutPanel" Width="244" HorizontalAlignment="Center">
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="1" ToolTip.Tip="1px"><TextBlock Text="1" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="2" ToolTip.Tip="2px"><TextBlock Text="2" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="3" ToolTip.Tip="3px"><TextBlock Text="3" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="4" ToolTip.Tip="4px"><TextBlock Text="4" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="5" ToolTip.Tip="5px"><TextBlock Text="5" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="6" ToolTip.Tip="6px"><TextBlock Text="6" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="7" ToolTip.Tip="7px"><TextBlock Text="7" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="8" ToolTip.Tip="8px"><TextBlock Text="8" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="9" ToolTip.Tip="9px"><TextBlock Text="9" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="10" ToolTip.Tip="10px"><TextBlock Text="10" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="12" ToolTip.Tip="12px"><TextBlock Text="12" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="14" ToolTip.Tip="14px"><TextBlock Text="14" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="16" ToolTip.Tip="16px"><TextBlock Text="16" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="18" ToolTip.Tip="18px"><TextBlock Text="18" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="20" ToolTip.Tip="20px"><TextBlock Text="20" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="24" ToolTip.Tip="24px"><TextBlock Text="24" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="28" ToolTip.Tip="28px"><TextBlock Text="28" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                        <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="32" ToolTip.Tip="32px"><TextBlock Text="32" FontSize="11" FontWeight="SemiBold"/></Button>
-                                                    </WrapPanel>
-                                                    <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
-                                                        <TextBlock Text="Custom:" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" Margin="0,0,8,0"/>
-                                                        <Slider Grid.Column="1" Name="ThicknessFlyoutSlider" Classes="thickness-slider" Minimum="1" Maximum="40" ValueChanged="OnThicknessSliderChanged" ToolTip.Tip="Fine-tune thickness" />
-                                                    </Grid>
-                                                </StackPanel>
-                                            </Border>
-                                        </Flyout>
-                                    </Button.Flyout>
+                            <StackPanel Name="ThicknessChoicesPanel" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center" FlowDirection="LeftToRight">
+                                <Button Name="LineSizeBtn" Classes="line-size-btn" Click="OnLineSizeBtnClick" AutomationProperties.Name="Line size variety selection" ToolTip.Tip="Line size menu (click for more thickness options)">
                                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                                         <TextBlock Name="ThicknessLabel" Text="Line size" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" />
                                         <TextBlock Text="▾" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" />
                                     </StackPanel>
                                 </Button>
-                                <Button Classes="thickness" Click="OnThicknessClick" Tag="1" AutomationProperties.Name="1 pixel thickness" ToolTip.Tip="1px">
+                                <Popup Name="LineSizePopup" FlowDirection="LeftToRight" PlacementTarget="{Binding ElementName=LineSizeBtn}" Placement="Top" VerticalOffset="-6" IsLightDismissEnabled="True">
+                                    <Border FlowDirection="LeftToRight" Background="{DynamicResource SnapVoxPanelDarkBrush}" CornerRadius="8" BorderBrush="{DynamicResource SnapVoxSeparatorBrush}" BorderThickness="1" Padding="14,12,14,14" Width="276" BoxShadow="0 6 20 0 #AA000000" ClipToBounds="False">
+                                        <Border.Resources>
+                                            <GridLength x:Key="SliderPreContentMargin">0</GridLength>
+                                            <GridLength x:Key="SliderPostContentMargin">0</GridLength>
+                                        </Border.Resources>
+                                        <StackPanel Spacing="8" ClipToBounds="False">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="LINE SIZE SELECTION" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Name="ThicknessFlyoutValueText" Text="3 px" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SnapVoxAccentBrush}" VerticalAlignment="Center" />
+                                            </Grid>
+                                            <Border Height="1" Background="{DynamicResource SnapVoxSeparatorBrush}" Margin="0,2,0,4" />
+                                            <WrapPanel Name="ThicknessFlyoutPanel" Width="244" HorizontalAlignment="Center">
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="1" ToolTip.Tip="1px"><TextBlock Text="1" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="2" ToolTip.Tip="2px"><TextBlock Text="2" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="3" ToolTip.Tip="3px"><TextBlock Text="3" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="4" ToolTip.Tip="4px"><TextBlock Text="4" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="5" ToolTip.Tip="5px"><TextBlock Text="5" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="6" ToolTip.Tip="6px"><TextBlock Text="6" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="7" ToolTip.Tip="7px"><TextBlock Text="7" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="8" ToolTip.Tip="8px"><TextBlock Text="8" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="9" ToolTip.Tip="9px"><TextBlock Text="9" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="10" ToolTip.Tip="10px"><TextBlock Text="10" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="12" ToolTip.Tip="12px"><TextBlock Text="12" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="14" ToolTip.Tip="14px"><TextBlock Text="14" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="16" ToolTip.Tip="16px"><TextBlock Text="16" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="18" ToolTip.Tip="18px"><TextBlock Text="18" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="20" ToolTip.Tip="20px"><TextBlock Text="20" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="24" ToolTip.Tip="24px"><TextBlock Text="24" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="28" ToolTip.Tip="28px"><TextBlock Text="28" FontSize="11" FontWeight="SemiBold"/></Button>
+                                                <Button Classes="flyout-thickness" Click="OnThicknessClick" Tag="32" ToolTip.Tip="32px"><TextBlock Text="32" FontSize="11" FontWeight="SemiBold"/></Button>
+                                            </WrapPanel>
+                                            <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,2" VerticalAlignment="Center" ClipToBounds="False">
+                                                <TextBlock Text="Custom:" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxSecondaryTextBrush}" Margin="0,0,8,0"/>
+                                                <Slider Grid.Column="1" Name="ThicknessFlyoutSlider" Classes="thickness-slider" Minimum="1" Maximum="40" ValueChanged="OnThicknessSliderChanged" ToolTip.Tip="Fine-tune thickness" ClipToBounds="False">
+                                                    <Slider.Resources>
+                                                        <GridLength x:Key="SliderPreContentMargin">0</GridLength>
+                                                        <GridLength x:Key="SliderPostContentMargin">0</GridLength>
+                                                    </Slider.Resources>
+                                                </Slider>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </Popup>
+                                <Button Classes="thickness" Click="OnThicknessClick" Tag="1" Width="10" Margin="0" AutomationProperties.Name="1 pixel thickness" ToolTip.Tip="1px">
                                     <Rectangle Width="1" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>
-                                <Button Classes="thickness" Click="OnThicknessClick" Tag="2" AutomationProperties.Name="2 pixel thickness" ToolTip.Tip="2px">
+                                <Button Classes="thickness" Click="OnThicknessClick" Tag="2" Width="11" Margin="0" AutomationProperties.Name="2 pixel thickness" ToolTip.Tip="2px">
                                     <Rectangle Width="2" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>
-                                <Button Classes="thickness" Click="OnThicknessClick" Tag="3" AutomationProperties.Name="3 pixel thickness" ToolTip.Tip="3px">
+                                <Button Classes="thickness" Click="OnThicknessClick" Tag="3" Width="12" Margin="0" AutomationProperties.Name="3 pixel thickness" ToolTip.Tip="3px">
                                     <Rectangle Width="3" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>
-                                <Button Classes="thickness" Click="OnThicknessClick" Tag="5" AutomationProperties.Name="5 pixel thickness" ToolTip.Tip="5px">
+                                <Button Classes="thickness" Click="OnThicknessClick" Tag="5" Width="15" Margin="0" AutomationProperties.Name="5 pixel thickness" ToolTip.Tip="5px">
                                     <Rectangle Width="5" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>
-                                <Button Classes="thickness" Click="OnThicknessClick" Tag="8" AutomationProperties.Name="8 pixel thickness" ToolTip.Tip="8px">
-                                     <Rectangle Width="8" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
+                                <Button Classes="thickness" Click="OnThicknessClick" Tag="8" Width="18" Margin="0" AutomationProperties.Name="8 pixel thickness" ToolTip.Tip="8px">
+                                    <Rectangle Width="8" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>
-                                <Button Classes="thickness" Click="OnThicknessClick" Tag="12" AutomationProperties.Name="12 pixel thickness" ToolTip.Tip="12px">
-                                     <Rectangle Width="12" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
+                                <Button Classes="thickness" Click="OnThicknessClick" Tag="12" Width="22" Margin="0" AutomationProperties.Name="12 pixel thickness" ToolTip.Tip="12px">
+                                    <Rectangle Width="12" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>
-                                <Button Classes="thickness" Click="OnThicknessClick" Tag="16" AutomationProperties.Name="16 pixel thickness" ToolTip.Tip="16px">
-                                     <Rectangle Width="16" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
+                                <Button Classes="thickness" Click="OnThicknessClick" Tag="16" Width="26" Margin="0" AutomationProperties.Name="16 pixel thickness" ToolTip.Tip="16px">
+                                    <Rectangle Width="16" Height="20" Fill="{DynamicResource SnapVoxToolbarTextBrush}"/>
                                 </Button>
                             </StackPanel>
                             <StackPanel Name="PixelateToolbarSection" Orientation="Horizontal" Spacing="8" IsVisible="False" VerticalAlignment="Center">
@@ -1031,8 +1053,14 @@
                                          Minimum="2"
                                          Maximum="29"
                                          Width="140"
+                                         ClipToBounds="False"
                                          AutomationProperties.Name="Pixelation strength"
-                                         ToolTip.Tip="Pixelization strength" />
+                                         ToolTip.Tip="Pixelization strength">
+                                    <Slider.Resources>
+                                        <GridLength x:Key="SliderPreContentMargin">0</GridLength>
+                                        <GridLength x:Key="SliderPostContentMargin">0</GridLength>
+                                    </Slider.Resources>
+                                </Slider>
                                 <TextBlock Name="PixelatePercentText" Text="0%" MinWidth="38" VerticalAlignment="Center" Foreground="{DynamicResource SnapVoxToolbarTextBrush}" FontSize="{DynamicResource SnapVoxToolbarFontSize}" FontWeight="SemiBold" TextAlignment="Right" />
                             </StackPanel>
                         </StackPanel>

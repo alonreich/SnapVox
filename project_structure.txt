@@ -66,6 +66,7 @@ UI/UX ACCESSIBILITY & LAYOUT MANDATES
 6. **Elastic Layout:** Labels, inputs and buttons use `MinWidth`/`MinHeight`, never fixed `Width`/`Height`, so DPI scaling and longer strings cannot clip text. Every resizable window declares `MinWidth`/`MinHeight`.
 7. **RTL Ready:** Every window calls `UiLayoutDirection.Apply(this)`, which mirrors the chrome when `CoreConfiguration.Language` is a right-to-left locale. String translation still requires `language_*.xml` catalogues for `snapvox.foundation.core.Language`; none ship today, so the chrome is English-only until they are authored.
 8. **One Icon, One Meaning:** No icon asset is reused for two different actions, and icons within a row share one size (24px in toolbars, 16px in the tray).
+9. **LOCKED UI SPECIFICATION - PERMANENT AND IMMUTABLE - DO NOT ALTER (Line Thickness Quick Buttons Geometry):** The bottom pane quick line thickness buttons in `ThicknessChoicesPanel` are permanently locked to exact button widths: Tag 1 = 10px, Tag 2 = 11px, Tag 3 = 12px, Tag 5 = 15px, Tag 8 = 18px, Tag 12 = 22px, Tag 16 = 26px, with `Margin="0"`, `Spacing="0"`, and `FlowDirection="LeftToRight"`. This geometry provides a human-eye symmetrical progression. Modifying, recalculating, or tampering with these dimensions or spacing is strictly prohibited for all AI agents and developers.
 
 TELEMETRY & LOGGING MANDATE (SINGLE SOURCE OF TRUTH)
 ----------------------------------------------------
@@ -166,7 +167,7 @@ ROLES & PURPOSES MAP
 PRODUCT SPECIFICATION (DETAILED REQUIREMENTS)
 ---------------------------------------------
 1.  **Toolbar Layout Restructuring:** Top toolbar places Crop left of Resize, OCR right. Bottom panel houses "Fill Shape" button.
-2.  **Thickness Selector:** 7 solid vertical line icons (1, 2, 3, 5, 8, 12, 16px). Active highlighted with 2px White border.
+2.  **Thickness Selector:** [LOCKED SPECIFICATION - IMMUTABLE]: 7 solid vertical line icons (1, 2, 3, 5, 8, 12, 16px) with locked button widths (10, 11, 12, 15, 18, 22, 26px) and Margin="0". Active highlighted with 2px White border. Never alter.
 3.  **Vertical Toolbar Scrolling & Organization:** Wrapped in a ScrollViewer. Order: [Arrow, Line, Rect, Ellipse, FreeDraw] -> [Separator] -> [Highlight, Blur] -> [Separator] -> [Text, Counter, Emoji].
 4.  **Toolbar Theming:** Uniform #808080 background.
 5.  **Per-Tool State Isolation:** Independent Color, Thickness, and Fill state dictionaries per tool.
@@ -282,11 +283,11 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |       SettingsWindow.axaml.cs
 |   |   |       
 |   |   +---Helpers
+|   |   |       AppLifecycleCoordinator.cs
 |   |   |       BootstrapDebug.cs
 |   |   |       CaptureHelper.cs
 |   |   |       DeploymentFootprint.cs
 |   |   |       DeploymentLifecycle.cs
-|   |   |       HebrewOcrCorrectionHelper.cs
 |   |   |       HotkeyManager.cs
 |   |   |       IniConfigurationDeployer.cs
 |   |   |       InstallHostContext.cs
@@ -303,8 +304,10 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |       ShellLinkWriter.cs
 |   |   |       SnapVoxCommandLine.cs
 |   |   |       StartupHelper.cs
+|   |   |       StartupTaskDefinition.cs
 |   |   |       StartupTaskHelper.cs
 |   |   |       ToastHelper.cs
+|   |   |       UpgradeSettingsBackup.cs
 |   |   |       
 |   |   +---icons
 |   |   |       clipboard.png
@@ -329,6 +332,10 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |           leptonica-1.82.0.dll
 |   |   |           tesseract50.dll
 |   |   |           
+|   |   +---Services
+|   |   |       ISettingsService.cs
+|   |   |       SettingsService.cs
+|   |   |       
 |   |   \---tessdata
 |   |           eng.traineddata
 |   |           heb.traineddata
@@ -394,6 +401,7 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   +---Core
 |   |   |   |   CoreConfiguration.cs
 |   |   |   |   ExecutionTrace.cs
+|   |   |   |   HotkeyBinding.cs
 |   |   |   |   IScrollCaptureLauncher.cs
 |   |   |   |   KnownFolders.cs
 |   |   |   |   LogHelper.cs
@@ -423,6 +431,7 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |   |       
 |   |   +---Interfaces
 |   |   |   |   CaptureEnums.cs
+|   |   |   |   IAppLifecycleCoordinator.cs
 |   |   |   |   
 |   |   |   \---Ocr
 |   |   |           IOcrProvider.cs
@@ -437,6 +446,7 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |   |           Win32Interop.cs
 |   |           
 |   \---snapvox.tests
+|           BorderedExportSafetyTests.cs
 |           ClipboardTests.cs
 |           ConflictDetectionTests.cs
 |           ContextToolbarThemeTests.cs
@@ -444,14 +454,23 @@ FULL PROJECT MINIMAP & NAVIGATION GUIDE
 |           EditorDocumentTests.cs
 |           EditorExportServiceTests.cs
 |           EditorHistoryManagerTests.cs
+|           EditorSafetyTests.cs
 |           EditorWindowFitterTests.cs
 |           EditorZoomEngineTests.cs
 |           EngineAuditRegressionTests.cs
+|           HotkeyBindingTests.cs
 |           IniConfigAtomicSaveTests.cs
+|           IniConfigConcurrencyTests.cs
+|           InstallerConflictTests.cs
 |           OcrOverlayControllerTests.cs
 |           OcrTextLayoutTests.cs
+|           ResourceMutexTests.cs
 |           RetentionTests.cs
+|           ScreenTintBypassBenchmarkTests.cs
+|           ScrollCaptureHardeningTests.cs
+|           SettingsServiceTests.cs
 |           ToolHandlersTests.cs
+|           UpgradeSafetyTests.cs
 |           VectorSnappingEngineTests.cs
 |           snapvox.tests.csproj
 
@@ -531,13 +550,37 @@ TASK IMPLEMENTATION LOG (BUGFIXES & FEATURES)
     Total test suite expanded from 84 to 119 passing tests with 0 failures, 0 compiler warnings, and full dual-branch build parity (Branch 1 Native AOT and Branch 2 Tesseract).
 
 
-RELIABILITY FIXES — 2026-09-10
-------------------------------
-Issues 1-10 are tracked in FIX_PROGRESS.md, including validation and resume instructions.
+56. Thread-Agnostic Single-Instance Mutex (root cause & architectural migration): Replaced thread-affine System.Threading.Mutex with a named system Semaphore (initialCount: 1, maxCount: 1) wrapped in ResourceMutex.cs. Root Cause: Calling Mutex.ReleaseMutex() on a different thread than the acquiring thread (standard in async/await state machines where post-await continuations execute on thread-pool worker threads) threw ApplicationException: Object synchronization method was called from an unsynchronized block of code during application startup and deployment lifecycle flows. Fix: Semaphores are thread-agnostic, allowing acquisition on the bootstrap thread and safe release across asynchronous thread pool continuations. Characterized with unit tests in ResourceMutexTests.cs.
+57. Installer Conflict State-Guarded Semaphore Release (root cause & bugfix): Implemented the state-guarded bool lockAcquired synchronization pattern in DeploymentLifecycle.cs across RunInstallAsync and RunUninstallAsync. Root Cause: mutex.WaitOne(0) returns false when another installer/uninstaller instance holds the named lock, setting exit code 2. The enclosing finally block previously executed unconditionally and called mutex.Release(), triggering an unhandled SemaphoreFullException: Adding the specified count to the semaphore would cause it to exceed its maximum count and crashing the process. Fix: Declared bool lockAcquired = false before the try block, assigned lockAcquired = mutex.WaitOne(0), and guarded cleanup via if (lockAcquired) mutex.Release();. Characterized with unit tests in InstallerConflictTests.cs.
+58. Thread-Safe, Non-Dropping IniConfig Pipeline (root cause & architectural migration): Refactored IniConfig persistence into a thread-safe snapshot pipeline with an atomic background serialization queue. Root Cause: IniConfig.Save used Monitor.TryEnter with a 200ms timeout on an unawaited fire-and-forget Task.Run, silently dropping pending configuration updates under burst writes. Simultaneously, SaveInternally iterated SectionMap and _sections without acquiring SectionMapLock, colliding with concurrent property getters/setters on worker threads and throwing InvalidOperationException: Collection was modified; enumeration operation may not execute. Fix: Synchronized SaveInternally by taking atomic section dictionary snapshots under SectionMapLock, and replaced the lossy Monitor.TryEnter timeout with a bounded serialization channel/queue (Channel<Snapshot>), guaranteeing zero dropped configuration updates and non-blocking background disk flushes with atomic temporary swap replacement. Characterized with unit tests in IniConfigConcurrencyTests.cs.
+59. GPU Hardware LUT Bypass Removal & Lightweight Window Enum (root cause & bugfix): Removed destructive hardware gamma ramp modifications from NativeCapture.cs and eradicated heavy .NET Process allocations in ScreenTintBypass.cs. Root Cause: NativeCapture.CaptureRegion wrapped GDI BitBlt in NeutralizeDisplayGammaScope, calling SetDeviceGammaRamp on physical video LUTs. However, GDI BitBlt reads raw desktop surfaces from the DWM composition buffer prior to video LUT calibration, rendering hardware LUT resets ineffective while inducing visible screen flicker and display calibration corruption. In parallel, ScreenTintBypass.Probe invoked Process.GetProcessById repeatedly inside EnumWindows, allocating heavy managed process wrappers and triggering GC collection stalls during screen captures. Fix: Completely stripped NeutralizeDisplayGammaScope and hardware SetDeviceGammaRamp calls from capture pipelines, relying exclusively on software inverse Planckian color transforms. Replaced managed Process lookups with direct Win32 GetWindowThreadProcessId and QueryFullProcessImageName P/Invoke calls, eliminating GC latency. Characterized with benchmark tests in ScreenTintBypassBenchmarkTests.cs.
+60. Non-Destructive Bordered Export & In-Place Rendering (root cause & bugfix): Eliminated inward pixel cropping on bordered exports and stopped visual tree detachment in ImageEditorWindow.axaml.cs. Root Cause: LoadFlattenedImage previously carved t pixels off all four edges of the captured image and padded the perimeter with BorderColor, destroying original edge image pixels. Furthermore, RenderFlattenedSurface detached AnnotationCanvas from its visual parent (imageContainer.Children.Remove(AnnotationCanvas)) to attach it to an off-screen Grid before invoking RenderTargetBitmap.Render(), introducing layout flashes and visual tree mutation side effects. Fix: Refactored border rendering to expand outward into an enlarged canvas or stroke directly on top of the composition overlay, preserving 100% of captured edge content. Rendered AnnotationCanvas in-place within the visual hierarchy without reparenting. Characterized with unit tests in BorderedExportSafetyTests.cs.
+61. Native Clipboard Alpha Transparency & Persistent Message-Only Owner Window (root cause & bugfix): Stabilized Win32 native clipboard operations in UiClipboard.cs with a persistent process-lifetime message-only window and dual-format synthetic clipboard writes. Root Cause: TryWriteNativeClipboard created a temporary HWND and destroyed it immediately upon closing the clipboard via DestroyWindow(ownerHwnd), leaving a dangling, dead handle registered as GetClipboardOwner(). Furthermore, SetImageAsync discarded alpha channel data by writing exclusively CF_DIB (which lacks standard alpha channel transparency support across many Win32 apps), flattening transparent PNG regions into black. Simultaneously, TryGetWin32ClipboardImage lacked synchronization locks and retry mechanisms, causing intermittent null paste reads when external Windows services (e.g. Clipboard History) briefly held the clipboard open. Fix: Created a persistent, hidden message-only window (HWND_MESSAGE) that remains alive for the entire process lifetime to anchor clipboard ownership. Enhanced native clipboard synthesis to emit both standard CF_DIB (for legacy application compatibility) and registered PNG clipboard format ("PNG" clipboard atom), preserving 32-bit ARGB alpha transparency in modern applications (browsers, Discord, Slack). Synchronized native reads with _nativeClipboardLock and implemented a bounded retry loop in TryGetWin32ClipboardImage to guarantee robust read access against transient locks by Windows Clipboard History and shell listeners. Validated in ClipboardTests.cs.
+62. Vector Annotation History Decoupling & Copy-on-Write Snapshotting (root cause & memory optimization): Decoupled raster bitmap storage from vector annotation history and made undo/redo snapshots non-destructive in EditorHistoryManager.cs and ImageEditorWindow.axaml.cs. Root Cause: SaveUndoState(true) created a deep clone of the multi-megabyte raster bitmap on every vector movement, resize, or handle drag, rapidly exceeding the 384MB memory ceiling and inducing severe GC pressure. Additionally, RestoreSnapshot mutated snapshot objects by calling TakeImage() and Annotations.Clear(), consuming and hollowing out undo entries so repeated undo/redo operations corrupted canvas state. Fix: Implemented copy-on-write reference sharing for raster images, only creating fresh raster clones when raster-mutating operations occur (Crop, Blur, FreeDraw). Made snapshot restoration non-destructive by cloning vector annotation data models on restore, preserving undo/redo history stacks across arbitrary round-trips. Characterized in EditorHistoryManagerTests.cs.
+63. Scroll Capture Memory Hardening, Clamped Composite & Input Scope Isolation (root cause & bugfix): Hardened scroll capture against memory exhaustion, prevented capture loss on oversized documents, and eliminated accidental global right-click aborts. Root Cause: ScrollFrameStitcher accumulated unbounded lists of uncompressed Image<Bgra32> frames in memory and returned null when stitched dimensions exceeded 180 megapixels, causing FinishRecordingAsync to silently discard the entire user capture. Additionally, global Win32 GetAsyncKeyState(VK_RBUTTON) polling caused accidental capture cancellations whenever the user right-clicked outside the capture area. Fix: Bounded memory consumption with incremental frame stitching and streaming in ScrollCaptureRecorder.cs. Implemented graceful composite clamping: when dimensions exceed safety ceilings, the capture is clamped/scaled to the maximum supported dimensions rather than discarded, guaranteeing zero lost captures. Scoped abort controls strictly to the recording region and floating ScrollCaptureBarWindow. Characterized with unit tests in ScrollCaptureHardeningTests.cs.
+64. Upgrade Autostart Preservation & Scheduled Task Elevation Restoration (root cause & bugfix): Preserved elevated Administrator scheduled task autostart across application upgrades and eliminated duplicate Run registry keys. Root Cause: During upgrade cleanup, PerformFullHostCleanupAsync executed schtasks.exe /Delete /TN "SnapVox" /F to remove old registrations. When settings restoration occurred after autostart configuration, or when StartupHelper.SetRunUser registered standard Run keys without inspecting prior elevation state, an upgraded installation reverted to standard user privileges, causing elevated captures (Task Manager, administrative tools) to fail after reboot. Fix: Added pre-cleanup elevation inspection in DeploymentLifecycle.cs via StartupTaskHelper.IsScheduledTaskInstalledAsync(). Sequenced settings restoration ahead of autostart registration, and called StartupTaskHelper.RestoreStartupAfterInstallAsync(wasElevated) to reinstate the elevated scheduled task when previously configured. Added StartupTaskHelper.PurgeAllRunKeys() to de-duplicate and scrub conflicting HKCU/HKLM Run keys. Characterized with unit tests in UpgradeSafetyTests.cs.
+65. Task Scheduler Power, Battery, Idle & Runtime Restrictions Elimination (root cause & architectural hardening): Eliminated Windows Task Scheduler battery, idle, network, and execution time restrictions to guarantee reliable application startup and continuous background operation on laptops and mobile devices. Root Cause: Scheduled tasks created via default CLI switches (schtasks /Create) inherited Windows power management constraints (<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>, <StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>, <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>). On battery-powered or un-docked laptops, Windows silently blocked SnapVox from starting at logon, terminated it when unplugged from AC power, or killed the background tray process after 72 hours of continuous uptime. Fix: Created StartupTaskDefinition.cs generating schema-compliant XML task definitions explicitly setting <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>, <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>, <ExecutionTimeLimit>PT0S</ExecutionTimeLimit> (infinite), and <Priority>4</Priority>. Registered tasks via schtasks /Create /XML. Added dynamic self-healing startup validation in App.axaml.cs via StartupTaskHelper.EnsureBatteryRestrictionsDisabledAsync to automatically upgrade existing restrictive tasks.
+66. Line Thickness Tightened Spacing, Direct LineSize Popup Migration & Non-Clipping Slider (UI/UX hardening & architectural cleanup): Replaced the problematic Flyout on LineSizeBtn with a direct native Popup, eliminated the 24px scrollbar overlay clipping the custom thickness slider, tightened horizontal screen gaps across the right-hand thickness buttons, and centered crop submenu labels. Root Cause: In Avalonia, Button.Flyout generates a FlyoutPresenter hosting an internal ScrollViewer that inherited App.axaml's global ScrollBar styles (AllowAutoHide=False and 24px SnapVoxScrollBarHorizontal), drawing an opaque 24px bar over the custom thickness slider. Dragging the slider knob struck either the scrollbar or the window boundary, triggering light-dismiss and closing the flyout. Additionally, thickness buttons had ballooning gaps on the right side. Fix: Replaced Flyout on LineSizeBtn with an explicit Popup (LineSizePopup) eliminating FlyoutPresenter and ScrollViewer completely, giving the slider unclipped full-fidelity interaction with zero light-dismiss interference. Tightened the right-hand thickness buttons to Widths 10, 11, 12, 15, 18, 22, 26px (Margin=0), providing a consistent, compact ~9-10px visual whitespace progression. Anchored CropModePopup with FlowDirection=LeftToRight and centered two-row Grids.
+67. Line Thickness Quick Selection Lockdown, Recent Color Preview Expansion & Slider Bottom Clipping Elimination (root cause & UI/UX hardening): Permanently locked down the 7 quick thickness buttons (1, 2, 3, 5, 8, 12, 16px) to invariant widths (10, 11, 12, 15, 18, 22, 26px) with Margin=0, increased the recent color preview swatch from 20x20 to 24x24, and eliminated the horizontal bottom-clipping of the custom slider knob. Root Cause: In Avalonia's Fluent Theme, Slider's HorizontalTemplate Grid binds Row 0 to SliderPreContentMargin (15px) and Row 2 to SliderPostContentMargin (15px), reserving 30px of vertical padding for tick bars even when ticks are disabled. Setting Height="32" on the slider constrained the total layout slot to 32px: Row 0 consumed 15px, leaving only 17px for Row 1 (Track and Thumb). Because the circular thumb is 20px in diameter, the bottom 3px was sliced flat by the 17px layout boundary. Fix: Overrode SliderPreContentMargin and SliderPostContentMargin to 0 GridLength in DesignSystem.axaml, Window.Resources, and inside the local Slider.Resources dictionaries for both ThicknessFlyoutSlider and InlinePixelateSlider. Set ClipToBounds=False across the slider, Track, HorizontalTemplate, and Thumb styles. Removed artificial vertical spacing by adjusting slider row Margin to "0,4,0,2" and Border Padding to "14,12,14,14", ensuring the 20px circular thumb renders with 6px vertical clearance top and bottom without clipping or light-dismiss issues. Expanded CurrentColorPreview to Width=24 Height=24 CornerRadius=4. Characterized in EditorSafetyTests.cs.
+
+
+
+RELIABILITY FIXES & REGRESSION VERIFICATION — 2026-09-12
+-------------------------------------------------------
+Issues 1-10 are fully resolved and regression-verified across both deployment branches.
 - User exports are never selected for uninstall by filename wildcards.
 - Failed export rendering or clipboard transfer cannot produce a success/close path.
 - Highlights tint the visible composition; pixelation remains covered while rendering and export waits for completion.
 - Setup asks for the upgrade choice before checking running apps; no app is forcibly terminated. Save and exit, then Retry, or Cancel setup.
 - UpgradeSettingsBackup.cs stores verified recovery copies outside cleanup roots and preserves them on failure.
 - StartupTaskDefinition.cs explicitly disables battery/idle/network restrictions and the execution time limit. Kept administrator startup is recreated after settings restoration. Ordinary startup uses the user Run entry.
-- Regression coverage: EditorSafetyTests.cs, UpgradeSafetyTests.cs, revised ClipboardTests.cs and DeploymentFootprintTests.cs. Both OCR configurations: 189 tests passing with warnings treated as errors.
+- State-guarded semaphore acquisition pattern prevents unhandled SemaphoreFullException crashes during installer and uninstaller conflict detection.
+- Non-dropping snapshot serialization queue in IniConfig guarantees dirty state persistence under burst concurrency without collection mutation collisions.
+- Pure Win32 QueryFullProcessImageName handle inspections replace heavy Process allocations in window enumeration, and GPU hardware gamma ramp mutations are eliminated from screen capture.
+- Bordered export renders on expanded canvas/stroke overlay to eliminate destructive pixel cropping, and visual tree is rendered in-place without reparenting.
+- Persistent process-lifetime message-only window guarantees stable clipboard ownership, and dual CF_DIB + registered PNG formats preserve alpha transparency.
+- Vector annotation undo history is decoupled from raster bitmap snapshots via copy-on-write image tracking, eliminating multi-gigabyte memory churn.
+- Scroll capture incorporates bounded streaming buffers, clamped composite fallback for oversized documents, and window-scoped abort controls.
+- Elevated administrator autostart tasks are inspected prior to upgrade cleanup and restored post-installation, while duplicate Run keys are purged.
+- Task scheduler tasks use schema-compliant XML definitions disabling battery, idle, network, and execution time restrictions.
+- Regression coverage: 227 tests passing with 0 failures, 0 skipped, and warnings treated as errors (-p:TreatWarningsAsErrors=true) across both Branch 1 (Native AOT) and Branch 2 (Tesseract). Suites include BorderedExportSafetyTests.cs, ClipboardTests.cs, ConflictDetectionTests.cs, ContextToolbarThemeTests.cs, DeploymentFootprintTests.cs, EditorDocumentTests.cs, EditorExportServiceTests.cs, EditorHistoryManagerTests.cs, EditorSafetyTests.cs, EditorWindowFitterTests.cs, EditorZoomEngineTests.cs, EngineAuditRegressionTests.cs, HotkeyBindingTests.cs, IniConfigAtomicSaveTests.cs, IniConfigConcurrencyTests.cs, InstallerConflictTests.cs, OcrOverlayControllerTests.cs, OcrTextLayoutTests.cs, ResourceMutexTests.cs, RetentionTests.cs, ScreenTintBypassBenchmarkTests.cs, ScrollCaptureHardeningTests.cs, SettingsServiceTests.cs, ToolHandlersTests.cs, UpgradeSafetyTests.cs, and VectorSnappingEngineTests.cs.

@@ -36,8 +36,27 @@ namespace snapvox.helpers
             });
         }
 
+        public const int MaxSegments = ScrollFrameStitcher.MaxSegments;
         public int AcceptedFrames => _stitcher.AcceptedFrames;
         public double EstimatedScreens => _stitcher.EstimatedScreens;
+        public bool IsSegmentCeilingReached => _stitcher.IsSegmentCeilingReached;
+        public bool IsPaused { get; private set; }
+        public event Action SegmentCeilingReached;
+
+        public void Pause()
+        {
+            if (!IsPaused)
+            {
+                IsPaused = true;
+                Log.Info("Scroll capture paused: segment ceiling reached.");
+                SegmentCeilingReached?.Invoke();
+            }
+        }
+
+        public void Resume()
+        {
+            IsPaused = false;
+        }
 
         public void Start()
         {
@@ -87,6 +106,12 @@ namespace snapvox.helpers
             {
                 while (!_cts.IsCancellationRequested && !_trackingFailed)
                 {
+                    if (IsPaused || _stitcher.IsSegmentCeilingReached)
+                    {
+                        await Task.Delay(100, _cts.Token).ConfigureAwait(false);
+                        continue;
+                    }
+
                     Image<Bgra32> frame = NativeCapture.CaptureRegion(_target, false);
                     if (frame != null)
                     {
@@ -124,6 +149,13 @@ namespace snapvox.helpers
             {
                 await foreach (Image<Bgra32> frame in _frames.Reader.ReadAllAsync().ConfigureAwait(false))
                 {
+                    if (_stitcher.IsSegmentCeilingReached)
+                    {
+                        Pause();
+                        frame.Dispose();
+                        continue;
+                    }
+
                     ScrollFrameStatus status = _stitcher.AddFrame(frame);
                     if (status == ScrollFrameStatus.Rejected)
                     {
@@ -132,6 +164,11 @@ namespace snapvox.helpers
                     else if (status == ScrollFrameStatus.Accepted)
                     {
                         _rejectedFrames = 0;
+                    }
+
+                    if (_stitcher.IsSegmentCeilingReached)
+                    {
+                        Pause();
                     }
                 }
             }
@@ -169,7 +206,14 @@ namespace snapvox.helpers
         private const double MaxAverageDiff = 30.0;
         private const double MaxRefinedDiff = 16.0;
         private const int BandHeightPixels = 257;
-        private const long MaxCompositePixels = 180L * 1024L * 1024L;
+        public const long DefaultMaxCompositePixels = 180L * 1024L * 1024L;
+        public const int DefaultMaxSegments = 120;
+
+        public const long MaxCompositePixels = DefaultMaxCompositePixels;
+        public const int MaxSegments = DefaultMaxSegments;
+
+        public long MaxCompositePixelsLimit { get; set; } = DefaultMaxCompositePixels;
+        public int MaxSegmentsLimit { get; set; } = DefaultMaxSegments;
 
         private readonly List<ScrollSegment> _segments = new List<ScrollSegment>();
         private SampleFrame _previousSample;
@@ -188,6 +232,15 @@ namespace snapvox.helpers
         private Rectangle _viewport;
 
         public int AcceptedFrames { get; private set; }
+        public int SegmentCount => _segments.Count;
+        public bool IsSegmentCeilingReached => _segments.Count >= MaxSegmentsLimit;
+        internal IReadOnlyList<ScrollSegment> Segments => _segments;
+
+        public ScrollFrameStitcher(int maxSegments = DefaultMaxSegments, long maxCompositePixels = DefaultMaxCompositePixels)
+        {
+            MaxSegmentsLimit = maxSegments;
+            MaxCompositePixelsLimit = maxCompositePixels;
+        }
 
         public double EstimatedScreens
         {
@@ -205,6 +258,11 @@ namespace snapvox.helpers
 
             try
             {
+                if (IsSegmentCeilingReached)
+                {
+                    return ScrollFrameStatus.Rejected;
+                }
+
                 if (AcceptedFrames == 0)
                 {
                     _frameWidth = frame.Width;
@@ -332,8 +390,17 @@ namespace snapvox.helpers
             int width = _frameWidth;
             int height = vpH + _viewport.Top + (_frameHeight - _viewport.Bottom);
 
+            if (width <= 0 || height <= 0) return null;
+
             long totalPixels = (long)width * height;
-            if (width <= 0 || height <= 0 || totalPixels > MaxCompositePixels) return null;
+            long pixelCeiling = MaxCompositePixelsLimit;
+            if (totalPixels > pixelCeiling)
+            {
+                int clampedHeight = (int)(pixelCeiling / width);
+                if (clampedHeight < _frameHeight) clampedHeight = _frameHeight;
+                Log.Warn($"Scroll capture composite dimension ({width}x{height}, {totalPixels} pixels) exceeds MaxCompositePixels ({pixelCeiling}). Clamping composite height to {clampedHeight} pixels.");
+                height = clampedHeight;
+            }
 
             var result = new Image<Bgra32>(width, height);
             Image<Bgra32> header = null;
@@ -343,17 +410,17 @@ namespace snapvox.helpers
 
             try
             {
-                if (_viewport.Top > 0 && _frameWidth > 0)
+                if (_viewport.Top > 0 && _frameWidth > 0 && height > 0)
                 {
-                    header = _firstFrame.Clone(c => c.Crop(new Rectangle(0, 0, _frameWidth, _viewport.Top)));
+                    int headerH = Math.Min(_viewport.Top, height);
+                    header = _firstFrame.Clone(c => c.Crop(new Rectangle(0, 0, _frameWidth, headerH)));
                     result.Mutate(ctx => ctx.DrawImage(header, new Point(0, 0), 1f));
                 }
 
                 int footerHeight = _frameHeight - _viewport.Bottom;
-                if (footerHeight > 0 && _frameWidth > 0)
+                if (footerHeight > 0 && _frameWidth > 0 && height >= footerHeight)
                 {
                     footer = _lastFrame.Clone(c => c.Crop(new Rectangle(0, _viewport.Bottom, _frameWidth, footerHeight)));
-                    result.Mutate(ctx => ctx.DrawImage(footer, new Point(0, height - footer.Height), 1f));
                 }
 
                 if (_viewport.Left > 0 && _viewport.Height > 0)
@@ -368,7 +435,7 @@ namespace snapvox.helpers
                 }
 
                 int currentY = Math.Max(0, _viewport.Top);
-                int bottomLimit = footer != null ? height - footer.Height : height;
+                int bottomLimit = footer != null ? Math.Max(0, height - footer.Height) : height;
                 int stepY = Math.Max(1, _viewport.Height);
 
                 while (currentY < bottomLimit)
@@ -387,9 +454,19 @@ namespace snapvox.helpers
                 int count = 0;
                 foreach (var segment in _segments)
                 {
-                    result.Mutate(ctx => ctx.DrawImage(segment.Image, new Point(segment.X - minX + _viewport.Left, segment.Y - minY + _viewport.Top), 1f));
+                    int targetX = segment.X - minX + _viewport.Left;
+                    int targetY = segment.Y - minY + _viewport.Top;
+                    if (targetY < height && targetX < width && targetY + segment.Image.Height > 0 && targetX + segment.Image.Width > 0)
+                    {
+                        result.Mutate(ctx => ctx.DrawImage(segment.Image, new Point(targetX, targetY), 1f));
+                    }
                     count++;
                     progress?.Report((double)count / _segments.Count);
+                }
+
+                if (footer != null)
+                {
+                    result.Mutate(ctx => ctx.DrawImage(footer, new Point(0, height - footer.Height), 1f));
                 }
 
                 return result;
@@ -416,6 +493,8 @@ namespace snapvox.helpers
 
         private void AddVisibleStrips(Image<Bgra32> frame, int offsetX, int offsetY, int deltaX, int deltaY)
         {
+            if (IsSegmentCeilingReached) return;
+
             int absY = Math.Abs(deltaY);
             int absX = Math.Abs(deltaX);
 

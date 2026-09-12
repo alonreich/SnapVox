@@ -2,11 +2,14 @@ using snapvox.native;
 using snapvox.native.foundation;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using log4net;
 
@@ -20,6 +23,17 @@ namespace snapvox.foundation.IniFile
         private const string FixedPostfix = "-fixed";
         private static readonly object IniLock = new object();
         private static readonly object SectionMapLock = new object();
+        private static readonly object WriteLock = new object();
+        private static readonly object CommitLock = new object();
+        private static readonly Channel<string> SaveChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+        private static volatile int _isSaveQueued;
+        private static long _requestedVersion;
+        private static long _committedVersion;
+        internal static int SimulatedDiskLatencyMs { get; set; }
         private static string _applicationName;
         private static string _configName;
         private static readonly IDictionary<string, IniSection> SectionMap = new Dictionary<string, IniSection>();
@@ -93,7 +107,10 @@ namespace snapvox.foundation.IniFile
             Interlocked.Increment(ref _sectionEpoch);
             lock (IniLock)
             {
-                _sections = new Dictionary<string, IDictionary<string, string>>();
+                lock (SectionMapLock)
+                {
+                    _sections = new Dictionary<string, IDictionary<string, string>>();
+                }
                 Read(CreateIniLocation(_configName + DefaultsPostfix + IniExtension, true));
                 Read(CreateIniLocation(_configName + IniExtension, false));
                 _fixedProperties = Read(CreateIniLocation(_configName + FixedPostfix + IniExtension, true));
@@ -150,13 +167,16 @@ namespace snapvox.foundation.IniFile
             }
             Log.InfoFormat("Loading ini-file: {0}", iniLocation);
             var newSections = IniReader.Read(iniLocation, Encoding.UTF8);
-            foreach (string section in newSections.Keys)
+            lock (SectionMapLock)
             {
-                if (!_sections.ContainsKey(section)) _sections.Add(section, newSections[section]);
-                else
+                foreach (string section in newSections.Keys)
                 {
-                    var curr = _sections[section];
-                    foreach (var kv in newSections[section]) if (curr.ContainsKey(kv.Key)) curr[kv.Key] = kv.Value; else curr.Add(kv.Key, kv.Value);
+                    if (!_sections.ContainsKey(section)) _sections.Add(section, newSections[section]);
+                    else
+                    {
+                        var curr = _sections[section];
+                        foreach (var kv in newSections[section]) if (curr.ContainsKey(kv.Key)) curr[kv.Key] = kv.Value; else curr.Add(kv.Key, kv.Value);
+                    }
                 }
             }
             return newSections;
@@ -198,68 +218,282 @@ namespace snapvox.foundation.IniFile
             return section;
         }
 
+        static IniConfig()
+        {
+            Task.Run(ProcessSaveQueueAsync);
+        }
+
+        private static async Task ProcessSaveQueueAsync()
+        {
+            try
+            {
+                var reader = SaveChannel.Reader;
+                while (await reader.WaitToReadAsync().ConfigureAwait(false))
+                {
+                    while (reader.TryRead(out string path))
+                    {
+                        try
+                        {
+                            ProcessPendingSaves(path);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("Error processing pending ini saves", ex);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("ProcessSaveQueueAsync terminated unexpectedly", ex);
+            }
+        }
+
+        private static void ProcessPendingSaves(string defaultPath)
+        {
+            while (true)
+            {
+                long targetVersion = Interlocked.Read(ref _requestedVersion);
+                if (Interlocked.Read(ref _committedVersion) >= targetVersion)
+                {
+                    Interlocked.Exchange(ref _isSaveQueued, 0);
+                    if (Interlocked.Read(ref _committedVersion) >= Interlocked.Read(ref _requestedVersion))
+                    {
+                        break;
+                    }
+                    Interlocked.Exchange(ref _isSaveQueued, 1);
+                    continue;
+                }
+
+                string path = defaultPath;
+                if (string.IsNullOrEmpty(path))
+                {
+                    if (_applicationName == null || _configName == null)
+                    {
+                        lock (CommitLock)
+                        {
+                            if (targetVersion > _committedVersion) _committedVersion = targetVersion;
+                            Monitor.PulseAll(CommitLock);
+                        }
+                        break;
+                    }
+                    try
+                    {
+                        path = CreateIniLocation(_configName + IniExtension, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("Failed to determine ini save path", ex);
+                        lock (CommitLock)
+                        {
+                            if (targetVersion > _committedVersion) _committedVersion = targetVersion;
+                            Monitor.PulseAll(CommitLock);
+                        }
+                        break;
+                    }
+                }
+
+                try
+                {
+                    SaveInternally(path);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Failed to save ini", ex);
+                }
+
+                lock (CommitLock)
+                {
+                    if (targetVersion > _committedVersion)
+                    {
+                        _committedVersion = targetVersion;
+                    }
+                    Monitor.PulseAll(CommitLock);
+                }
+            }
+        }
+
         public static IDictionary<string, string> PropertiesForSection(IniSection section)
         {
             string name = section.IniSectionAttribute.Name;
-            if (!_sections.TryGetValue(name, out var props)) { props = new Dictionary<string, string>(); _sections.Add(name, props); }
-            return props;
+            lock (SectionMapLock)
+            {
+                if (!_sections.TryGetValue(name, out var props))
+                {
+                    props = new Dictionary<string, string>();
+                    _sections.Add(name, props);
+                }
+                return props;
+            }
         }
 
         public static void Save()
         {
-            _ = Task.Run(() =>
+            if (_applicationName == null || _configName == null) return;
+
+            Interlocked.Increment(ref _requestedVersion);
+            if (Interlocked.Exchange(ref _isSaveQueued, 1) == 0)
             {
-                if (Monitor.TryEnter(IniLock, TimeSpan.FromMilliseconds(200)))
+                string location;
+                try
                 {
-                    try { SaveInternally(CreateIniLocation(_configName + IniExtension, false)); }
-                    catch (Exception ex) { Log.Error("Failed to save ini", ex); }
-                    finally { Monitor.Exit(IniLock); }
+                    location = CreateIniLocation(_configName + IniExtension, false);
                 }
-                else
+                catch (Exception ex)
                 {
-                    Log.Warn("Ini save skipped: another save is still in progress (lock busy > 200ms).");
+                    Log.Error("Failed to resolve ini location in Save", ex);
+                    Interlocked.Exchange(ref _isSaveQueued, 0);
+                    return;
                 }
-            });
+
+                if (!SaveChannel.Writer.TryWrite(location))
+                {
+                    Interlocked.Exchange(ref _isSaveQueued, 0);
+                }
+            }
+        }
+
+        public static bool WaitForPendingSaves(int timeoutMs = 5000)
+        {
+            long targetVersion = Interlocked.Read(ref _requestedVersion);
+            if (Interlocked.Read(ref _committedVersion) >= targetVersion)
+            {
+                return true;
+            }
+
+            if (Interlocked.Exchange(ref _isSaveQueued, 1) == 0)
+            {
+                if (_applicationName != null && _configName != null)
+                {
+                    try
+                    {
+                        string location = CreateIniLocation(_configName + IniExtension, false);
+                        SaveChannel.Writer.TryWrite(location);
+                    }
+                    catch
+                    {
+                        Interlocked.Exchange(ref _isSaveQueued, 0);
+                    }
+                }
+            }
+
+            var sw = Stopwatch.StartNew();
+            lock (CommitLock)
+            {
+                while (Interlocked.Read(ref _committedVersion) < targetVersion)
+                {
+                    long remaining = timeoutMs - sw.ElapsedMilliseconds;
+                    if (remaining <= 0)
+                    {
+                        Log.WarnFormat("WaitForPendingSaves timed out after {0}ms waiting for version {1}. Committed: {2}",
+                            timeoutMs, targetVersion, Interlocked.Read(ref _committedVersion));
+                        return false;
+                    }
+                    Monitor.Wait(CommitLock, (int)Math.Min(remaining, int.MaxValue));
+                }
+            }
+            return true;
+        }
+
+        public static void Flush()
+        {
+            bool dirty = false;
+            lock (SectionMapLock)
+            {
+                foreach (var s in SectionMap.Values)
+                {
+                    if (s != null && s.IsDirty)
+                    {
+                        dirty = true;
+                        break;
+                    }
+                }
+            }
+            if (dirty)
+            {
+                Save();
+            }
+            WaitForPendingSaves(5000);
         }
 
         public static void SaveTo(string path)
         {
+            WaitForPendingSaves(5000);
             SaveInternally(path);
         }
 
         private static void SaveInternally(string iniLocation)
         {
+            if (string.IsNullOrEmpty(iniLocation)) return;
             Log.Info("Saving configuration to: " + iniLocation);
             string dir = Path.GetDirectoryName(iniLocation);
             if (dir != null && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-            string tempFile = iniLocation + ".tmp";
-            try
+            IniSection[] sectionSnapshots;
+            List<KeyValuePair<string, Dictionary<string, string>>> unclaimedSectionsSnapshot;
+
+            lock (SectionMapLock)
             {
-                using (var fs = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (var writer = new StreamWriter(fs, Encoding.UTF8))
+                sectionSnapshots = SectionMap.Values.ToArray();
+                foreach (var s in sectionSnapshots)
                 {
-                    foreach (var section in SectionMap.Values) { section.Write(writer, false); writer.WriteLine(); section.IsDirty = false; }
-                    writer.WriteLine();
-                    foreach (string name in _sections.Keys)
-                    {
-                        if (SectionMap.ContainsKey(name)) continue;
-                        writer.WriteLine("; Section {0} unclaimed", name);
-                        writer.WriteLine("[{0}]", name);
-                        foreach (var kv in _sections[name]) writer.WriteLine("{0}={1}", kv.Key, kv.Value);
-                        writer.WriteLine();
-                    }
-                    writer.Flush();
-                    fs.Flush(true);   // flush OS buffers to disk before the swap
+                    if (s != null) s.IsDirty = false;
                 }
 
-                // Atomic swap: readers see either the complete old file or the complete new file - never a torn one.
-                if (File.Exists(iniLocation)) File.Replace(tempFile, iniLocation, iniLocation + ".bak");
-                else File.Move(tempFile, iniLocation);
+                unclaimedSectionsSnapshot = new List<KeyValuePair<string, Dictionary<string, string>>>();
+                foreach (var kvp in _sections)
+                {
+                    if (!SectionMap.ContainsKey(kvp.Key))
+                    {
+                        unclaimedSectionsSnapshot.Add(new KeyValuePair<string, Dictionary<string, string>>(
+                            kvp.Key,
+                            new Dictionary<string, string>(kvp.Value)));
+                    }
+                }
             }
-            finally
+
+            lock (WriteLock)
             {
-                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
+                string tempFile = iniLocation + ".tmp";
+                try
+                {
+                    using (var fs = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                    using (var writer = new StreamWriter(fs, Encoding.UTF8))
+                    {
+                        foreach (var section in sectionSnapshots)
+                        {
+                            if (section == null) continue;
+                            section.Write(writer, false);
+                            writer.WriteLine();
+                        }
+                        writer.WriteLine();
+                        foreach (var unclaimed in unclaimedSectionsSnapshot)
+                        {
+                            writer.WriteLine("; Section {0} unclaimed", unclaimed.Key);
+                            writer.WriteLine("[{0}]", unclaimed.Key);
+                            foreach (var kv in unclaimed.Value)
+                            {
+                                writer.WriteLine("{0}={1}", kv.Key, kv.Value);
+                            }
+                            writer.WriteLine();
+                        }
+                        writer.Flush();
+                        fs.Flush(true);   // flush OS buffers to disk before the swap
+                    }
+
+                    if (SimulatedDiskLatencyMs > 0)
+                    {
+                        Thread.Sleep(SimulatedDiskLatencyMs);
+                    }
+
+                    // Atomic swap: readers see either the complete old file or the complete new file - never a torn one.
+                    if (File.Exists(iniLocation)) File.Replace(tempFile, iniLocation, iniLocation + ".bak");
+                    else File.Move(tempFile, iniLocation);
+                }
+                finally
+                {
+                    try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
+                }
             }
         }
 

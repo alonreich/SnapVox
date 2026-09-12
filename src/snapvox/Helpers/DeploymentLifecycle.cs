@@ -80,9 +80,9 @@ internal static class DeploymentLifecycle
         }
     }
 
-    public static async Task<int> RunInstallAsync(CancellationToken ct = default)
+    public static async Task<int> RunInstallAsync(CancellationToken ct = default, bool? isWorkerOverride = null)
     {
-        bool isWorker = Environment.GetCommandLineArgs().Any(a => a.Equals("--install-worker", StringComparison.OrdinalIgnoreCase));
+        bool isWorker = isWorkerOverride ?? Environment.GetCommandLineArgs().Any(a => a.Equals("--install-worker", StringComparison.OrdinalIgnoreCase));
         if (!isWorker)
         {
             await RelaunchInstallFromTempAsync(ct).ConfigureAwait(false);
@@ -96,27 +96,26 @@ internal static class DeploymentLifecycle
         }
 
         using var mutex = new Semaphore(1, 1, DeploymentFootprint.InstallerMutexName + "_v2");
-        if (!mutex.WaitOne(0))
-        {
-
-
-
-            BootstrapDebug.Log("Install worker: another installer instance already holds the mutex, exiting.");
-            InstallHostContext.WriteEarlyTrace("Install worker: installer mutex already held by another instance.");
-            StartupTaskHelper.ShowForegroundMessageBox(
-                "Another SnapVox setup is already running.\r\n\r\nPlease finish or close the other setup window first, then run this installer again.",
-                "SnapVox Setup",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            return 2;
-        }
-
+        bool lockAcquired = false;
         DeploymentLogger logger = null;
         DeploymentProgress progress = null;
         string logPath = DeploymentFootprint.InstallLogPath;
 
         try
         {
+            lockAcquired = mutex.WaitOne(0);
+            if (!lockAcquired)
+            {
+                BootstrapDebug.Log("Install worker: another installer instance already holds the mutex, exiting.");
+                InstallHostContext.WriteEarlyTrace("Install worker: installer mutex already held by another instance.");
+                StartupTaskHelper.ShowForegroundMessageBox(
+                    "Another SnapVox setup is already running.\r\n\r\nPlease finish or close the other setup window first, then run this installer again.",
+                    "SnapVox Setup",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return 2;
+            }
+
             logger = await DeploymentLogger.CreateAsync(logPath, "INSTALL/UPGRADE", ct).ConfigureAwait(false);
             progress = await DeploymentProgress.CreateAsync("SnapVox Setup", logPath);
 
@@ -165,7 +164,9 @@ internal static class DeploymentLifecycle
             }
 
             if (!await WaitForApplicationsToCloseAsync(progress, ct).ConfigureAwait(false)) return 0;
-            bool restoreAdminStartup = keepUserSettings && (await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(false) || DetectAdminStartupInSettingsCandidates());
+            bool restoreAdminStartup = keepUserSettings && (await StartupTaskHelper.HasElevatedStartupTaskAsync().ConfigureAwait(false) || StartupTaskHelper.DetectAdminStartupInSettingsCandidates());
+            await logger.LogAsync("UPGRADE", "ELEVATION_PRESCAN", $"restoreAdminStartup={restoreAdminStartup}, keepUserSettings={keepUserSettings}", ct).ConfigureAwait(false);
+            StartupTaskHelper.LogInstallationElevationState($"Pre-cleanup scan: restoreAdminStartup={restoreAdminStartup}, keepUserSettings={keepUserSettings}");
             string settingsBackupFolder = keepUserSettings ? await BackupUserSettingsAsync(logger, ct).ConfigureAwait(false) : null;
             try
             {
@@ -175,7 +176,7 @@ internal static class DeploymentLifecycle
                 await ReportAsync(progress, logger, 65, "DEPLOY", "PAYLOAD", "Extracting assets...", ct).ConfigureAwait(false);
                 await InstallFreshAsync(progress, logger, ct).ConfigureAwait(false);
                 if (settingsBackupFolder != null) await RestoreUserSettingsAsync(settingsBackupFolder, logger, ct).ConfigureAwait(false);
-                await RestoreStartupAfterInstallAsync(keepUserSettings, restoreAdminStartup).ConfigureAwait(false);
+                await StartupTaskHelper.RestoreStartupAfterInstallAsync(keepUserSettings, restoreAdminStartup).ConfigureAwait(false);
                 await LaunchInstalledApplicationAsync();
                 CleanupSettingsBackup(settingsBackupFolder);
                 await ReportAsync(progress, logger, 100, "SUCCESS", "COMPLETE", "Deployment finalized.", ct).ConfigureAwait(false);
@@ -197,10 +198,20 @@ internal static class DeploymentLifecycle
         }
         finally
         {
-            mutex.Release();
+            if (lockAcquired)
+            {
+                try
+                {
+                    mutex.Release();
+                }
+                catch (SemaphoreFullException) { }
+            }
             progress?.Dispose();
             if (logger != null) await logger.DisposeAsync().ConfigureAwait(false);
-            QueueSelfCleanup(DeploymentFootprint.DeploymentTempRoot);
+            if (lockAcquired)
+            {
+                QueueSelfCleanup(DeploymentFootprint.DeploymentTempRoot);
+            }
         }
     }
 
@@ -223,19 +234,21 @@ internal static class DeploymentLifecycle
         }
 
         using var uninstallGate = new Semaphore(1, 1, DeploymentFootprint.InstallerMutexName + "_v2");
-        if (!uninstallGate.WaitOne(0))
-        {
-            StartupTaskHelper.ShowForegroundMessageBox("Another SnapVox setup is running. Finish it before uninstalling.",
-                "SnapVox Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return 2;
-        }
-
+        bool lockAcquired = false;
         string logPath = Path.Combine(SessionTempFolder, "snapvox_Uninstall.log");
         DeploymentLogger logger = null;
         DeploymentProgress progress = null;
 
         try
         {
+            lockAcquired = uninstallGate.WaitOne(0);
+            if (!lockAcquired)
+            {
+                StartupTaskHelper.ShowForegroundMessageBox("Another SnapVox setup is running. Finish it before uninstalling.",
+                    "SnapVox Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 2;
+            }
+
             logger = await DeploymentLogger.CreateAsync(logPath, "UNINSTALL", ct).ConfigureAwait(false);
             progress = await DeploymentProgress.CreateAsync("SnapVox Uninstaller", logPath);
 
@@ -285,11 +298,20 @@ internal static class DeploymentLifecycle
         }
         finally
         {
-            uninstallGate.Release();
+            if (lockAcquired)
+            {
+                try
+                {
+                    uninstallGate.Release();
+                }
+                catch (SemaphoreFullException) { }
+            }
             progress?.Dispose();
             if (logger != null) await logger.DisposeAsync().ConfigureAwait(false);
-            
-            QueueSelfCleanup(DeploymentFootprint.DeploymentTempRoot);
+            if (lockAcquired)
+            {
+                QueueSelfCleanup(DeploymentFootprint.DeploymentTempRoot);
+            }
         }
     }
 
@@ -1211,12 +1233,7 @@ internal static class DeploymentLifecycle
         return false;
     }
 
-    private static string[] GetSettingsCandidates() => new[]
-    {
-        Path.Combine(DeploymentFootprint.InstallFolder, "snapvox.ini"),
-        Path.Combine(DeploymentFootprint.InstallFolder, @"Data\Settings\snapvox.ini"),
-        Path.Combine(DeploymentFootprint.RoamingAppDataFolder, "snapvox.ini")
-    };
+    private static string[] GetSettingsCandidates() => StartupTaskHelper.GetSettingsCandidates();
 
     private static async Task<string> BackupUserSettingsAsync(DeploymentLogger logger, CancellationToken ct)
     {
@@ -1232,51 +1249,11 @@ internal static class DeploymentLifecycle
         await logger.LogAsync("UPGRADE", "RESTORED", "Settings verified from " + folder, ct).ConfigureAwait(false);
     }
 
-    private static bool DetectAdminStartupInSettingsCandidates()
-    {
-        try
-        {
-            foreach (string file in GetSettingsCandidates())
-            {
-                if (File.Exists(file))
-                {
-                    string text = File.ReadAllText(file);
-                    if (text.IndexOf("RunAsAdministratorOnStartup=true", StringComparison.OrdinalIgnoreCase) >= 0
-                        || text.IndexOf("RunAsAdministratorOnStartup = true", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        catch { }
-        return false;
-    }
+    private static bool DetectAdminStartupInSettingsCandidates() => StartupTaskHelper.DetectAdminStartupInSettingsCandidates();
 
     private static async Task RestoreStartupAfterInstallAsync(bool keepUserSettings, bool hadElevatedStartup)
     {
-        IniConfig.IniDirectory = StartupTaskHelper.ConfigurationFolder;
-        IniConfig.Init("snapvox", IniConfigurationDeployer.ConfigBaseName);
-        var config = IniConfig.GetIniSection<CoreConfiguration>(allowSave: false);
-        bool elevated = keepUserSettings && (hadElevatedStartup || config.RunAsAdministratorOnStartup || DetectAdminStartupInSettingsCandidates());
-        if (elevated)
-        {
-            if (!await StartupTaskHelper.ConfigureElevatedStartupTaskAsync(StartupTaskHelper.InstallPath).ConfigureAwait(false))
-                throw new IOException("Could not restore administrator startup. Your settings backup has been kept.");
-        }
-        else
-        {
-            StartupHelper.SetRunUser("--autorun", StartupTaskHelper.InstallPath);
-        }
-        config.RunAsAdministratorOnStartup = elevated;
-        IniConfig.SaveTo(Path.Combine(StartupTaskHelper.ConfigurationFolder, "snapvox.ini"));
-        foreach (string candidate in GetSettingsCandidates())
-        {
-            if (File.Exists(candidate) && !string.Equals(candidate, Path.Combine(StartupTaskHelper.ConfigurationFolder, "snapvox.ini"), StringComparison.OrdinalIgnoreCase))
-            {
-                try { IniConfig.SaveTo(candidate); } catch { }
-            }
-        }
+        await StartupTaskHelper.RestoreStartupAfterInstallAsync(keepUserSettings, hadElevatedStartup).ConfigureAwait(false);
     }
 
     private static async Task<bool> WaitForApplicationsToCloseAsync(DeploymentProgress progress, CancellationToken ct)
@@ -1297,7 +1274,15 @@ internal static class DeploymentLifecycle
     {
         try
         {
-            if (!string.IsNullOrEmpty(backupFolder) && Directory.Exists(backupFolder)) Directory.Delete(backupFolder, true);
+            if (!string.IsNullOrEmpty(backupFolder) && Directory.Exists(backupFolder))
+            {
+                Directory.Delete(backupFolder, true);
+                string parent = Path.GetDirectoryName(backupFolder);
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any())
+                {
+                    Directory.Delete(parent, false);
+                }
+            }
         }
         catch (Exception ex)
         {

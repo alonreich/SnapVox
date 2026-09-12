@@ -19,7 +19,7 @@ namespace snapvox.editor.Services
 
         public List<Control> Annotations { get; init; } = new List<Control>();
 
-        public ImageSharpImage? TakeImage() => Interlocked.Exchange(ref _image, null);
+        public ImageSharpImage? TakeImage() => Volatile.Read(ref _image);
 
         public void ReleaseImage() => Interlocked.Exchange(ref _image, null)?.Dispose();
     }
@@ -27,11 +27,12 @@ namespace snapvox.editor.Services
     public sealed class EditorHistoryManager
     {
         public const int MaxStackSize = 40;
-        public const long MaxUndoHistoryBytes = 384L * 1024 * 1024; // 384 MB
+        public const long MaxUndoHistoryBytes = 250L * 1024 * 1024; // 250 MB
 
         private readonly LinkedList<EditorSnapshot> _undoStack = new LinkedList<EditorSnapshot>();
         private readonly LinkedList<EditorSnapshot> _redoStack = new LinkedList<EditorSnapshot>();
         private readonly Action<Control>? _disposeAnnotation;
+        private long _totalBytes;
 
         public EditorHistoryManager(Action<Control>? disposeAnnotation = null)
         {
@@ -43,17 +44,23 @@ namespace snapvox.editor.Services
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
 
+        public EditorSnapshot? PeekUndo() => _undoStack.Count > 0 ? _undoStack.Last!.Value : null;
+        public EditorSnapshot? PeekRedo() => _redoStack.Count > 0 ? _redoStack.Last!.Value : null;
+
         public void PushUndo(EditorSnapshot snapshot)
         {
             _undoStack.AddLast(snapshot);
+            Interlocked.Add(ref _totalBytes, EstimateSnapshotBytes(snapshot));
+
             if (_undoStack.Count > MaxStackSize)
             {
                 var oldest = _undoStack.First!.Value;
                 _undoStack.RemoveFirst();
+                Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(oldest));
                 DisposeSnapshot(oldest);
             }
-            EnforceUndoMemoryBudget();
             ClearRedo();
+            EnforceMemoryBudget();
         }
 
         public bool TryUndo(EditorSnapshot currentSnapshot, out EditorSnapshot? previousSnapshot)
@@ -66,16 +73,19 @@ namespace snapvox.editor.Services
 
             previousSnapshot = _undoStack.Last!.Value;
             _undoStack.RemoveLast();
+            Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(previousSnapshot));
 
             _redoStack.AddLast(currentSnapshot);
+            Interlocked.Add(ref _totalBytes, EstimateSnapshotBytes(currentSnapshot));
             if (_redoStack.Count > MaxStackSize)
             {
                 var oldest = _redoStack.First!.Value;
                 _redoStack.RemoveFirst();
+                Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(oldest));
                 DisposeSnapshot(oldest);
             }
 
-            EnforceUndoMemoryBudget();
+            EnforceMemoryBudget();
             return true;
         }
 
@@ -89,16 +99,19 @@ namespace snapvox.editor.Services
 
             nextSnapshot = _redoStack.Last!.Value;
             _redoStack.RemoveLast();
+            Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(nextSnapshot));
 
             _undoStack.AddLast(currentSnapshot);
+            Interlocked.Add(ref _totalBytes, EstimateSnapshotBytes(currentSnapshot));
             if (_undoStack.Count > MaxStackSize)
             {
                 var oldest = _undoStack.First!.Value;
                 _undoStack.RemoveFirst();
+                Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(oldest));
                 DisposeSnapshot(oldest);
             }
 
-            EnforceUndoMemoryBudget();
+            EnforceMemoryBudget();
             return true;
         }
 
@@ -106,6 +119,7 @@ namespace snapvox.editor.Services
         {
             foreach (var snapshot in _redoStack)
             {
+                Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(snapshot));
                 DisposeSnapshot(snapshot);
             }
             _redoStack.Clear();
@@ -115,11 +129,13 @@ namespace snapvox.editor.Services
         {
             foreach (var snapshot in _undoStack)
             {
+                Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(snapshot));
                 DisposeSnapshot(snapshot);
             }
             _undoStack.Clear();
 
             ClearRedo();
+            Interlocked.Exchange(ref _totalBytes, 0L);
         }
 
         public static long EstimateSnapshotBytes(EditorSnapshot? snapshot)
@@ -128,23 +144,34 @@ namespace snapvox.editor.Services
             return image != null ? (long)image.Width * image.Height * 4 : 0;
         }
 
-        public long TotalUndoHistoryBytes()
-        {
-            long total = 0;
-            foreach (var snapshot in _undoStack) total += EstimateSnapshotBytes(snapshot);
-            foreach (var snapshot in _redoStack) total += EstimateSnapshotBytes(snapshot);
-            return total;
-        }
+        public long TotalUndoHistoryBytes() => Math.Max(0L, Interlocked.Read(ref _totalBytes));
 
-        public void EnforceUndoMemoryBudget()
+        public void EnforceMemoryBudget()
         {
-            while (_undoStack.Count > 1 && TotalUndoHistoryBytes() > MaxUndoHistoryBytes)
+            while (TotalUndoHistoryBytes() > MaxUndoHistoryBytes)
             {
-                var oldest = _undoStack.First!.Value;
-                _undoStack.RemoveFirst();
-                DisposeSnapshot(oldest);
+                if (_redoStack.Count > 0)
+                {
+                    var oldestRedo = _redoStack.First!.Value;
+                    _redoStack.RemoveFirst();
+                    Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(oldestRedo));
+                    DisposeSnapshot(oldestRedo);
+                }
+                else if (_undoStack.Count > 1)
+                {
+                    var oldestUndo = _undoStack.First!.Value;
+                    _undoStack.RemoveFirst();
+                    Interlocked.Add(ref _totalBytes, -EstimateSnapshotBytes(oldestUndo));
+                    DisposeSnapshot(oldestUndo);
+                }
+                else
+                {
+                    break;
+                }
             }
         }
+
+        public void EnforceUndoMemoryBudget() => EnforceMemoryBudget();
 
         public void DisposeSnapshot(EditorSnapshot? snapshot)
         {

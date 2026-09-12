@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Processing;
 using snapvox.foundation.core;
 
 namespace snapvox.editor.Services
@@ -104,6 +105,31 @@ namespace snapvox.editor.Services
                 img.Save(ms, new JpegEncoder { Quality = Math.Clamp(jpegQuality, 1, 100) });
             }
             return ms.ToArray();
+        }
+
+        public static void ApplyFrameBorder(Image img, int thickness, SixLabors.ImageSharp.Color borderColor)
+        {
+            if (img == null || thickness <= 0) return;
+            int w = img.Width;
+            int h = img.Height;
+            img.Mutate(x => x.Pad(w + 2 * thickness, h + 2 * thickness, borderColor));
+        }
+
+        public static void ApplyFrameBorder(Image img, int thickness, string? hexColor = null)
+        {
+            if (img == null || thickness <= 0) return;
+            var borderColor = SixLabors.ImageSharp.Color.FromRgb(0x43, 0x43, 0x43);
+            if (!string.IsNullOrWhiteSpace(hexColor))
+            {
+                try
+                {
+                    string hex = hexColor.Trim();
+                    if (!hex.StartsWith("#")) hex = "#" + hex;
+                    borderColor = SixLabors.ImageSharp.Color.ParseHex(hex);
+                }
+                catch { }
+            }
+            ApplyFrameBorder(img, thickness, borderColor);
         }
 
         public static async Task<bool> SaveToHistoryBackupAsync(

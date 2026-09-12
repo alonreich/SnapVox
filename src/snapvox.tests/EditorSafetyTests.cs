@@ -127,6 +127,28 @@ public class EditorSafetyTests
         finally { editor.Close(); }
     }
 
+    [AvaloniaFact]
+    public async Task SliderAndColorPreviewLayout_MetricsAreAccurate()
+    {
+        var editor = await CreateEditor();
+        try
+        {
+            var preview = editor.FindControl<Border>("CurrentColorPreview");
+            Assert.NotNull(preview);
+            Assert.Equal(24.0, preview.Width);
+            Assert.Equal(24.0, preview.Height);
+
+            var slider = editor.FindControl<Slider>("ThicknessFlyoutSlider");
+            Assert.NotNull(slider);
+            Assert.False(slider.ClipToBounds);
+            Assert.True(slider.Resources.ContainsKey("SliderPreContentMargin"));
+            Assert.Equal(new GridLength(0.0), slider.Resources["SliderPreContentMargin"]);
+            Assert.True(slider.Resources.ContainsKey("SliderPostContentMargin"));
+            Assert.Equal(new GridLength(0.0), slider.Resources["SliderPostContentMargin"]);
+        }
+        finally { editor.Close(); }
+    }
+
     private sealed class BrokenRender : Control
     {
         public override void Render(DrawingContext context) => throw new InvalidOperationException("Injected renderer failure");

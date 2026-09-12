@@ -18,7 +18,7 @@ public class snapvoxMain
 {
     private static ILog LOG;
     public static string LogFileLocation;
-    private static Mutex s_singleInstanceMutex;
+    private static ResourceMutex s_singleInstanceMutex;
 
     static snapvoxMain()
     {
@@ -61,13 +61,14 @@ public class snapvoxMain
 
         if (!isInstaller && !isLifecycle && !hasFiles)
         {
-            s_singleInstanceMutex = new Mutex(false, "Global\\SnapVox_SingleInstance_Mutex", out bool createdNew);
-            if (!createdNew)
+            s_singleInstanceMutex = ResourceMutex.Create(ResourceMutex.SingleInstanceArbitratorName, "snapvox instance");
+            if (!s_singleInstanceMutex.IsLocked)
             {
                 s_singleInstanceMutex.Dispose();
                 s_singleInstanceMutex = null;
                 return;
             }
+            App.SetInstanceArbitrator(s_singleInstanceMutex);
         }
 
         InstallHostContext.WriteEarlyTrace("ENTER Main PID=" + Environment.ProcessId + " exe=" + Environment.ProcessPath);

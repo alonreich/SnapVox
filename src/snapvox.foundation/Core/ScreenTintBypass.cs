@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -38,37 +39,21 @@ namespace snapvox.foundation.core
 
         private const int MaxScannedWindows = 400;
 
-        private const int DisplayDeviceAttachedToDesktop = 0x00000001;
+        private const uint ProcessQueryLimitedInformation = 0x1000;
 
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-        private struct DISPLAY_DEVICE
-        {
-            public int cb;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-            public string DeviceName;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-            public string DeviceString;
-            public int StateFlags;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-            public string DeviceID;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-            public string DeviceKey;
-        }
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
 
-        [DllImport("user32.dll")]
-        private static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern unsafe bool QueryFullProcessImageNameW(IntPtr hProcess, uint dwFlags, char* lpExeName, ref uint lpdwSize);
 
-        [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr CreateDC(string lpszDriver, string lpszDevice, string lpszOutput, IntPtr lpInitData);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr hObject);
 
-        [DllImport("gdi32.dll")]
-        private static extern bool DeleteDC(IntPtr hdc);
-
-        [DllImport("gdi32.dll")]
-        private static extern bool GetDeviceGammaRamp(IntPtr hdc, ushort[] lpRamp);
-
-        [DllImport("gdi32.dll")]
-        private static extern bool SetDeviceGammaRamp(IntPtr hdc, ushort[] lpRamp);
+        private static readonly ConcurrentDictionary<uint, (string Name, bool IsTint)> ProcessCache = new();
+        private static readonly ConcurrentDictionary<uint, long> ProcessCacheTimestamps = new();
+        private static readonly long CacheExpirationTicks = (long)(5 * Stopwatch.Frequency);
 
         private static readonly TimeSpan ProbeCacheLifetime = TimeSpan.FromMilliseconds(750);
         private static long _lastProbeTicks;
@@ -155,6 +140,12 @@ namespace snapvox.foundation.core
             Interlocked.Exchange(ref _lastProbeTicks, 0L);
         }
 
+        internal static void ClearProcessCache()
+        {
+            ProcessCacheTimestamps.Clear();
+            ProcessCache.Clear();
+        }
+
         private static bool Probe(RECT region)
         {
             if (region.Width <= 0 || region.Height <= 0) return false;
@@ -172,26 +163,23 @@ namespace snapvox.foundation.core
                 long exStyle = GetWindowLongValue(hWnd, GwlExstyle);
                 if ((exStyle & WsExLayered) == 0) return true;
 
-                GetWindowThreadProcessId(hWnd, out uint pid);
-                if (pid == ownPid) return true;
-
                 if (!GetWindowRect(hWnd, out RECT bounds)) return true;
                 bounds = bounds.Normalize();
                 if (bounds.Width <= 0 || bounds.Height <= 0) return true;
+
+                if (!CoversAnyMonitor(bounds, region)) return true;
+
+                GetWindowThreadProcessId(hWnd, out uint pid);
+                if (pid == ownPid) return true;
 
                 if (IsIgnoredOverlayProcess(pid)) return true;
 
                 if (IsKnownTintProcess(pid, out string procName))
                 {
-                    if (CoversAnyMonitor(bounds, region))
-                    {
-                        found = true;
-                        matchedContext = $"known_tint_process={procName} hwnd=0x{hWnd.ToInt64():X} bounds={bounds.Width}x{bounds.Height}";
-                        return false;
-                    }
+                    found = true;
+                    matchedContext = $"known_tint_process={procName} hwnd=0x{hWnd.ToInt64():X} bounds={bounds.Width}x{bounds.Height}";
+                    return false;
                 }
-
-                if (!CoversAnyMonitor(bounds, region)) return true;
 
                 // A tinting overlay is click-through and/or refuses focus - a normal
                 // full-screen layered app window (a media player, a game overlay HUD)
@@ -222,54 +210,111 @@ namespace snapvox.foundation.core
             return found;
         }
 
-        private static bool IsIgnoredOverlayProcess(uint pid)
+        private static unsafe string GetProcessBaseName(uint pid)
         {
+            IntPtr hProcess = OpenProcess(ProcessQueryLimitedInformation, false, pid);
+            if (hProcess == IntPtr.Zero)
+            {
+                return null;
+            }
+
             try
             {
-                using var proc = Process.GetProcessById((int)pid);
-                string name = proc.ProcessName;
-                if (string.IsNullOrEmpty(name)) return false;
-
-                return name.Equals("NVIDIA Overlay", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("DiscordOverlay", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("GameBar", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("SteamOverlay", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("Overwolf", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("ShellExperienceHost", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("SearchHost", StringComparison.OrdinalIgnoreCase);
+                char* buffer = stackalloc char[1024];
+                uint size = 1024;
+                if (QueryFullProcessImageNameW(hProcess, 0, buffer, ref size) && size > 0)
+                {
+                    ReadOnlySpan<char> span = new ReadOnlySpan<char>(buffer, (int)size);
+                    int lastSlash = span.LastIndexOf('\\');
+                    ReadOnlySpan<char> baseName = lastSlash >= 0 ? span.Slice(lastSlash + 1) : span;
+                    if (baseName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        baseName = baseName.Slice(0, baseName.Length - 4);
+                    }
+                    return baseName.ToString();
+                }
+                return null;
             }
-            catch
+            finally
             {
-                return false;
+                CloseHandle(hProcess);
             }
+        }
+
+        private static (string Name, bool IsTint) GetProcessInfo(uint pid)
+        {
+            long now = Stopwatch.GetTimestamp();
+            if (ProcessCacheTimestamps.TryGetValue(pid, out long timestamp) &&
+                (now - timestamp) < CacheExpirationTicks &&
+                ProcessCache.TryGetValue(pid, out var cached))
+            {
+                // 5-second sliding expiration: refresh timestamp on access
+                ProcessCacheTimestamps[pid] = now;
+                return cached;
+            }
+
+            string name = GetProcessBaseName(pid);
+            bool isTint = IsKnownTintName(name);
+
+            var entry = (name, isTint);
+            ProcessCache[pid] = entry;
+            ProcessCacheTimestamps[pid] = now;
+
+            if (ProcessCache.Count > 128)
+            {
+                PruneStaleCache(now);
+            }
+
+            return entry;
+        }
+
+        private static void PruneStaleCache(long now)
+        {
+            foreach (var kvp in ProcessCacheTimestamps)
+            {
+                if (now - kvp.Value > CacheExpirationTicks)
+                {
+                    ProcessCacheTimestamps.TryRemove(kvp.Key, out _);
+                    ProcessCache.TryRemove(kvp.Key, out _);
+                }
+            }
+        }
+
+        private static bool IsIgnoredOverlayProcess(uint pid)
+        {
+            var (name, _) = GetProcessInfo(pid);
+            if (string.IsNullOrEmpty(name)) return false;
+
+            return name.Equals("NVIDIA Overlay", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("DiscordOverlay", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("GameBar", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("SteamOverlay", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Overwolf", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("ShellExperienceHost", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("SearchHost", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsKnownTintProcess(uint pid, out string procName)
         {
-            procName = null;
-            try
-            {
-                using var proc = Process.GetProcessById((int)pid);
-                string name = proc.ProcessName;
-                if (string.IsNullOrEmpty(name)) return false;
+            var (name, isTint) = GetProcessInfo(pid);
+            procName = isTint ? name : null;
+            return isTint;
+        }
 
-                if (name.Equals("flux", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("careueyes", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("sunset", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("iris", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("dimmer", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("lightbulb", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("twilight", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("redshift", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("gammapanel", StringComparison.OrdinalIgnoreCase))
-                {
-                    procName = name;
-                    return true;
-                }
-            }
-            catch { }
-            return false;
+        private static bool IsKnownTintName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+
+            return name.Equals("flux", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("careueyes", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("sunset", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("iris", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("dimmer", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("lightbulb", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("twilight", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("redshift", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("gammapanel", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool CoversAnyMonitor(RECT candidate, RECT region)
@@ -280,153 +325,6 @@ namespace snapvox.foundation.core
             // Plausible per-monitor overlay bounds: at least 800x500
             long candidateArea = (long)candidate.Width * candidate.Height;
             return candidateArea >= 400000 && candidate.Width >= 800 && candidate.Height >= 500;
-        }
-
-        /// <summary>
-        /// Temporarily sets display gamma ramps to standard linear (6500K sRGB) across all active monitors
-        /// during screen capture, restoring the original ramps upon disposal.
-        /// Bypasses f.lux, Windows Night Light, and any warm hardware gamma calibrations.
-        /// </summary>
-        public static IDisposable NeutralizeDisplayGammaScope()
-        {
-            if (!IsEnabled())
-            {
-                return EmptyDisposable.Instance;
-            }
-
-            try
-            {
-                List<(IntPtr Hdc, ushort[] Ramp)> restored = null;
-                var dd = new DISPLAY_DEVICE();
-                dd.cb = Marshal.SizeOf<DISPLAY_DEVICE>();
-                uint devNum = 0;
-                ushort[] linearRamp = null;
-
-                while (EnumDisplayDevices(null, devNum, ref dd, 0))
-                {
-                    if ((dd.StateFlags & DisplayDeviceAttachedToDesktop) != 0)
-                    {
-                        IntPtr hdc = CreateDC(dd.DeviceName, null, null, IntPtr.Zero);
-                        if (hdc != IntPtr.Zero)
-                        {
-                            ushort[] origRamp = new ushort[768];
-                            if (GetDeviceGammaRamp(hdc, origRamp))
-                            {
-                                if (IsGammaRampTinted(origRamp))
-                                {
-                                    linearRamp ??= CreateLinearGammaRamp();
-                                    if (SetDeviceGammaRamp(hdc, linearRamp))
-                                    {
-                                        (restored ??= new List<(IntPtr, ushort[])>()).Add((hdc, origRamp));
-                                        hdc = IntPtr.Zero; // Transferred to restored list
-                                    }
-                                }
-                            }
-
-                            if (hdc != IntPtr.Zero)
-                            {
-                                DeleteDC(hdc);
-                            }
-                        }
-                    }
-                    devNum++;
-                }
-
-                if (restored != null && restored.Count > 0)
-                {
-                    Log.DebugFormat("Neutralized display gamma for {0} display(s) during capture.", restored.Count);
-                    return new GammaNeutralizerScope(restored);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("Failed neutralizing display gamma ramps for capture.", ex);
-            }
-
-            return EmptyDisposable.Instance;
-        }
-
-        private static bool IsGammaRampTinted(ushort[] ramp)
-        {
-            if (ramp == null || ramp.Length < 768) return false;
-
-            ushort rPeak = ramp[255];
-            ushort gPeak = ramp[511];
-            ushort bPeak = ramp[767];
-
-            if (rPeak > 0)
-            {
-                if (bPeak < (int)(rPeak * 0.985) || gPeak < (int)(rPeak * 0.985))
-                {
-                    return true;
-                }
-            }
-
-            ushort rMid = ramp[128];
-            ushort bMid = ramp[512 + 128];
-            if (rMid > 0 && bMid < (int)(rMid * 0.97))
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        private static ushort[] CreateLinearGammaRamp()
-        {
-            ushort[] ramp = new ushort[768];
-            for (int i = 0; i < 256; i++)
-            {
-                ushort val = (ushort)((i * 65535) / 255);
-                ramp[i] = val;
-                ramp[256 + i] = val;
-                ramp[512 + i] = val;
-            }
-            return ramp;
-        }
-
-        private sealed class GammaNeutralizerScope : IDisposable
-        {
-            private List<(IntPtr Hdc, ushort[] Ramp)> _savedDisplays;
-
-            public GammaNeutralizerScope(List<(IntPtr Hdc, ushort[] Ramp)> savedDisplays)
-            {
-                _savedDisplays = savedDisplays;
-            }
-
-            public void Dispose()
-            {
-                var list = Interlocked.Exchange(ref _savedDisplays, null);
-                if (list == null) return;
-
-                foreach (var item in list)
-                {
-                    try
-                    {
-                        if (item.Hdc != IntPtr.Zero && item.Ramp != null)
-                        {
-                            SetDeviceGammaRamp(item.Hdc, item.Ramp);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warn("Failed restoring display gamma ramp.", ex);
-                    }
-                    finally
-                    {
-                        if (item.Hdc != IntPtr.Zero)
-                        {
-                            DeleteDC(item.Hdc);
-                        }
-                    }
-                }
-            }
-        }
-
-        private sealed class EmptyDisposable : IDisposable
-        {
-            public static readonly EmptyDisposable Instance = new EmptyDisposable();
-            public void Dispose() { }
         }
 
         /// <summary>
@@ -521,16 +419,9 @@ namespace snapvox.foundation.core
 
         private static long GetWindowLongValue(IntPtr hWnd, int index)
         {
-            try
-            {
-                return IntPtr.Size == 8
-                    ? GetWindowLongPtr64(hWnd, index).ToInt64()
-                    : GetWindowLong32(hWnd, index);
-            }
-            catch
-            {
-                return 0L;
-            }
+            return IntPtr.Size == 8
+                ? GetWindowLongPtr64(hWnd, index).ToInt64()
+                : GetWindowLong32(hWnd, index);
         }
     }
 }

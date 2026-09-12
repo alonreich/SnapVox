@@ -36,6 +36,8 @@
 
     <Color x:Key="SnapVoxSliderTrackColor">#4A4A4A</Color>
     <SolidColorBrush x:Key="SnapVoxSliderTrackBrush" Color="{StaticResource SnapVoxSliderTrackColor}" />
+    <GridLength x:Key="SliderPreContentMargin">0</GridLength>
+    <GridLength x:Key="SliderPostContentMargin">0</GridLength>
 
     <Color x:Key="SnapVoxScrimColor">#99000000</Color>
     <SolidColorBrush x:Key="SnapVoxScrimBrush" Color="{StaticResource SnapVoxScrimColor}" />

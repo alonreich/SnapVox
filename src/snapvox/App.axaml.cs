@@ -36,6 +36,11 @@ namespace snapvox
         private static helpers.ResourceMutex s_instanceMutex;
         public static bool IsNoTrayMode { get; set; }
 
+        internal static void SetInstanceArbitrator(helpers.ResourceMutex arbitrator)
+        {
+            s_instanceMutex = arbitrator;
+        }
+
         public override void Initialize() { AvaloniaXamlLoader.Load(this); }
 
         public override void OnFrameworkInitializationCompleted()
@@ -96,12 +101,15 @@ namespace snapvox
                 ExecutionTrace.Start();
                 var options = snapvoxCommandLine.Parse(args);
                 UiClipboard.RegisterGetter(() => desktop.MainWindow?.Clipboard ?? (desktop.Windows.FirstOrDefault()?.Clipboard));
-                s_instanceMutex = helpers.ResourceMutex.Create("snapvox_MainForm", "snapvox instance", true);
+                if (s_instanceMutex == null)
+                {
+                    s_instanceMutex = helpers.ResourceMutex.Create(helpers.ResourceMutex.SingleInstanceArbitratorName, "snapvox instance", true);
+                }
                 if (!s_instanceMutex.IsLocked)
                 {
                     log.Warn("Another instance of SnapVox is already running.");
                     if (options.Files.Length > 0) { IsNoTrayMode = true; log.Info("Proceeding in No-Tray mode for file processing."); }
-                    else { log.Info("Shutting down duplicate instance."); Dispatcher.UIThread.Post(() => desktop.Shutdown()); return; }
+                    else { log.Info("Shutting down duplicate instance."); Dispatcher.UIThread.Post(() => desktop.Shutdown(0)); return; }
                 }
                     SimpleServiceProvider.Current.AddService<IAppLifecycleCoordinator>(new AppLifecycleCoordinator());
                     SimpleServiceProvider.Current.AddService<ISettingsService>(new SettingsService());
@@ -193,6 +201,7 @@ namespace snapvox
                 ForceRedTrayIcon(false);
                 RetentionHelper.Stop();
                 ExecutionTrace.Stop();
+                IniConfig.Flush();
                 foreach (var ocrProvider in ocrProviders)
                 {
                     if (ocrProvider is IAsyncDisposable asyncDisposable)
@@ -582,6 +591,7 @@ namespace snapvox
             _mainAppCts.Cancel();
             s_instanceMutex?.Dispose();
             s_instanceMutex = null;
+            IniConfig.Flush();
             _desktop?.Shutdown();
         }
     }

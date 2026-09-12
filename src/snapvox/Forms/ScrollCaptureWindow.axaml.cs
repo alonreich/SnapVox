@@ -53,11 +53,31 @@ namespace snapvox.forms
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
-        [DllImport("user32.dll")]
-        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+        private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
 
-        [DllImport("user32.dll")]
-        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+        private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        private static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex)
+        {
+            if (IntPtr.Size == 8)
+                return GetWindowLongPtr64(hWnd, nIndex);
+            return new IntPtr(GetWindowLong32(hWnd, nIndex));
+        }
+
+        private static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+        {
+            if (IntPtr.Size == 8)
+                return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
+            return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
+        }
 
         private static DispatcherTimer _pollTimer;
 
@@ -66,13 +86,13 @@ namespace snapvox.forms
             var hwnd = this.TryGetPlatformHandle()?.Handle;
             if (hwnd == null || hwnd.Value == IntPtr.Zero) return;
 
-            int exStyle = GetWindowLong(hwnd.Value, GWL_EXSTYLE);
+            long exStyle = GetWindowLongPtr(hwnd.Value, GWL_EXSTYLE).ToInt64();
             if (clickThrough)
                 exStyle |= (WS_EX_TRANSPARENT | WS_EX_LAYERED);
             else
                 exStyle &= ~(WS_EX_TRANSPARENT | WS_EX_LAYERED);
 
-            SetWindowLong(hwnd.Value, GWL_EXSTYLE, exStyle);
+            SetWindowLongPtr(hwnd.Value, GWL_EXSTYLE, new IntPtr(exStyle));
         }
 
         private static void StartInputPolling()
@@ -86,13 +106,21 @@ namespace snapvox.forms
                 {
                     if (Recorder != null)
                     {
-                        string hotkeyLabel = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().ScrollCaptureDelimiterHotkey;
-                        if (string.IsNullOrWhiteSpace(hotkeyLabel)) hotkeyLabel = "Space";
-                        double screens = Recorder.EstimatedScreens;
-                        int frames = Recorder.AcceptedFrames;
-                        string screenWord = screens <= 1.05 ? "screen" : "screens";
-                        BroadcastStatus("SCROLLING ACTIVE", $"Scroll down · {hotkeyLabel}/Enter finishes | {screens:0.0} {screenWord} ({frames} frames)");
-                        BarWindow?.UpdateStats(screens, frames);
+                        if (Recorder.IsSegmentCeilingReached || Recorder.IsPaused)
+                        {
+                            BroadcastStatus("LIMIT REACHED (PAUSED)", "Maximum segments reached (120) · Space/Enter finishes");
+                            BarWindow?.SetHint("Maximum length reached (120 segments). Finish to save.");
+                        }
+                        else
+                        {
+                            string hotkeyLabel = snapvox.foundation.IniFile.IniConfig.GetIniSection<CoreConfiguration>().ScrollCaptureDelimiterHotkey;
+                            if (string.IsNullOrWhiteSpace(hotkeyLabel)) hotkeyLabel = "Space";
+                            double screens = Recorder.EstimatedScreens;
+                            int frames = Recorder.AcceptedFrames;
+                            string screenWord = screens <= 1.05 ? "screen" : "screens";
+                            BroadcastStatus("SCROLLING ACTIVE", $"Scroll down · {hotkeyLabel}/Enter finishes | {screens:0.0} {screenWord} ({frames} frames)");
+                            BarWindow?.UpdateStats(screens, frames);
+                        }
                     }
                 }
                 else
@@ -113,11 +141,6 @@ namespace snapvox.forms
                     _ = FinishRecordingAsync();
                 }
                 else if ((GetAsyncKeyState(0x1B) & 0x8000) != 0)
-                {
-                    StopInputPolling();
-                    _ = ExitModeAsync();
-                }
-                else if ((GetAsyncKeyState(0x02) & 0x8000) != 0)
                 {
                     StopInputPolling();
                     _ = ExitModeAsync();
@@ -329,7 +352,10 @@ namespace snapvox.forms
             var props = e.GetCurrentPoint(this).Properties;
             if (props.IsRightButtonPressed)
             {
-                _ = ExitModeAsync();
+                if (!IsRecording)
+                {
+                    _ = ExitModeAsync();
+                }
                 e.Handled = true;
             }
             else if (props.IsLeftButtonPressed)
@@ -423,6 +449,14 @@ namespace snapvox.forms
                 }
 
                 Recorder = new ScrollCaptureRecorder(rect);
+                Recorder.SegmentCeilingReached += () =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        BroadcastStatus("LIMIT REACHED (PAUSED)", "Maximum segments reached (120) · Space/Enter finishes");
+                        BarWindow?.SetHint("Maximum length reached (120 segments). Finish to save.");
+                    });
+                };
                 Recorder.Start();
                 IsRecording = true;
                 foreach (var win in ActiveWindows) 

@@ -23,7 +23,7 @@ namespace snapvox.editor.Services.Tools
         bool IsDrawing { get; set; }
         Point StartPoint { get; set; }
 
-        void CaptureUndoCheckpoint(bool cloneImage = true);
+        void CaptureUndoCheckpoint(bool cloneImage = false);
         void SetEditorCursor(Cursor cursor);
         void ShowToolGhost(Point pos);
         void HideToolGhost();
@@ -98,7 +98,7 @@ namespace snapvox.editor.Services.Tools
             set => _bridge.StartPoint = value;
         }
 
-        public void CaptureUndoCheckpoint(bool cloneImage = true) => _bridge.CaptureUndoCheckpoint(cloneImage);
+        public void CaptureUndoCheckpoint(bool cloneImage = false) => _bridge.CaptureUndoCheckpoint(cloneImage);
         public void SetEditorCursor(Cursor cursor) => _bridge.SetEditorCursor(cursor);
         public void ShowToolGhost(Point pos) => _bridge.ShowToolGhost(pos);
         public void HideToolGhost() => _bridge.HideToolGhost();

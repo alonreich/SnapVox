@@ -23,14 +23,8 @@
         <Style Selector="ScrollBar[Orientation=Horizontal]">
             <Setter Property="Theme" Value="{DynamicResource SnapVoxScrollBarHorizontal}" />
         </Style>
-        <Style Selector="FlyoutPresenter ScrollBar">
-            <Setter Property="AllowAutoHide" Value="False" />
-        </Style>
-        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Vertical]">
-            <Setter Property="Theme" Value="{DynamicResource SnapVoxScrollBarVertical}" />
-        </Style>
-        <Style Selector="FlyoutPresenter ScrollBar[Orientation=Horizontal]">
-            <Setter Property="Theme" Value="{DynamicResource SnapVoxScrollBarHorizontal}" />
+        <Style Selector="FlyoutPresenter">
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         </Style>
     </Application.Styles>
 

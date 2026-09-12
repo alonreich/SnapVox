@@ -146,12 +146,22 @@ namespace snapvox.tests
         }
 
         [Fact]
-        public void ScreenTintBypass_NeutralizeDisplayGammaScope_ExecutesSafely()
+        public void ScreenTintBypass_Benchmark_ShouldExcludeLayeredWindows_ExecutesUnder2Ms()
         {
-            using (var scope = ScreenTintBypass.NeutralizeDisplayGammaScope())
-            {
-                Assert.NotNull(scope);
-            }
+            var region = RECT.FromXYWH(0, 0, 1920, 1080);
+
+            // Warm up
+            ScreenTintBypass.ShouldExcludeLayeredWindows(region);
+
+            // Invalidate probe cache to force full EnumWindows and process resolution through ProcessCache
+            ScreenTintBypass.InvalidateCache();
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            ScreenTintBypass.ShouldExcludeLayeredWindows(region);
+            sw.Stop();
+
+            // Benchmark requirement: executes in under 2ms across desktop
+            Assert.True(sw.Elapsed.TotalMilliseconds < 2.0, $"Expected ShouldExcludeLayeredWindows to execute in under 2ms, but took {sw.Elapsed.TotalMilliseconds:F3}ms");
         }
     }
 }

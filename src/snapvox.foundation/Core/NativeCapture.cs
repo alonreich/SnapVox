@@ -164,15 +164,9 @@ namespace snapvox.foundation.core
                 // CAPTUREBLT is what pulls layered windows into a screen copy. Night-mode /
                 // warm-light utilities tint the screen with exactly such a window, so when one
                 // is up we copy without it and the capture comes out in true colour.
-                uint rasterOperation = Srccopy;
-                if (!ScreenTintBypass.ShouldExcludeLayeredWindows(region)) rasterOperation |= CaptureBlt;
+                uint rasterOperation = ScreenTintBypass.ShouldExcludeLayeredWindows(region) ? Srccopy : (Srccopy | CaptureBlt);
 
-                bool bltSuccess;
-                using (ScreenTintBypass.NeutralizeDisplayGammaScope())
-                {
-                    bltSuccess = BitBlt(hdcDest, 0, 0, region.Width, region.Height, hdcScreen, region.Left, region.Top, rasterOperation);
-                }
-
+                bool bltSuccess = BitBlt(hdcDest, 0, 0, region.Width, region.Height, hdcScreen, region.Left, region.Top, rasterOperation);
                 if (!bltSuccess)
                 {
                     return null;
